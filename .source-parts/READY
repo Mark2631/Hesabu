@@ -1,1 +1,1 @@
-Verified all nine source bundle chunks are present. Restore archive and run tests/build.
+All nine archive chunks pass integrity checks. Restore the source tree and run tests/build.
