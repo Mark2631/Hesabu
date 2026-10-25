@@ -4,7 +4,7 @@ Hesabu is a mobile-first, voice-friendly micro-ledger for Kenyan small shops. It
 
 ## Preview
 
-Open the latest preview at https://hesabu-hc0qfpmra-marksanchez2631-1753s-projects.vercel.app. It is a noindex preview deployment, not the production release.
+Open the latest preview at https://hesabu-49eiugo2b-marksanchez2631-1753s-projects.vercel.app. It is a noindex preview deployment, not the production release.
 
 ## Run locally
 
@@ -17,7 +17,8 @@ Install Node.js 22 or newer, then run `npm install`, `npm run dev`, `npm test`, 
 - Correction of saved transaction descriptions, amounts, dates, times and credit due dates, with linked balance adjustments.
 - Cash sale, credit given, expense, and debt-payment records.
 - Customer and supplier account balances, transaction history, repayment recording, and WhatsApp debt reminders.
-- Stock quantities, low-stock thresholds, restocking and quantity corrections.
+- Stock quantities, editable product details and reorder thresholds, restocking and quantity corrections.
+- Duplicate safeguards for contacts and stock items, plus a warning when a sale exceeds the tracked shelf count.
 - Bill and follow-up reminders inside the app.
 - Daily, weekly and monthly report previews that can be copied or shared through WhatsApp.
 - CSV export, JSON backup and restore, editable shop details, and a resettable Mama Grace demo ledger.
