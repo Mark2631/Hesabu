@@ -68,7 +68,7 @@ function findAmount(text: string): { amount: number; quantity?: number } {
   const amountPattern = /(?:kes|ksh|kshs|bob|shillings?|ya|kwa|for|worth|of)\s*(\d[\d,]*(?:\.\d{1,2})?)/gi;
   const explicit: number[] = [];
   for (const match of text.matchAll(amountPattern)) explicit.push(Number(match[1].replaceAll(',', '')));
-  const quantityMatch = text.match(/\b(\d+)\s*(kg|kilo(?:s)?|packets?|pieces?|pcs|litres?|liters?|bars?|bottles?|loaves?)\b/i);
+  const quantityMatch = text.match(/\b(\d+)\s*(kg|kilos?|packets?|pieces?|pcs|litres?|liters?|bars?|bottles?|loaf|loaves|sachets?|trays?|crates?|cartons?|dozen|rolls?|tins?|cups?|bags?|bundles?|units?)\b/i);
   const all = [...text.matchAll(/\b\d[\d,]*(?:\.\d{1,2})?\b/g)].map(m => ({ raw: m[0], value: Number(m[0].replaceAll(',', '')), index: m.index ?? 0 }));
   let amount = explicit.find(v => v > 0) ?? 0;
   if (!amount && all.length) {
