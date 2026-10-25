@@ -4,7 +4,7 @@ Hesabu is a mobile-first, voice-friendly micro-ledger for Kenyan small shops. It
 
 ## Preview
 
-Open the latest preview at https://hesabu-9zbnxltal-marksanchez2631-1753s-projects.vercel.app. It is a noindex preview deployment, not the production release.
+Open the latest preview at https://hesabu-hc0qfpmra-marksanchez2631-1753s-projects.vercel.app. It is a noindex preview deployment, not the production release.
 
 ## Run locally
 
