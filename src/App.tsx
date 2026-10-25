@@ -7,7 +7,7 @@ import {
   Trash2, TrendingDown, TrendingUp, Users,
   Wallet, X, type LucideIcon,
 } from 'lucide-react';
-import { makeDemoData, readSavedData, saveData } from './data';
+import { hasSavedData, makeDemoData, readSavedData, saveData } from './data';
 import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
 import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, fullDateText, id, money, parseTransaction, shortDay, timeText, today, transactionLabel } from './utils';
 
@@ -182,6 +182,7 @@ function StockStatus({ item }: { item: StockItem }) {
 
 function App() {
   const [data, setData] = useState<AppData>(() => readSavedData());
+  const [showWelcome, setShowWelcome] = useState(() => !hasSavedData());
   const [section, setSection] = useState<Section>('home');
   const [modal, setModal] = useState<ModalState>(null);
   const [pending, setPending] = useState<TransactionDraft | null>(null);
@@ -200,12 +201,24 @@ function App() {
   const [transactionSearch, setTransactionSearch] = useState('');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
-  useEffect(() => { saveData(data); }, [data]);
+  useEffect(() => { if (!showWelcome) saveData(data); }, [data, showWelcome]);
 
   const notify = (message: string) => setToastMessage(message);
   const closeToast = () => setToastMessage('');
   const closeModal = () => setModal(null);
   const updateData = (updater: (current: AppData) => AppData) => setData(current => updater(current));
+
+  const chooseDemo = () => {
+    const demo = makeDemoData();
+    setData(demo); saveData(demo); setShowWelcome(false); setSection('home');
+  };
+  const createLocalShop = (values: { name: string; owner: string; phone: string; businessType: string }) => {
+    const fresh: AppData = {
+      shopInfo: { name: values.name.trim(), owner: values.owner.trim(), phone: values.phone.trim(), businessType: values.businessType },
+      transactions: [], customers: [], stock: [], reminders: [],
+    };
+    setData(fresh); saveData(fresh); setShowWelcome(false); setSection('home');
+  };
 
   const todayTransactions = useMemo(() => data.transactions.filter(t => t.date === today()), [data.transactions]);
   const todaysIn = useMemo(() => cashIn(todayTransactions), [todayTransactions]);
@@ -581,6 +594,7 @@ function App() {
     {modal?.kind === 'edit-draft' && pending && <EditDraftModal draft={pending} items={data.stock} onClose={closeModal} onSave={editDraft} />}
     {modal?.kind === 'transaction' && data.transactions.find(t => t.id === modal.transactionId) && <TransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} customer={data.customers.find(c => c.id === data.transactions.find(t => t.id === modal.transactionId)?.customerId)} onClose={closeModal} onEdit={transaction => setModal({ kind: 'edit-transaction', transactionId: transaction.id })} onDelete={deleteTransaction} />}
     {modal?.kind === 'edit-transaction' && data.transactions.find(t => t.id === modal.transactionId) && <EditTransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} onClose={closeModal} onSave={saveTransactionEdit} />}
+    <WelcomeScreen show={showWelcome} onUseDemo={chooseDemo} onCreateShop={createLocalShop} />
     <Toast message={toastMessage} onClose={closeToast} />
   </div>;
 }
@@ -843,6 +857,44 @@ function TransactionModal({ transaction, customer, onClose, onEdit, onDelete }: 
     <div className="mt-4 space-y-3">{transaction.customerName && <div className="detail-line"><span>Person</span><b>{transaction.customerName}</b></div>}{transaction.dueDate && <div className="detail-line"><span>Due date</span><b>{dateText(transaction.dueDate, { weekday: 'short', day: 'numeric', month: 'short' })}</b></div>}{transaction.category && <div className="detail-line"><span>Category</span><b>{transaction.category}</b></div>}{transaction.stockQuantityDelta !== undefined && <div className="detail-line"><span>Stock adjustment</span><b>{transaction.stockQuantityDelta > 0 ? '+' : ''}{transaction.stockQuantityDelta} item(s)</b></div>}{customer && <div className="detail-line"><span>Remaining balance</span><b>{money(customer.balance)}</b></div>}</div>
     <div className="mt-5 grid grid-cols-2 gap-2"><Button variant="secondary" onClick={onClose}>Close</Button><Button variant="outline" onClick={() => onEdit(transaction)}><Settings2 size={15} /> Edit details</Button><Button variant="danger" className="col-span-2" onClick={() => onDelete(transaction)}><Trash2 size={15} /> Delete entry</Button></div>
   </Modal>;
+}
+
+
+function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUseDemo: () => void; onCreateShop: (values: { name: string; owner: string; phone: string; businessType: string }) => void }) {
+  const [name, setName] = useState('');
+  const [owner, setOwner] = useState('');
+  const [phone, setPhone] = useState('');
+  const [businessType, setBusinessType] = useState('General shop');
+  if (!show) return null;
+  return <main className="welcome-screen">
+    <div className="welcome-layout">
+      <section className="welcome-story">
+        <Logo />
+        <div className="welcome-copy">
+          <div className="eyebrow">A SIMPLE DAYBOOK FOR REAL SHOPS</div>
+          <h1>Your shop has enough to do. The book can wait.</h1>
+          <p>Keep sales, expenses, customer debts, stock and reminders together. No accounting lessons. No more hunting through yesterday’s pages.</p>
+        </div>
+        <div className="welcome-points">
+          <div className="welcome-point"><span className="welcome-point-icon"><Wallet size={18} /></span><div><b>Know what came in and went out</b><span>Keep cash sales separate from goods taken on credit.</span></div></div>
+          <div className="welcome-point"><span className="welcome-point-icon"><Users size={18} /></span><div><b>Remember who owes what</b><span>Record repayments and follow-ups without searching the book.</span></div></div>
+          <div className="welcome-point"><span className="welcome-point-icon"><Package size={18} /></span><div><b>See what is running low</b><span>Set reorder levels and keep the shelves in view.</span></div></div>
+        </div>
+      </section>
+      <section className="welcome-setup">
+        <div className="welcome-form-head"><div className="eyebrow">LET’S SET THINGS UP</div><h2>Start with your shop.</h2><p>Use your own details to get started, or explore the sample shop first.</p></div>
+        <form className="welcome-form" onSubmit={event => { event.preventDefault(); onCreateShop({ name, owner, phone, businessType }); }}>
+          <Field label="Shop name" value={name} onChange={setName} placeholder="e.g. Mwende General Shop" required autoFocus />
+          <Field label="Your name (optional)" value={owner} onChange={setOwner} placeholder="What should Hesabu call you?" />
+          <Field label="Phone number (optional)" value={phone} onChange={setPhone} placeholder="07… or 01…" type="tel" inputMode="tel" />
+          <SelectField label="Type of business" value={businessType} onChange={setBusinessType} options={[{value:'General shop',label:'General shop / duka'},{value:'Kiosk',label:'Kiosk'},{value:'Grocery',label:'Grocery / food shop'},{value:'Hardware',label:'Hardware'},{value:'Clothing',label:'Clothing / boutique'},{value:'Other',label:'Other small business'}]} />
+          <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Set up my shop <ArrowRight size={16} /></Button>
+        </form>
+        <div className="welcome-device-note"><CheckCircle2 size={15} /><span>Your records stay on this device in this preview. No account or payment is needed to try it.</span></div>
+        <div className="welcome-demo-row"><span>Just looking around?</span><button type="button" onClick={onUseDemo}>Explore the sample ledger <ArrowRight size={14} /></button></div>
+      </section>
+    </div>
+  </main>;
 }
 
 export default App;
