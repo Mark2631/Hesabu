@@ -34,6 +34,7 @@ type ModalState =
   | { kind: 'payment'; customerId: string }
   | { kind: 'stock'; item?: StockItem }
   | { kind: 'stock-update'; itemId: string; mode: 'restock' | 'adjust' }
+  | { kind: 'stock-edit'; itemId: string }
   | { kind: 'reminder'; reminder?: Reminder }
   | { kind: 'profile' }
   | { kind: 'edit-draft' }
@@ -343,6 +344,8 @@ function App() {
   };
 
   const addCustomer = (values: { name: string; phone: string; balance: string; direction: 'owed-to-us' | 'we-owe'; kind: 'customer' | 'supplier'; dueDate: string; note: string }) => {
+    const personName = values.name.trim();
+    if (data.customers.some(c => c.name.trim().toLowerCase() === personName.toLowerCase())) { notify('A person with that name is already in Madeni. Open their existing record instead.'); return; }
     const amount = Math.max(0, Number(values.balance) || 0);
     const record: Customer = { id: id('person'), name: values.name.trim(), phone: values.phone.trim(), balance: values.direction === 'owed-to-us' ? amount : -amount, kind: values.kind, dueDate: values.dueDate || undefined, note: values.note.trim() || undefined };
     updateData(current => ({ ...current, customers: [record, ...current.customers] }));
@@ -361,9 +364,26 @@ function App() {
   };
 
   const saveStock = (values: { name: string; quantity: string; unit: string; threshold: string; cost: string }) => {
-    const record: StockItem = { id: id('stock'), name: values.name.trim(), quantity: Math.max(0, Number(values.quantity) || 0), unit: values.unit.trim() || 'pcs', lowStockAt: Math.max(0, Number(values.threshold) || 0), lastRestocked: today(), costPerUnit: Number(values.cost) || undefined };
+    const itemName = values.name.trim();
+    if (data.stock.some(s => s.name.trim().toLowerCase() === itemName.toLowerCase())) { notify('That item is already tracked. Open its stock card to restock or adjust it.'); return; }
+    const record: StockItem = { id: id('stock'), name: itemName, quantity: Math.max(0, Number(values.quantity) || 0), unit: values.unit.trim() || 'pcs', lowStockAt: Math.max(0, Number(values.threshold) || 0), lastRestocked: today(), costPerUnit: Number(values.cost) || undefined };
     updateData(current => ({ ...current, stock: [record, ...current.stock] }));
     setModal(null); notify(`${record.name} added to stock.`);
+  };
+
+  const saveStockDetails = (item: StockItem, values: { name: string; unit: string; threshold: string; cost: string }) => {
+    const name = values.name.trim();
+    if (!name) { notify('Enter a product name.'); return; }
+    if (data.stock.some(s => s.id !== item.id && s.name.trim().toLowerCase() === name.toLowerCase())) { notify('Another stock item already uses that name.'); return; }
+    updateData(current => ({ ...current, stock: current.stock.map(s => s.id === item.id ? {
+      ...s,
+      name,
+      unit: values.unit.trim() || s.unit,
+      lowStockAt: Math.max(0, Number(values.threshold) || 0),
+      costPerUnit: values.cost.trim() ? Math.max(0, Number(values.cost) || 0) : undefined,
+    } : s) }));
+    setModal(null);
+    notify(`${name} details updated.`);
   };
 
   const updateStock = (item: StockItem, amountValue: string, mode: 'restock' | 'adjust') => {
@@ -449,6 +469,8 @@ function App() {
   };
 
   const sortedTransactions = useMemo(() => [...data.transactions].sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`)), [data.transactions]);
+  const pendingStockItem = pending?.stockItemName ? data.stock.find(s => s.name.toLowerCase() === pending.stockItemName?.toLowerCase()) : undefined;
+  const pendingStockExceedsCount = Boolean(pendingStockItem && pending?.stockQuantityDelta !== undefined && pending.stockQuantityDelta < 0 && Math.abs(pending.stockQuantityDelta) > pendingStockItem.quantity);
 
   return <div className="app-shell">
     <header className="app-header">
@@ -495,7 +517,7 @@ function App() {
               <div className="voice-language-row"><span>Voice language</span><div className="voice-language-options" role="group" aria-label="Voice input language"><button type="button" className={voiceLanguage === 'en-KE' ? 'active' : ''} aria-pressed={voiceLanguage === 'en-KE'} onClick={() => setVoiceLanguage('en-KE')}>English</button><button type="button" className={voiceLanguage === 'sw-KE' ? 'active' : ''} aria-pressed={voiceLanguage === 'sw-KE'} onClick={() => setVoiceLanguage('sw-KE')}>Kiswahili</button></div></div>
               <div className="helper-row"><span><CheckCircle2 size={13} /> Confirm before it’s saved</span><span className="helper-divider" /><span>Works in English & Kiswahili</span></div>
               {pending && <div className="draft-review" aria-live="polite">
-                <div className="flex items-start gap-3"><div className="draft-check"><Check size={17} /></div><div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-[.13em] text-hesabu-green">Review before saving</div><div className="mt-1 text-[13px] font-bold leading-5 text-hesabu-ink">{pending.summary}</div>{pending.type === 'credit' && <div className="mt-1 text-[11px] text-hesabu-muted">Due {dateText(pending.dueDate ?? addDays(today(), 7), { weekday: 'long', day: 'numeric', month: 'short' })}. This will be added to Madeni, not cash received.</div>}{pending.stockQuantityDelta !== undefined && <div className="mt-1 text-[11px] text-hesabu-muted">Stock adjustment: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</div>}</div><button onClick={() => setPending(null)} className="icon-button !h-7 !w-7" aria-label="Dismiss review"><X size={14} /></button></div>
+                <div className="flex items-start gap-3"><div className="draft-check"><Check size={17} /></div><div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-[.13em] text-hesabu-green">Review before saving</div><div className="mt-1 text-[13px] font-bold leading-5 text-hesabu-ink">{pending.summary}</div>{pending.type === 'credit' && <div className="mt-1 text-[11px] text-hesabu-muted">Due {dateText(pending.dueDate ?? addDays(today(), 7), { weekday: 'long', day: 'numeric', month: 'short' })}. This will be added to Madeni, not cash received.</div>}{pending.stockQuantityDelta !== undefined && <div className="mt-1 text-[11px] text-hesabu-muted">Stock adjustment: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</div>}{pendingStockExceedsCount && pendingStockItem && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-[#8D6321]">Only <b>{pendingStockItem.quantity} {pendingStockItem.unit}</b> tracked. Saving will bring this item’s tracked count to zero. Use “Edit details” if the quantity or product is wrong.</div>}</div><button onClick={() => setPending(null)} className="icon-button !h-7 !w-7" aria-label="Dismiss review"><X size={14} /></button></div>
                 <div className="mt-4 grid grid-cols-2 gap-2"><Button onClick={() => applyTransaction(pending)}><Check size={15} /> Confirm & save</Button><Button variant="outline" onClick={() => setModal({ kind: 'edit-draft' })}>Edit details</Button></div>
               </div>}
               <div className="voice-note"><Mic size={15} /><span>Try: “Njeri paid her debt 500” or “Nilinunua mkaa kwa 800”.</span></div>
@@ -535,7 +557,7 @@ function App() {
       </>}
 
       {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const text = `Habari ${customer.name}, nakukumbusha kuhusu deni lako la ${money(customer.balance)} katika ${data.shopInfo.name}. Tafadhali nitumie update ya malipo. Asante.`; window.open(`https://wa.me/${customer.phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); }} />}
-      {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} />}
+      {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} />}
       {section === 'reports' && <ReportsSection data={data} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={shareReport} onCopy={copyReport} />}
     </main>
 
@@ -545,6 +567,7 @@ function App() {
     {modal?.kind === 'payment' && data.customers.find(c => c.id === modal.customerId) && <PaymentModal customer={data.customers.find(c => c.id === modal.customerId)!} onClose={closeModal} onSave={recordPayment} />}
     {modal?.kind === 'stock' && <StockModal onClose={closeModal} onSave={saveStock} />}
     {modal?.kind === 'stock-update' && data.stock.find(s => s.id === modal.itemId) && <StockUpdateModal item={data.stock.find(s => s.id === modal.itemId)!} mode={modal.mode} onClose={closeModal} onSave={updateStock} />}
+    {modal?.kind === 'stock-edit' && data.stock.find(s => s.id === modal.itemId) && <StockEditModal item={data.stock.find(s => s.id === modal.itemId)!} onClose={closeModal} onSave={saveStockDetails} />}
     {modal?.kind === 'reminder' && <ReminderModal onClose={closeModal} onSave={saveReminder} />}
     {modal?.kind === 'profile' && <ProfileModal data={data} onClose={closeModal} onSave={updateProfile} />}
     {modal?.kind === 'settings' && <SettingsModal onClose={closeModal} onReset={resetDemo} onProfile={() => setModal({ kind: 'profile' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} />}
@@ -595,25 +618,25 @@ function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, o
   </>;
 }
 
-function StockSection({ data, query, setQuery, onAdd, onUpdate }: { data: AppData; query: string; setQuery: (v: string) => void; onAdd: () => void; onUpdate: (id: string, mode: 'restock' | 'adjust') => void }) {
+function StockSection({ data, query, setQuery, onAdd, onEdit, onUpdate }: { data: AppData; query: string; setQuery: (v: string) => void; onAdd: () => void; onEdit: (id: string) => void; onUpdate: (id: string, mode: 'restock' | 'adjust') => void }) {
   const [filter, setFilter] = useState<'all' | 'low'>('all');
   const shown = data.stock.filter(s => s.name.toLowerCase().includes(query.toLowerCase())).filter(s => filter === 'all' || s.quantity <= s.lowStockAt).sort((a, b) => (a.quantity / Math.max(1, a.lowStockAt)) - (b.quantity / Math.max(1, b.lowStockAt)));
   return <>
     <SectionTitle eyebrow="WHAT’S ON YOUR SHELVES" title="Bidhaa" detail={`${data.stock.length} items on your shelf. Keep an eye on the ones running low.`} right={<Button onClick={onAdd}><Plus size={16} /> Add item</Button>} />
     <div className="stock-summary-row"><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Items tracked</span><b>{data.stock.length.toString().padStart(2, '0')}</b></div><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Running low</span><b className={lowStockCount(data.stock) ? 'text-[#B8782D]' : 'text-hesabu-green'}>{lowStockCount(data.stock).toString().padStart(2, '0')}</b></div><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Last updated</span><b className="!text-[13px]">Today</b></div></div>
     <div className="stock-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search your stock" /></label><div className="segmented-control"><button className={cn(filter === 'all' && 'segment-active')} onClick={() => setFilter('all')}>All items</button><button className={cn(filter === 'low' && 'segment-active')} onClick={() => setFilter('low')}>Low stock <span className="count-badge">{lowStockCount(data.stock)}</span></button></div></div>
-    {shown.length === 0 ? <section className="surface"><EmptyState title={filter === 'low' ? 'No stock alerts' : 'No matching item'} detail={filter === 'low' ? 'Your quantities are above their reorder levels.' : 'Try another product name or add the item to your shelf list.'} action={filter === 'all' ? <Button onClick={onAdd}><Plus size={15} /> Add item</Button> : undefined} /></section> : <div className="stock-grid">{shown.map(item => <StockCard key={item.id} item={item} onRestock={() => onUpdate(item.id, 'restock')} onAdjust={() => onUpdate(item.id, 'adjust')} />)}</div>}
+    {shown.length === 0 ? <section className="surface"><EmptyState title={filter === 'low' ? 'No stock alerts' : 'No matching item'} detail={filter === 'low' ? 'Your quantities are above their reorder levels.' : 'Try another product name or add the item to your shelf list.'} action={filter === 'all' ? <Button onClick={onAdd}><Plus size={15} /> Add item</Button> : undefined} /></section> : <div className="stock-grid">{shown.map(item => <StockCard key={item.id} item={item} onEdit={() => onEdit(item.id)} onRestock={() => onUpdate(item.id, 'restock')} onAdjust={() => onUpdate(item.id, 'adjust')} />)}</div>}
     <div className="mt-5 flex items-start gap-2 rounded-xl bg-[#EEF4EF] px-4 py-3.5 text-[11px] leading-5 text-[#5F7465]"><CircleHelp size={15} className="mt-0.5 shrink-0" /><span>When a sale or credit includes a known item, Hesabu can adjust its quantity. You can always correct stock counts manually.</span></div>
   </>;
 }
 function lowStockCount(items: StockItem[]) { return items.filter(s => s.quantity <= s.lowStockAt).length; }
 
-function StockCard({ item, onRestock, onAdjust }: { item: StockItem; onRestock: () => void; onAdjust: () => void }) {
+function StockCard({ item, onEdit, onRestock, onAdjust }: { item: StockItem; onEdit: () => void; onRestock: () => void; onAdjust: () => void }) {
   const percent = Math.min(100, Math.max(0, item.quantity / Math.max(item.lowStockAt * 2, 1) * 100));
   const critical = item.quantity <= Math.max(1, Math.floor(item.lowStockAt / 2));
   const low = item.quantity <= item.lowStockAt;
   return <section className="surface stock-card">
-    <div className="flex items-start justify-between gap-2"><div className="stock-product-icon"><Package size={19} strokeWidth={1.7} /></div><StockStatus item={item} /></div>
+    <div className="flex items-start justify-between gap-2"><div className="stock-product-icon"><Package size={19} strokeWidth={1.7} /></div><div className="flex items-center gap-2"><StockStatus item={item} /><button type="button" className="icon-button !h-8 !w-8" onClick={onEdit} aria-label={`Edit ${item.name} details`} title="Edit item details"><Settings2 size={14} /></button></div></div>
     <h3 className="mt-4 font-display text-[16px] font-extrabold tracking-[-.03em]">{item.name}</h3><div className="mt-1 text-[10px] text-hesabu-muted">Last restocked {dateText(item.lastRestocked)}</div>
     <div className="mt-5 flex items-end justify-between gap-2"><div><span className={cn('font-display text-[28px] font-extrabold leading-none tracking-[-.06em]', critical ? 'text-[#B94C46]' : low ? 'text-[#A4762A]' : 'text-hesabu-ink')}>{item.quantity}</span><span className="ml-1.5 text-[11px] font-semibold text-hesabu-muted">{item.unit}</span></div><div className="text-right text-[10px] leading-4 text-hesabu-muted">Reorder at<br /><b className="text-hesabu-ink">{item.lowStockAt} {item.unit}</b></div></div>
     <div className="stock-progress"><span className={cn(critical ? 'progress-critical' : low ? 'progress-low' : 'progress-good')} style={{ width: `${percent}%` }} /></div>
@@ -701,6 +724,22 @@ function StockModal({ onClose, onSave }: { onClose: () => void; onSave: (values:
       <div className="grid grid-cols-2 gap-3"><Field label="Current quantity" value={quantity} onChange={setQuantity} type="number" min={0} required /><Field label="Unit" value={unit} onChange={setUnit} placeholder="pcs, kg, packets" required /></div>
       <div className="grid grid-cols-2 gap-3"><Field label="Reorder at" value={threshold} onChange={setThreshold} type="number" min={0} required /><Field label="Cost per unit (KES)" value={cost} onChange={setCost} type="number" min={0} /></div>
       <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim()}><Plus size={15} /> Add to stock</Button></div>
+    </form>
+  </Modal>;
+}
+
+function StockEditModal({ item, onClose, onSave }: { item: StockItem; onClose: () => void; onSave: (item: StockItem, values: { name: string; unit: string; threshold: string; cost: string }) => void }) {
+  const [name, setName] = useState(item.name);
+  const [unit, setUnit] = useState(item.unit);
+  const [threshold, setThreshold] = useState(String(item.lowStockAt));
+  const [cost, setCost] = useState(item.costPerUnit === undefined ? '' : String(item.costPerUnit));
+  return <Modal title={`Edit ${item.name}`} detail="Update the product name, unit and reorder level. The current shelf count will stay unchanged." onClose={onClose}>
+    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(item, { name, unit, threshold, cost }); }}>
+      <Field label="Product name" value={name} onChange={setName} required autoFocus />
+      <Field label="Unit" value={unit} onChange={setUnit} required placeholder="pcs, kg, packets" />
+      <div className="grid grid-cols-2 gap-3"><Field label="Reorder at" value={threshold} onChange={setThreshold} type="number" min={0} required /><Field label="Cost per unit (KES)" value={cost} onChange={setCost} type="number" min={0} /></div>
+      <div className="rounded-xl bg-hesabu-surface px-3 py-3 text-[11px] leading-5 text-hesabu-muted">Current tracked count: <b>{item.quantity} {item.unit}</b>. Editing the reorder level changes when Hesabu flags it as running low.</div>
+      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || !unit.trim()}><Check size={15} /> Save item details</Button></div>
     </form>
   </Modal>;
 }
