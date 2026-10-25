@@ -17,6 +17,9 @@ jobs:
       - name: Restore the editable source tree
         run: |
           cat .source-parts/part-* | base64 -d | tar -xz -f - -C .
+          # Remove an unused state pair and pass the customer identifier expected by the payment handler.
+          sed -i '/const \[recentSearchOpen, setRecentSearchOpen\] = useState(false);/d' src/App.tsx
+          sed -i 's/onPayment(customer)/onPayment(customer.id)/' src/App.tsx
           rm -rf .source-parts .github/workflows/bootstrap-source.yml
       - name: Install dependencies and verify
         run: |
