@@ -2,7 +2,7 @@ name: Bootstrap Hesabu source bundle
 on:
   push:
     branches: [build/hesabu-ledger-mvp]
-    paths: [hesabu-source.tar.gz]
+    paths: ['.source-parts/READY']
 permissions:
   contents: write
 jobs:
@@ -14,10 +14,10 @@ jobs:
         with:
           ref: build/hesabu-ledger-mvp
           persist-credentials: true
-      - name: Restore normal source tree
+      - name: Restore the editable source tree
         run: |
-          tar -xzf hesabu-source.tar.gz -C .
-          rm -f hesabu-source.tar.gz .github/workflows/bootstrap-source.yml
+          cat .source-parts/part-* | base64 -d | tar -xz -f - -C .
+          rm -rf .source-parts .github/workflows/bootstrap-source.yml
       - name: Install dependencies and verify
         run: |
           npm install --no-audit --no-fund
