@@ -67,6 +67,17 @@ export function makeDemoData(): AppData {
 
 export const STORAGE_KEY = 'hesabu:v1:shop-data';
 
+export function hasSavedData(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as Partial<AppData>;
+    return Boolean(parsed?.shopInfo && Array.isArray(parsed.transactions) && Array.isArray(parsed.customers) && Array.isArray(parsed.stock));
+  } catch {
+    return false;
+  }
+}
+
 export function readSavedData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
