@@ -24,6 +24,15 @@ test('English credit phrase with a payment promise parses the due weekday', () =
   assert.match(draft.summary, /on credit/);
 });
 
+test('multi-unit bread credit reduces stock by the spoken quantity', () => {
+  const draft = parseTransaction('Kamau took 2 loaves bread for 120 bob, pays Friday', data);
+  assert.equal(draft.type, 'credit');
+  assert.equal(draft.amount, 120);
+  assert.equal(draft.stockItemName, 'Mkate');
+  assert.equal(draft.stockQuantityDelta, -2);
+  assert.ok(draft.dueDate);
+});
+
 test('supplier restock is cash out and increases stock', () => {
   const draft = parseTransaction('Supplier alileta mafuta, nililipa 3000', data);
   assert.equal(draft.type, 'expense');
