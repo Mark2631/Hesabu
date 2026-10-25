@@ -38,6 +38,7 @@ type ModalState =
   | { kind: 'profile' }
   | { kind: 'edit-draft' }
   | { kind: 'transaction'; transactionId: string }
+  | { kind: 'edit-transaction'; transactionId: string }
   | { kind: 'settings' }
   | null;
 
@@ -185,6 +186,7 @@ function App() {
   const [pending, setPending] = useState<TransactionDraft | null>(null);
   const [quickText, setQuickText] = useState('');
   const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'unsupported'>('idle');
+  const [voiceLanguage, setVoiceLanguage] = useState<'en-KE' | 'sw-KE'>('en-KE');
   const [typeChoice, setTypeChoice] = useState<TransactionType | 'auto'>('auto');
   const [query, setQuery] = useState('');
   const [debtDirection, setDebtDirection] = useState<'owed-to-us' | 'we-owe'>('owed-to-us');
@@ -278,7 +280,7 @@ function App() {
     if (!Recognition) { setVoiceState('unsupported'); notify('Voice typing is not available in this browser. Type the transaction instead.'); return; }
     try {
       const recognition = new Recognition();
-      recognition.lang = 'en-KE'; recognition.interimResults = false; recognition.maxAlternatives = 1;
+      recognition.lang = voiceLanguage; recognition.interimResults = false; recognition.maxAlternatives = 1;
       setVoiceState('listening');
       recognition.onresult = event => {
         const text = event.results?.[0]?.[0]?.transcript ?? '';
@@ -308,6 +310,36 @@ function App() {
       return { ...current, customers, stock, transactions: current.transactions.filter(t => t.id !== transaction.id) };
     });
     setModal(null); notify('Transaction removed.');
+  };
+
+  const saveTransactionEdit = (transaction: Transaction, values: { description: string; amount: string; date: string; time: string; dueDate: string }) => {
+    const amount = Number(values.amount);
+    if (!Number.isFinite(amount) || amount <= 0) { notify('Amount must be greater than zero.'); return; }
+    if (!values.date || !values.time) { notify('Choose the date and time for this entry.'); return; }
+    const updated: Transaction = {
+      ...transaction,
+      description: values.description.trim() || transaction.description,
+      amount: Math.round(amount),
+      date: values.date,
+      time: values.time,
+      dueDate: values.dueDate || undefined,
+    };
+    const balanceEffect = (tx: Transaction) => {
+      if (tx.type === 'credit') return tx.amount;
+      if (tx.type === 'payment') return -tx.amount;
+      if (tx.type === 'expense' && (tx.category === 'Supplier payment' || tx.category === 'Customer refund')) return tx.amount;
+      return 0;
+    };
+    const balanceAdjustment = balanceEffect(updated) - balanceEffect(transaction);
+    updateData(current => ({
+      ...current,
+      customers: transaction.customerId && balanceAdjustment !== 0
+        ? current.customers.map(c => c.id === transaction.customerId ? { ...c, balance: c.balance + balanceAdjustment } : c)
+        : current.customers,
+      transactions: current.transactions.map(tx => tx.id === transaction.id ? updated : tx),
+    }));
+    setModal(null);
+    notify('Transaction details updated. Account balances were adjusted.');
   };
 
   const addCustomer = (values: { name: string; phone: string; balance: string; direction: 'owed-to-us' | 'we-owe'; kind: 'customer' | 'supplier'; dueDate: string; note: string }) => {
@@ -380,7 +412,7 @@ function App() {
     const blob = new Blob([contents], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = filename;
-    document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1200);
   };
   const exportBackup = () => {
     downloadFile(`hesabu-backup-${today()}.json`, JSON.stringify(data, null, 2), 'application/json');
@@ -460,6 +492,7 @@ function App() {
                 <label className="quick-input-wrap"><span className="sr-only">Describe the transaction</span><input value={quickText} onChange={e => setQuickText(e.target.value)} placeholder="e.g. Kamau alichukua sukari ya 120" className="quick-input" /><button type="button" className={cn('mic-button', voiceState === 'listening' && 'mic-button-listening')} onClick={startVoice} aria-label="Record by voice">{voiceState === 'listening' ? <span className="listening-dot" /> : <Mic2 size={19} />}</button></label>
                 <div className="mt-2 flex flex-col gap-2 sm:flex-row"><Button type="submit" className="flex-1">Review transaction <ArrowRight size={16} /></Button><Button variant="secondary" onClick={() => { setQuickText(''); setPending(null); setTypeChoice('auto'); }} className="sm:!w-[100px]">Clear</Button></div>
               </form>
+              <div className="voice-language-row"><span>Voice language</span><div className="voice-language-options" role="group" aria-label="Voice input language"><button type="button" className={voiceLanguage === 'en-KE' ? 'active' : ''} aria-pressed={voiceLanguage === 'en-KE'} onClick={() => setVoiceLanguage('en-KE')}>English</button><button type="button" className={voiceLanguage === 'sw-KE' ? 'active' : ''} aria-pressed={voiceLanguage === 'sw-KE'} onClick={() => setVoiceLanguage('sw-KE')}>Kiswahili</button></div></div>
               <div className="helper-row"><span><CheckCircle2 size={13} /> Confirm before it’s saved</span><span className="helper-divider" /><span>Works in English & Kiswahili</span></div>
               {pending && <div className="draft-review" aria-live="polite">
                 <div className="flex items-start gap-3"><div className="draft-check"><Check size={17} /></div><div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-[.13em] text-hesabu-green">Review before saving</div><div className="mt-1 text-[13px] font-bold leading-5 text-hesabu-ink">{pending.summary}</div>{pending.type === 'credit' && <div className="mt-1 text-[11px] text-hesabu-muted">Due {dateText(pending.dueDate ?? addDays(today(), 7), { weekday: 'long', day: 'numeric', month: 'short' })}. This will be added to Madeni, not cash received.</div>}{pending.stockQuantityDelta !== undefined && <div className="mt-1 text-[11px] text-hesabu-muted">Stock adjustment: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</div>}</div><button onClick={() => setPending(null)} className="icon-button !h-7 !w-7" aria-label="Dismiss review"><X size={14} /></button></div>
@@ -516,7 +549,8 @@ function App() {
     {modal?.kind === 'profile' && <ProfileModal data={data} onClose={closeModal} onSave={updateProfile} />}
     {modal?.kind === 'settings' && <SettingsModal onClose={closeModal} onReset={resetDemo} onProfile={() => setModal({ kind: 'profile' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} />}
     {modal?.kind === 'edit-draft' && pending && <EditDraftModal draft={pending} items={data.stock} onClose={closeModal} onSave={editDraft} />}
-    {modal?.kind === 'transaction' && data.transactions.find(t => t.id === modal.transactionId) && <TransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} customer={data.customers.find(c => c.id === data.transactions.find(t => t.id === modal.transactionId)?.customerId)} onClose={closeModal} onDelete={deleteTransaction} />}
+    {modal?.kind === 'transaction' && data.transactions.find(t => t.id === modal.transactionId) && <TransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} customer={data.customers.find(c => c.id === data.transactions.find(t => t.id === modal.transactionId)?.customerId)} onClose={closeModal} onEdit={transaction => setModal({ kind: 'edit-transaction', transactionId: transaction.id })} onDelete={deleteTransaction} />}
+    {modal?.kind === 'edit-transaction' && data.transactions.find(t => t.id === modal.transactionId) && <EditTransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} onClose={closeModal} onSave={saveTransactionEdit} />}
     <Toast message={toastMessage} onClose={closeToast} />
   </div>;
 }
@@ -557,7 +591,7 @@ function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, o
         </div>;
       })}
     </section>
-    <p className="mx-auto mt-5 max-w-xl text-center text-[10px] leading-4 text-hesabu-muted">A credit adds to the amount owed. A repayment reduces it. Edit or reverse a transaction if the entry was wrong.</p>
+    <p className="mx-auto mt-5 max-w-xl text-center text-[10px] leading-4 text-hesabu-muted">A credit adds to the amount owed. A repayment reduces it. Open a transaction to correct its description, amount or date; delete and re-enter it to change its type or linked person.</p>
   </>;
 }
 
@@ -734,12 +768,34 @@ function EditDraftModal({ draft, items, onClose, onSave }: { draft: TransactionD
   </Modal>;
 }
 
-function TransactionModal({ transaction, customer, onClose, onDelete }: { transaction: Transaction; customer?: Customer; onClose: () => void; onDelete: (tx: Transaction) => void }) {
+function EditTransactionModal({ transaction, onClose, onSave }: { transaction: Transaction; onClose: () => void; onSave: (transaction: Transaction, values: { description: string; amount: string; date: string; time: string; dueDate: string }) => void }) {
+  const [description, setDescription] = useState(transaction.description);
+  const [amount, setAmount] = useState(String(transaction.amount));
+  const [date, setDate] = useState(transaction.date);
+  const [time, setTime] = useState(transaction.time);
+  const [dueDate, setDueDate] = useState(transaction.dueDate ?? '');
+  return <Modal title="Correct transaction" detail="The original transaction type, linked person and stock movement stay unchanged. To change those, delete this record and add it again." onClose={onClose}>
+    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(transaction, { description, amount, date, time, dueDate }); }}>
+      <Field label="Description" value={description} onChange={setDescription} required autoFocus />
+      <Field label="Amount (KES)" value={amount} onChange={setAmount} type="number" min={1} required inputMode="numeric" />
+      <div className="grid grid-cols-2 gap-3"><Field label="Date" value={date} onChange={setDate} type="date" required /><Field label="Time" value={time} onChange={setTime} type="time" required /></div>
+      {transaction.type === 'credit' && <Field label="Due date (optional)" value={dueDate} onChange={setDueDate} type="date" />}
+      <div className="rounded-xl border border-hesabu-line bg-hesabu-surface px-3 py-3 text-[11px] leading-5 text-hesabu-muted">
+        {transaction.customerId && (transaction.type === 'credit' || transaction.type === 'payment' || transaction.category === 'Supplier payment' || transaction.category === 'Customer refund')
+          ? 'Changing the amount will adjust the linked customer or supplier balance.'
+          : 'Changing the date will move this entry between report periods.'}
+      </div>
+      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!description.trim() || Number(amount) <= 0 || !date || !time}><Check size={15} /> Save correction</Button></div>
+    </form>
+  </Modal>;
+}
+
+function TransactionModal({ transaction, customer, onClose, onEdit, onDelete }: { transaction: Transaction; customer?: Customer; onClose: () => void; onEdit: (tx: Transaction) => void; onDelete: (tx: Transaction) => void }) {
   const Icon = TYPE_META[transaction.type].icon;
   return <Modal title="Transaction details" detail={shortDay(transaction.date)} onClose={onClose}>
     <div className="transaction-detail-card"><div className={cn('transaction-detail-icon', TYPE_TONE[transaction.type])}><Icon size={22} /></div><div className="mt-4 text-[10px] font-bold uppercase tracking-[.14em] text-hesabu-muted">{TYPE_META[transaction.type].label}</div><div className={cn('mt-1 font-display text-[28px] font-extrabold tracking-[-.06em]', `amount-${transaction.type}`)}>{transaction.type === 'expense' ? '−' : transaction.type === 'credit' ? '' : '+'}{money(transaction.amount)}</div><div className="mt-2 text-sm font-bold">{transaction.description}</div><div className="mt-1 text-[11px] text-hesabu-muted">{dateText(transaction.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} at {timeText(transaction.time)}</div></div>
     <div className="mt-4 space-y-3">{transaction.customerName && <div className="detail-line"><span>Person</span><b>{transaction.customerName}</b></div>}{transaction.dueDate && <div className="detail-line"><span>Due date</span><b>{dateText(transaction.dueDate, { weekday: 'short', day: 'numeric', month: 'short' })}</b></div>}{transaction.category && <div className="detail-line"><span>Category</span><b>{transaction.category}</b></div>}{transaction.stockQuantityDelta !== undefined && <div className="detail-line"><span>Stock adjustment</span><b>{transaction.stockQuantityDelta > 0 ? '+' : ''}{transaction.stockQuantityDelta} item(s)</b></div>}{customer && <div className="detail-line"><span>Remaining balance</span><b>{money(customer.balance)}</b></div>}</div>
-    <div className="mt-5 flex justify-between gap-2"><Button variant="secondary" onClick={onClose}>Close</Button><Button variant="danger" onClick={() => onDelete(transaction)}><Trash2 size={15} /> Delete entry</Button></div>
+    <div className="mt-5 grid grid-cols-2 gap-2"><Button variant="secondary" onClick={onClose}>Close</Button><Button variant="outline" onClick={() => onEdit(transaction)}><Settings2 size={15} /> Edit details</Button><Button variant="danger" className="col-span-2" onClick={() => onDelete(transaction)}><Trash2 size={15} /> Delete entry</Button></div>
   </Modal>;
 }
 
