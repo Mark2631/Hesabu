@@ -1,1 +1,1 @@
-All nine archive chunks pass integrity checks. Restore the source tree and run tests/build.
+Source archive integrity verified. Apply the strict TypeScript fixes and run tests/build.
