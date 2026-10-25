@@ -2,6 +2,10 @@
 
 Hesabu is a mobile-first, voice-friendly micro-ledger for Kenyan small shops. It is designed around the way a shopkeeper actually works: record a cash sale or goods taken on credit, keep a clear balance for each customer or supplier, notice low stock, remember bills and follow-ups, and send a daily summary without doing sums at closing time.
 
+## Preview
+
+Open the latest preview at https://hesabu-9zbnxltal-marksanchez2631-1753s-projects.vercel.app. It is a noindex preview deployment, not the production release.
+
 ## Run locally
 
 Install Node.js 22 or newer, then run `npm install`, `npm run dev`, `npm test`, and `npm run build`.
@@ -9,7 +13,8 @@ Install Node.js 22 or newer, then run `npm install`, `npm run dev`, `npm test`, 
 ## What works in this MVP
 
 - Quick transaction entry in English or Kiswahili with confirm-before-save review.
-- Browser speech recognition where the browser supports it, with typed entry as the fallback.
+- Browser speech recognition where supported, with English (Kenya) and Kiswahili voice-language choices and typed entry as the fallback.
+- Correction of saved transaction descriptions, amounts, dates, times and credit due dates, with linked balance adjustments.
 - Cash sale, credit given, expense, and debt-payment records.
 - Customer and supplier account balances, transaction history, repayment recording, and WhatsApp debt reminders.
 - Stock quantities, low-stock thresholds, restocking and quantity corrections.
