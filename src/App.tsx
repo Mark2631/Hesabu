@@ -162,14 +162,14 @@ function ActivityProgress({ transactions }: { transactions: Transaction[] }) {
   </div>;
 }
 
-function ReminderLine({ reminder, onDone }: { reminder: Reminder; onDone: () => void }) {
+function ReminderLine({ reminder, onDone, onEdit }: { reminder: Reminder; onDone: () => void; onEdit: () => void }) {
   const days = daysUntil(reminder.dueDate);
   const due = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `Due ${shortDay(reminder.dueDate)}`;
   const Icon = reminder.kind === 'bill' ? ReceiptText : reminder.kind === 'supplier' ? Store : reminder.kind === 'customer' ? Users : Bell;
   return <div className={cn('reminder-row', reminder.done && 'opacity-55')}>
     <div className={cn('reminder-icon', days <= 1 && !reminder.done ? 'reminder-icon-due' : '')}><Icon size={16} /></div>
     <div className="min-w-0 flex-1"><div className="truncate text-[12px] font-bold">{reminder.title}</div><div className="mt-1 text-[10px] text-hesabu-muted">{reminder.amount ? `${money(reminder.amount)} · ` : ''}{due}</div></div>
-    {reminder.done ? <span className="small-check"><Check size={13} /></span> : <button className="tiny-done" onClick={onDone} title="Mark as done"><Check size={14} /></button>}
+    <button className="icon-button !h-7 !w-7" onClick={onEdit} title="Edit reminder" aria-label={`Edit reminder: ${reminder.title}`}><Settings2 size={13} /></button>{reminder.done ? <button className="tiny-done" onClick={onDone} title="Reopen reminder" aria-label={`Reopen reminder: ${reminder.title}`}><RotateCcw size={13} /></button> : <button className="tiny-done" onClick={onDone} title="Mark as done" aria-label={`Mark reminder as done: ${reminder.title}`}><Check size={14} /></button>}
   </div>;
 }
 
@@ -213,7 +213,8 @@ function App() {
   const todaysCredit = useMemo(() => creditGiven(todayTransactions), [todayTransactions]);
   const outstanding = useMemo(() => data.customers.filter(c => c.balance > 0).reduce((sum, c) => sum + c.balance, 0), [data.customers]);
   const lowStock = useMemo(() => data.stock.filter(s => s.quantity <= s.lowStockAt), [data.stock]);
-  const activeReminders = useMemo(() => data.reminders.filter(r => !r.done).sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [data.reminders]);
+  const allReminders = useMemo(() => [...data.reminders].sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [data.reminders]);
+  const activeReminders = useMemo(() => allReminders.filter(r => !r.done), [allReminders]);
   const report = useMemo(() => buildReport(data, reportPeriod, reportDate), [data, reportPeriod, reportDate]);
 
   const navigate = (next: Section) => {
@@ -392,10 +393,16 @@ function App() {
     setModal(null); notify(mode === 'restock' ? `${item.name} stock updated.` : `${item.name} quantity adjusted.`);
   };
 
-  const saveReminder = (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }) => {
-    const reminder: Reminder = { id: id('rem'), title: values.title.trim(), detail: values.detail.trim(), amount: Number(values.amount) || undefined, dueDate: values.dueDate || today(), kind: values.kind, done: false };
-    updateData(current => ({ ...current, reminders: [reminder, ...current.reminders] }));
-    setModal(null); notify('Reminder added.');
+  const saveReminder = (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }, existing?: Reminder) => {
+    const reminder: Reminder = { id: existing?.id ?? id('rem'), title: values.title.trim(), detail: values.detail.trim(), amount: values.amount.trim() ? Math.max(0, Number(values.amount) || 0) : undefined, dueDate: values.dueDate || today(), kind: values.kind, done: existing?.done ?? false };
+    updateData(current => ({ ...current, reminders: existing ? current.reminders.map(r => r.id === existing.id ? reminder : r) : [reminder, ...current.reminders] }));
+    setModal(null); notify(existing ? 'Reminder updated.' : 'Reminder added.');
+  };
+
+  const deleteReminder = (reminder: Reminder) => {
+    if (!window.confirm(`Delete reminder “${reminder.title}”? This cannot be undone.`)) return;
+    updateData(current => ({ ...current, reminders: current.reminders.filter(r => r.id !== reminder.id) }));
+    setModal(null); notify('Reminder deleted.');
   };
 
   const toggleReminder = (reminder: Reminder) => {
@@ -542,7 +549,7 @@ function App() {
 
             <section className="surface aside-surface">
               <div className="section-heading-row !items-start"><div><div className="eyebrow">DON’T FORGET</div><h2 className="surface-title mt-1">Coming up</h2></div><button className="icon-button" onClick={() => setModal({ kind: 'reminder' })} aria-label="Add reminder"><Plus size={18} /></button></div>
-              {activeReminders.length ? <div className="mt-2">{(showAllReminders ? activeReminders : activeReminders.slice(0, 3)).map(reminder => <ReminderLine key={reminder.id} reminder={reminder} onDone={() => toggleReminder(reminder)} />)}</div> : <p className="py-4 text-xs text-hesabu-muted">You’re all caught up.</p>}
+              {(showAllReminders ? allReminders : activeReminders.slice(0, 3)).length ? <div className="mt-2">{(showAllReminders ? allReminders : activeReminders.slice(0, 3)).map(reminder => <ReminderLine key={reminder.id} reminder={reminder} onDone={() => toggleReminder(reminder)} onEdit={() => setModal({ kind: 'reminder', reminder })} />)}</div> : <p className="py-4 text-xs text-hesabu-muted">{allReminders.length ? 'You’re all caught up. Open all reminders to review completed items.' : 'No reminders yet. Add a bill or follow-up so it doesn’t get forgotten.'}</p>}
               <div className="mt-3 flex items-center justify-between border-t border-hesabu-line pt-3"><button onClick={() => setShowAllReminders(v => !v)} className="text-action">{showAllReminders ? 'Show fewer' : 'All reminders'} <ArrowRight size={13} /></button><button onClick={() => setModal({ kind: 'reminder' })} className="text-action">Add new <Plus size={13} /></button></div>
             </section>
 
@@ -568,7 +575,7 @@ function App() {
     {modal?.kind === 'stock' && <StockModal onClose={closeModal} onSave={saveStock} />}
     {modal?.kind === 'stock-update' && data.stock.find(s => s.id === modal.itemId) && <StockUpdateModal item={data.stock.find(s => s.id === modal.itemId)!} mode={modal.mode} onClose={closeModal} onSave={updateStock} />}
     {modal?.kind === 'stock-edit' && data.stock.find(s => s.id === modal.itemId) && <StockEditModal item={data.stock.find(s => s.id === modal.itemId)!} onClose={closeModal} onSave={saveStockDetails} />}
-    {modal?.kind === 'reminder' && <ReminderModal onClose={closeModal} onSave={saveReminder} />}
+    {modal?.kind === 'reminder' && <ReminderModal reminder={modal.reminder} onClose={closeModal} onSave={values => saveReminder(values, modal.reminder)} onDelete={deleteReminder} />}
     {modal?.kind === 'profile' && <ProfileModal data={data} onClose={closeModal} onSave={updateProfile} />}
     {modal?.kind === 'settings' && <SettingsModal onClose={closeModal} onReset={resetDemo} onProfile={() => setModal({ kind: 'profile' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} />}
     {modal?.kind === 'edit-draft' && pending && <EditDraftModal draft={pending} items={data.stock} onClose={closeModal} onSave={editDraft} />}
@@ -755,15 +762,15 @@ function StockUpdateModal({ item, mode, onClose, onSave }: { item: StockItem; mo
   </Modal>;
 }
 
-function ReminderModal({ onClose, onSave }: { onClose: () => void; onSave: (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }) => void }) {
-  const [title, setTitle] = useState(''); const [detail, setDetail] = useState(''); const [amount, setAmount] = useState(''); const [dueDate, setDueDate] = useState(today()); const [kind, setKind] = useState<Reminder['kind']>('bill');
-  return <Modal title="Add a reminder" detail="A bill, supplier follow-up or a customer you need to call." onClose={onClose}>
+function ReminderModal({ reminder, onClose, onSave, onDelete }: { reminder?: Reminder; onClose: () => void; onSave: (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }) => void; onDelete: (reminder: Reminder) => void }) {
+  const [title, setTitle] = useState(reminder?.title ?? ''); const [detail, setDetail] = useState(reminder?.detail ?? ''); const [amount, setAmount] = useState(reminder?.amount === undefined ? '' : String(reminder.amount)); const [dueDate, setDueDate] = useState(reminder?.dueDate ?? today()); const [kind, setKind] = useState<Reminder['kind']>(reminder?.kind ?? 'bill');
+  return <Modal title={reminder ? 'Edit reminder' : 'Add a reminder'} detail="A bill, supplier follow-up or a customer you need to call." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ title, detail, amount, dueDate, kind }); }}>
       <Field label="Reminder" value={title} onChange={setTitle} placeholder="e.g. Pay electricity tokens" required autoFocus />
       <SelectField label="Type" value={kind} onChange={v => setKind(v as Reminder['kind'])} options={[{ value: 'bill', label: 'Bill / expense' }, { value: 'supplier', label: 'Supplier' }, { value: 'customer', label: 'Customer follow-up' }, { value: 'other', label: 'Other' }]} />
       <div className="grid grid-cols-2 gap-3"><Field label="Amount (optional)" value={amount} onChange={setAmount} type="number" min={0} placeholder="KES" /><Field label="Due date" value={dueDate} onChange={setDueDate} type="date" required /></div>
       <Field label="Details (optional)" value={detail} onChange={setDetail} placeholder="Any extra detail" />
-      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!title.trim()}><Bell size={15} /> Save reminder</Button></div>
+      <div className="modal-actions">{reminder && <Button variant="danger" onClick={() => onDelete(reminder)}><Trash2 size={14} /> Delete</Button>}<div className="ml-auto flex gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!title.trim()}><Check size={15} /> {reminder ? 'Save changes' : 'Save reminder'}</Button></div></div>
     </form>
   </Modal>;
 }
