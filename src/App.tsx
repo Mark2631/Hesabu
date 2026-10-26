@@ -21,7 +21,7 @@ const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
 const TYPE_META: Record<TransactionType, { label: string; swahili: string; icon: LucideIcon; hint: string }> = {
   sale: { label: 'Cash sale', swahili: 'Mauzo', icon: ArrowDownLeft, hint: 'Cash or M-Pesa received' },
   credit: { label: 'Credit given', swahili: 'Deni', icon: HandCoins, hint: 'Someone takes goods and pays later' },
-  expense: { label: 'Expense', swahili: 'Matumizi', icon: ArrowUpRight, hint: 'Stock, bills or day-to-day costs' },
+  expense: { label: 'Expense', swahili: 'Expenses', icon: ArrowUpRight, hint: 'Stock, bills or day-to-day costs' },
   payment: { label: 'Debt payment', swahili: 'Malipo ya deni', icon: Wallet, hint: 'A customer pays what they owe' },
 };
 
@@ -359,11 +359,11 @@ function App() {
 
   const addCustomer = (values: { name: string; phone: string; balance: string; direction: 'owed-to-us' | 'we-owe'; kind: 'customer' | 'supplier'; dueDate: string; note: string }) => {
     const personName = values.name.trim();
-    if (data.customers.some(c => c.name.trim().toLowerCase() === personName.toLowerCase())) { notify('A person with that name is already in Madeni. Open their existing record instead.'); return; }
+    if (data.customers.some(c => c.name.trim().toLowerCase() === personName.toLowerCase())) { notify('A person with that name is already saved. Open their existing record instead.'); return; }
     const amount = Math.max(0, Number(values.balance) || 0);
     const record: Customer = { id: id('person'), name: values.name.trim(), phone: values.phone.trim(), balance: values.direction === 'owed-to-us' ? amount : -amount, kind: values.kind, dueDate: values.dueDate || undefined, note: values.note.trim() || undefined };
     updateData(current => ({ ...current, customers: [record, ...current.customers] }));
-    setModal(null); notify('Contact added to Madeni.');
+    setModal(null); notify('Contact added.');
   };
 
   const recordPayment = (customer: Customer, amountValue: string, note: string) => {
@@ -627,7 +627,7 @@ function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, o
   const customerList = data.customers.filter(c => direction === 'owed-to-us' ? c.balance > 0 : c.balance < 0).filter(c => `${c.name} ${c.phone}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
   const total = customerList.reduce((sum, c) => sum + Math.abs(c.balance), 0);
   return <>
-    <SectionTitle eyebrow="THE CREDIT BOOK" title="Madeni" detail="Know who owes you, who you owe, and what needs following up." right={<Button onClick={onAdd}><Plus size={16} /> Add person</Button>} />
+    <SectionTitle eyebrow="THE CREDIT BOOK" title="Customer & supplier balances" detail="Know who owes you, who you owe, and what needs following up." right={<Button onClick={onAdd}><Plus size={16} /> Add person</Button>} />
     <div className="debt-overview"><div><div className="text-[10px] font-bold uppercase tracking-[.12em] text-[#B9D8C2]">{direction === 'owed-to-us' ? 'Owed to your shop' : 'Owed by your shop'}</div><div className="mt-2 font-display text-[28px] font-extrabold tracking-[-.06em] text-white">{money(total)}</div><div className="mt-1 text-[11px] text-[#C0D7C7]">{customerList.length} {customerList.length === 1 ? 'person' : 'people'} on this list</div></div><div className="debt-overview-mark"><HandCoins size={27} strokeWidth={1.6} /></div></div>
     <div className="section-tabs mt-5" role="tablist"><button role="tab" aria-selected={direction === 'owed-to-us'} className={cn(direction === 'owed-to-us' && 'section-tab-active')} onClick={() => setDirection('owed-to-us')}>Wananidai <span>{data.customers.filter(c => c.balance > 0).length}</span></button><button role="tab" aria-selected={direction === 'we-owe'} className={cn(direction === 'we-owe' && 'section-tab-active')} onClick={() => setDirection('we-owe')}>Ninawadai <span>{data.customers.filter(c => c.balance < 0).length}</span></button></div>
     <div className="debt-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search a name or phone number" /></label><div className="text-[11px] font-medium text-hesabu-muted">Sorted by amount</div></div>
@@ -702,9 +702,9 @@ function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDat
           <div className="wa-date-divider"><span>{dateText(reportDate, { weekday: 'short', day: 'numeric', month: 'short' })}</span></div>
           <div className="wa-message">
             <div className="flex items-center gap-2"><span className="report-symbol"><TrendingUp size={16} /></span><div><div className="text-[10px] font-bold uppercase tracking-[.1em] text-[#6B8172]">{data.shopInfo.name}</div><h3 className="mt-0.5 font-display text-[18px] font-extrabold tracking-[-.04em]">{periodLabel}</h3></div></div>
-            <div className="wa-metric-list"><div><span><ArrowDownRight size={14} /> Pesa iliyoingia</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div><div><span><ArrowUpRight size={14} /> Matumizi</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div><div><span><Wallet size={14} /> Net cash</span><b>{money(report.net)}</b></div><div><span><HandCoins size={14} /> Madeni mapya</span><b className="text-[#A4762A]">{money(report.credit)}</b></div></div>
-            <div className="wa-divider" /><div className="wa-subhead"><Users size={15} /> Madeni mapya</div>
-            {report.transactions.filter(t => t.type === 'credit').length ? <div className="wa-list">{report.transactions.filter(t => t.type === 'credit').slice(0, 4).map(t => <div key={t.id}><span>{t.customerName ?? 'Customer'}{t.dueDate ? ` · ${dateText(t.dueDate)}` : ''}</span><b>{money(t.amount)}</b></div>)}</div> : <p className="wa-muted-line">Hakuna madeni mapya kwa kipindi hiki.</p>}
+            <div className="wa-metric-list"><div><span><ArrowDownRight size={14} /> Money received</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div><div><span><ArrowUpRight size={14} /> Expenses</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div><div><span><Wallet size={14} /> Net cash</span><b>{money(report.net)}</b></div><div><span><HandCoins size={14} /> New credit sales</span><b className="text-[#A4762A]">{money(report.credit)}</b></div></div>
+            <div className="wa-divider" /><div className="wa-subhead"><Users size={15} /> New credit sales</div>
+            {report.transactions.filter(t => t.type === 'credit').length ? <div className="wa-list">{report.transactions.filter(t => t.type === 'credit').slice(0, 4).map(t => <div key={t.id}><span>{t.customerName ?? 'Customer'}{t.dueDate ? ` · ${dateText(t.dueDate)}` : ''}</span><b>{money(t.amount)}</b></div>)}</div> : <p className="wa-muted-line">No credit sales in this period.</p>}
             <div className="wa-divider" /><div className="wa-subhead"><Bell size={15} /> Vitu vya kufuatilia</div>
             {report.lowStock.length || report.due.length ? <div className="wa-list wa-alert-list">{report.lowStock.slice(0, 3).map(item => <div key={item.id}><span>{item.name} is running low ({item.quantity} {item.unit})</span><b>Restock</b></div>)}{report.due.slice(0, 3).map(rem => <div key={rem.id}><span>{rem.title}{rem.amount ? ` · ${money(rem.amount)}` : ''}</span><b>{daysUntil(rem.dueDate) < 0 ? 'Overdue' : daysUntil(rem.dueDate) === 0 ? 'Today' : dateText(rem.dueDate)}</b></div>)}</div> : <p className="wa-muted-line">Stock na bills ziko sawa.</p>}
             <div className="mt-4 rounded-lg bg-[#EEF6EF] px-3 py-2.5 text-[11px] leading-5 text-[#55725F]">Your records are up to date. Keep the day moving.</div><div className="mt-2 flex justify-end text-[9px] text-[#8EA496]">Hesabu · preview</div>
