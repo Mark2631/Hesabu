@@ -12,10 +12,10 @@ import type { AppData, Customer, Reminder, Section, StockItem, Transaction, Tran
 import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, fullDateText, id, money, parseTransaction, shortDay, timeText, today, transactionLabel } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
-  { id: 'home', label: 'Nyumbani', icon: House },
-  { id: 'debts', label: 'Madeni', icon: Users },
-  { id: 'stock', label: 'Bidhaa', icon: Package },
-  { id: 'reports', label: 'Ripoti', icon: FileText },
+  { id: 'home', label: 'Home', icon: House },
+  { id: 'debts', label: 'Customers', icon: Users },
+  { id: 'stock', label: 'Inventory', icon: Package },
+  { id: 'reports', label: 'Reports', icon: FileText },
 ];
 
 const TYPE_META: Record<TransactionType, { label: string; swahili: string; icon: LucideIcon; hint: string }> = {
@@ -47,8 +47,8 @@ function cn(...classes: Array<string | undefined | null | false>) { return class
 
 function Logo({ compact = false }: { compact?: boolean }) {
   return <div className="flex min-w-0 items-center gap-3">
-    <div className="brand-mark" aria-hidden="true"><span /><span /><span /></div>
-    {!compact && <div className="min-w-0"><div className="font-display text-[18px] font-extrabold tracking-[-.055em] text-hesabu-ink">hesabu<span className="text-hesabu-green">.</span></div><div className="-mt-0.5 text-[10px] font-medium tracking-[.03em] text-hesabu-muted">Your shop, in order.</div></div>}
+    <div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M9 9v22M9 20h22M31 9v22" stroke="currentColor" strokeWidth="4.1" strokeLinecap="round"/><circle cx="31" cy="9" r="3.2" fill="#F3AC63" /></svg></div>
+    {!compact && <div className="min-w-0"><div className="font-display text-[18px] font-extrabold tracking-[-.055em] text-hesabu-ink">hesabu<span className="text-hesabu-green">.</span></div><div className="-mt-0.5 text-[10px] font-medium tracking-[.03em] text-hesabu-muted">Business, in balance.</div></div>}
   </div>;
 }
 
@@ -188,7 +188,7 @@ function App() {
   const [pending, setPending] = useState<TransactionDraft | null>(null);
   const [quickText, setQuickText] = useState('');
   const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'unsupported'>('idle');
-  const [voiceLanguage, setVoiceLanguage] = useState<'en-KE' | 'sw-KE'>('en-KE');
+  const voiceLanguage = 'en-KE';
   const [typeChoice, setTypeChoice] = useState<TransactionType | 'auto'>('auto');
   const [query, setQuery] = useState('');
   const [debtDirection, setDebtDirection] = useState<'owed-to-us' | 'we-owe'>('owed-to-us');
@@ -509,42 +509,55 @@ function App() {
 
     <main className="app-main">
       {section === 'home' && <>
+
         <section className="welcome-row">
-          <div><div className="eyebrow"><span className="live-dot" /> {fullDateText()}</div><h1 className="welcome-title">Habari, {data.shopInfo.owner || 'rafiki'}.</h1><p className="welcome-copy">Hii ndiyo hali ya duka lako leo.</p></div>
-          <button className="today-pill" onClick={() => { setReportDate(today()); setReportPeriod('daily'); navigate('reports'); }}><CalendarDays size={15} /><span>Leo</span><ArrowRight size={13} /></button>
+          <div><div className="eyebrow">{fullDateText()}</div><h1 className="welcome-title">Business overview</h1><p className="welcome-copy">{data.shopInfo.name} · {data.shopInfo.owner ? `Welcome, ${data.shopInfo.owner}` : 'Your daily overview'}</p></div>
+          <button className="today-pill" onClick={() => { setReportDate(today()); setReportPeriod('daily'); navigate('reports'); }}><CalendarDays size={15}/><span>Today's report</span><ArrowRight size={13}/></button>
         </section>
-
-        <section className="metrics-grid" aria-label="Today's totals">
-          <Metric label="Pesa imeingia" value={todaysIn} hint="Cash sales + debt payments" tone="green" icon={TrendingUp} />
-          <Metric label="Matumizi" value={todaysOut} hint="Money paid out today" tone="red" icon={TrendingDown} />
-          <Metric label="Madeni mapya" value={todaysCredit} hint="Goods taken on credit" tone="amber" icon={HandCoins} />
+        <section className="balance-panel" aria-label="Today's net cash position">
+          <div className="balance-panel-copy"><span className="balance-eyebrow"><span className="balance-status"/> TODAY'S NET CASH</span><div className="balance-total">{money(todaysIn - todaysOut)}</div><div className="balance-caption">Cash received less expenses recorded today</div></div>
+          <div className="balance-panel-bottom"><div><span>Money in</span><strong>+{money(todaysIn)}</strong></div><span className="balance-divider"/><div><span>Money out</span><strong>−{money(todaysOut)}</strong></div><button aria-label="Open financial reports" className="balance-view" onClick={() => navigate('reports')}><ArrowUpRight size={19}/></button></div>
         </section>
-
+        <section className="action-panel" aria-label="Quick actions"><div className="action-panel-top"><strong>Quick actions</strong><span>Your everyday tools</span></div>
+          <div className="quick-actions">
+            <button onClick={() => {setTypeChoice('sale'); document.getElementById('transaction-entry')?.scrollIntoView({behavior:'smooth'});}}><span className="qa-icon qa-sale"><ArrowDownLeft size={21}/></span><span>Record sale</span></button>
+            <button onClick={() => {setTypeChoice('expense'); document.getElementById('transaction-entry')?.scrollIntoView({behavior:'smooth'});}}><span className="qa-icon qa-expense"><ReceiptText size={21}/></span><span>Add expense</span></button>
+            <button onClick={() => navigate('stock')}><span className="qa-icon qa-stock"><Package size={21}/></span><span>Inventory</span></button>
+            <button onClick={() => navigate('reports')}><span className="qa-icon qa-reports"><FileSpreadsheet size={21}/></span><span>Reports</span></button>
+            <button onClick={() => navigate('debts')}><span className="qa-icon qa-customers"><Users size={21}/></span><span>Customers</span></button>
+            <button onClick={shareReport}><span className="qa-icon qa-whatsapp"><Share2 size={21}/></span><span>WhatsApp</span></button>
+          </div>
+        </section>
+        <section className="metrics-grid" aria-label="Today's accounting summary">
+          <Metric label="Cash sales" value={todayTransactions.filter(t => t.type === 'sale').reduce((sum,t) => sum + t.amount, 0)} hint="Sales paid today" tone="green" icon={TrendingUp}/>
+          <Metric label="Expenses" value={todaysOut} hint="Money paid out" tone="red" icon={TrendingDown}/>
+          <Metric label="Credit sales" value={todaysCredit} hint="Not yet collected" tone="amber" icon={HandCoins}/>
+        </section>
         <div className="home-grid">
           <div className="home-primary">
-            <section className="surface log-surface">
-              <div className="section-heading-row"><div><div className="eyebrow">QUICK ENTRY</div><h2 className="surface-title">Andika muamala</h2><p className="surface-subtitle">Record it while it’s still fresh.</p></div><span className="keyboard-shortcut">FAST ENTRY</span></div>
+            <section id="transaction-entry" className="surface log-surface">
+              <div className="section-heading-row"><div><div className="eyebrow">QUICK ENTRY</div><h2 className="surface-title">Record a transaction</h2><p className="surface-subtitle">Record sales, expenses and payments in one place.</p></div><span className="keyboard-shortcut">FAST ENTRY</span></div>
               <div className="type-picker" role="group" aria-label="Transaction type">
                 {(['auto', 'sale', 'credit', 'expense', 'payment'] as const).map(type => <button key={type} onClick={() => setTypeChoice(type)} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
                   {type === 'auto' ? <Sparkles size={15} /> : (() => { const Icon = TYPE_META[type].icon; return <Icon size={15} />; })()}
-                  <span>{type === 'auto' ? 'Auto' : TYPE_META[type].swahili}</span>
+                  <span>{type === 'auto' ? 'Auto' : TYPE_META[type].label}</span>
                 </button>)}
               </div>
               <form onSubmit={handleQuickSubmit}>
-                <label className="quick-input-wrap"><span className="sr-only">Describe the transaction</span><input value={quickText} onChange={e => setQuickText(e.target.value)} placeholder="e.g. Kamau alichukua sukari ya 120" className="quick-input" /><button type="button" className={cn('mic-button', voiceState === 'listening' && 'mic-button-listening')} onClick={startVoice} aria-label="Record by voice">{voiceState === 'listening' ? <span className="listening-dot" /> : <Mic2 size={19} />}</button></label>
+                <label className="quick-input-wrap"><span className="sr-only">Describe the transaction</span><input value={quickText} onChange={e => setQuickText(e.target.value)} placeholder="e.g. Sold groceries for KES 1,200" className="quick-input" /><button type="button" className={cn('mic-button', voiceState === 'listening' && 'mic-button-listening')} onClick={startVoice} aria-label="Record by voice">{voiceState === 'listening' ? <span className="listening-dot" /> : <Mic2 size={19} />}</button></label>
                 <div className="mt-2 flex flex-col gap-2 sm:flex-row"><Button type="submit" className="flex-1">Review transaction <ArrowRight size={16} /></Button><Button variant="secondary" onClick={() => { setQuickText(''); setPending(null); setTypeChoice('auto'); }} className="sm:!w-[100px]">Clear</Button></div>
               </form>
-              <div className="voice-language-row"><span>Voice language</span><div className="voice-language-options" role="group" aria-label="Voice input language"><button type="button" className={voiceLanguage === 'en-KE' ? 'active' : ''} aria-pressed={voiceLanguage === 'en-KE'} onClick={() => setVoiceLanguage('en-KE')}>English</button><button type="button" className={voiceLanguage === 'sw-KE' ? 'active' : ''} aria-pressed={voiceLanguage === 'sw-KE'} onClick={() => setVoiceLanguage('sw-KE')}>Kiswahili</button></div></div>
-              <div className="helper-row"><span><CheckCircle2 size={13} /> Confirm before it’s saved</span><span className="helper-divider" /><span>Works in English & Kiswahili</span></div>
+              
+              <div className="helper-row"><span><CheckCircle2 size={13} /> Confirm before it’s saved</span><span className="helper-divider" /><span>English voice input where supported</span></div>
               {pending && <div className="draft-review" aria-live="polite">
-                <div className="flex items-start gap-3"><div className="draft-check"><Check size={17} /></div><div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-[.13em] text-hesabu-green">Review before saving</div><div className="mt-1 text-[13px] font-bold leading-5 text-hesabu-ink">{pending.summary}</div>{pending.type === 'credit' && <div className="mt-1 text-[11px] text-hesabu-muted">Due {dateText(pending.dueDate ?? addDays(today(), 7), { weekday: 'long', day: 'numeric', month: 'short' })}. This will be added to Madeni, not cash received.</div>}{pending.stockQuantityDelta !== undefined && <div className="mt-1 text-[11px] text-hesabu-muted">Stock adjustment: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</div>}{pendingStockExceedsCount && pendingStockItem && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-[#8D6321]">Only <b>{pendingStockItem.quantity} {pendingStockItem.unit}</b> tracked. Saving will bring this item’s tracked count to zero. Use “Edit details” if the quantity or product is wrong.</div>}</div><button onClick={() => setPending(null)} className="icon-button !h-7 !w-7" aria-label="Dismiss review"><X size={14} /></button></div>
+                <div className="flex items-start gap-3"><div className="draft-check"><Check size={17} /></div><div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-[.13em] text-hesabu-green">Review before saving</div><div className="mt-1 text-[13px] font-bold leading-5 text-hesabu-ink">{pending.summary}</div>{pending.type === 'credit' && <div className="mt-1 text-[11px] text-hesabu-muted">Due {dateText(pending.dueDate ?? addDays(today(), 7), { weekday: 'long', day: 'numeric', month: 'short' })}. This creates a receivable, not cash collected.</div>}{pending.stockQuantityDelta !== undefined && <div className="mt-1 text-[11px] text-hesabu-muted">Stock adjustment: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</div>}{pendingStockExceedsCount && pendingStockItem && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-[#8D6321]">Only <b>{pendingStockItem.quantity} {pendingStockItem.unit}</b> tracked. Saving will bring this item’s tracked count to zero. Use “Edit details” if the quantity or product is wrong.</div>}</div><button onClick={() => setPending(null)} className="icon-button !h-7 !w-7" aria-label="Dismiss review"><X size={14} /></button></div>
                 <div className="mt-4 grid grid-cols-2 gap-2"><Button onClick={() => applyTransaction(pending)}><Check size={15} /> Confirm & save</Button><Button variant="outline" onClick={() => setModal({ kind: 'edit-draft' })}>Edit details</Button></div>
               </div>}
-              <div className="voice-note"><Mic size={15} /><span>Try: “Njeri paid her debt 500” or “Nilinunua mkaa kwa 800”.</span></div>
+              <div className="voice-note"><Mic size={15} /><span>Try: “Njeri paid 500 towards her balance” or “Bought stock for 800”.</span></div>
             </section>
 
             <section className="surface activity-surface">
-              <div className="section-heading-row"><div><h2 className="surface-title">Miamala ya hivi karibuni</h2><p className="surface-subtitle">Your latest entries, in one place.</p></div><button className="text-action" onClick={() => { setShowAllTransactions(v => !v); setFilterTransactions('all'); }}>{showAllTransactions ? 'Show less' : 'View all'} <ArrowRight size={14} /></button></div>
+              <div className="section-heading-row"><div><h2 className="surface-title">Recent transactions</h2><p className="surface-subtitle">Your latest entries, in one place.</p></div><button className="text-action" onClick={() => { setShowAllTransactions(v => !v); setFilterTransactions('all'); }}>{showAllTransactions ? 'Show less' : 'View all'} <ArrowRight size={14} /></button></div>
               {showAllTransactions && <div className="mb-3 flex gap-2"><label className="search-field flex-1"><Search size={15} /><input value={transactionSearch} onChange={e => setTransactionSearch(e.target.value)} placeholder="Search transactions" /></label><select className="filter-select" value={filterTransactions} onChange={e => setFilterTransactions(e.target.value as 'all' | TransactionType)} aria-label="Filter transaction type"><option value="all">All</option>{Object.entries(TYPE_META).map(([type, meta]) => <option key={type} value={type}>{meta.label}</option>)}</select></div>}
               {sortedTransactions.length === 0 ? <EmptyState title="No entries yet" detail="Your transactions will appear here as soon as you log the first one." /> : <div className="divide-y divide-hesabu-line/80">{sortedTransactions.filter(t => !showAllTransactions || (filterTransactions === 'all' || t.type === filterTransactions)).filter(t => !showAllTransactions || `${t.description} ${t.customerName ?? ''}`.toLowerCase().includes(transactionSearch.toLowerCase())).slice(0, showAllTransactions ? 80 : 5).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact={!showAllTransactions} />)}</div>}
               <ActivityProgress transactions={todayTransactions} />
@@ -553,15 +566,15 @@ function App() {
 
           <aside className="home-aside">
             <section className="surface aside-surface debt-summary">
-              <div className="flex items-start justify-between gap-3"><div><div className="eyebrow">CREDIT BOOK</div><h2 className="surface-title mt-1">Madeni yako</h2></div><span className="aside-icon"><Users size={18} /></span></div>
+              <div className="flex items-start justify-between gap-3"><div><div className="eyebrow">CREDIT BOOK</div><h2 className="surface-title mt-1">Customer balances</h2></div><span className="aside-icon"><Users size={18} /></span></div>
               <div className="mt-5 font-display text-[28px] font-extrabold tracking-[-.06em] text-hesabu-ink">{money(outstanding)}</div>
               <div className="mt-1 text-[11px] text-hesabu-muted">Owed to your shop by {data.customers.filter(c => c.balance > 0).length} people</div>
               <div className="mt-4 flex items-center justify-between border-t border-hesabu-line pt-3"><span className="text-[10px] font-semibold text-hesabu-muted">Oldest outstanding</span><span className="text-[11px] font-bold text-[#B96D3C]">{data.customers.filter(c => c.balance > 0 && c.dueDate).some(c => daysUntil(c.dueDate!) < 0) ? 'Needs follow-up' : 'On track'}</span></div>
-              <Button variant="secondary" className="mt-4 w-full" onClick={() => navigate('debts')}>Open debt book <ArrowRight size={15} /></Button>
+              <Button variant="secondary" className="mt-4 w-full" onClick={() => navigate('debts')}>Manage balances <ArrowRight size={15} /></Button>
             </section>
 
             <section className="surface aside-surface">
-              <div className="section-heading-row !items-start"><div><div className="eyebrow">DON’T FORGET</div><h2 className="surface-title mt-1">Coming up</h2></div><button className="icon-button" onClick={() => setModal({ kind: 'reminder' })} aria-label="Add reminder"><Plus size={18} /></button></div>
+              <div className="section-heading-row !items-start"><div><div className="eyebrow">DON’T FORGET</div><h2 className="surface-title mt-1">Upcoming</h2></div><button className="icon-button" onClick={() => setModal({ kind: 'reminder' })} aria-label="Add reminder"><Plus size={18} /></button></div>
               {(showAllReminders ? allReminders : activeReminders.slice(0, 3)).length ? <div className="mt-2">{(showAllReminders ? allReminders : activeReminders.slice(0, 3)).map(reminder => <ReminderLine key={reminder.id} reminder={reminder} onDone={() => toggleReminder(reminder)} onEdit={() => setModal({ kind: 'reminder', reminder })} />)}</div> : <p className="py-4 text-xs text-hesabu-muted">{allReminders.length ? 'You’re all caught up. Open all reminders to review completed items.' : 'No reminders yet. Add a bill or follow-up so it doesn’t get forgotten.'}</p>}
               <div className="mt-3 flex items-center justify-between border-t border-hesabu-line pt-3"><button onClick={() => setShowAllReminders(v => !v)} className="text-action">{showAllReminders ? 'Show fewer' : 'All reminders'} <ArrowRight size={13} /></button><button onClick={() => setModal({ kind: 'reminder' })} className="text-action">Add new <Plus size={13} /></button></div>
             </section>
@@ -569,14 +582,14 @@ function App() {
             <section className="stock-callout">
               <div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold uppercase tracking-[.14em] text-[#A0C9AE]">STOCK CHECK</div><div className="mt-2 font-display text-[17px] font-bold text-white">{lowStock.length ? `${lowStock.length} items need a look` : 'Stock is looking good'}</div></div><div className="stock-callout-icon"><Package size={19} /></div></div>
               {lowStock.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{lowStock.slice(0, 3).map(s => <span key={s.id} className="stock-callout-chip">{s.name}</span>)}</div>}
-              <button className="stock-callout-action" onClick={() => navigate('stock')}>Check your shelves <ArrowRight size={14} /></button>
+              <button className="stock-callout-action" onClick={() => navigate('stock')}>View inventory <ArrowRight size={14} /></button>
             </section>
             <div className="privacy-note"><div className="privacy-lock"><Settings2 size={14} /></div><span><b>Your ledger stays on this device.</b><br />This prototype saves data in this browser only.</span></div>
           </aside>
         </div>
       </>}
 
-      {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const text = `Habari ${customer.name}, nakukumbusha kuhusu deni lako la ${money(customer.balance)} katika ${data.shopInfo.name}. Tafadhali nitumie update ya malipo. Asante.`; window.open(`https://wa.me/${customer.phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); }} />}
+      {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const text = `Hello ${customer.name}, this is a friendly reminder from ${data.shopInfo.name} regarding your balance of ${money(customer.balance)}. Please let us know when you expect to make payment. Thank you.`; const digits = customer.phone.replace(/\D/g, ''); const phone = digits.startsWith('0') ? `254${digits.slice(1)}` : digits.startsWith('254') ? digits : `254${digits}`; if (!/^254[17]\d{8}$/.test(phone)) { notify('Please add a valid Kenyan phone number for this customer.'); return; } window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); }} />}
       {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} />}
       {section === 'reports' && <ReportsSection data={data} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={shareReport} onCopy={copyReport} />}
     </main>
@@ -674,7 +687,7 @@ function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDat
     : reportPeriod === 'weekly' ? `Week ending ${dateText(reportDate, { day: 'numeric', month: 'short' })}`
     : `Month to ${dateText(reportDate, { day: 'numeric', month: 'short' })}`;
   return <>
-    <SectionTitle eyebrow="KNOW HOW THE DAY WENT" title="Ripoti" detail="A clear summary you can send to yourself or someone you trust." right={<span className="report-date-chip"><CalendarDays size={14} /> {dateText(reportDate, { day: 'numeric', month: 'short' })}</span>} />
+    <SectionTitle eyebrow="KNOW HOW THE DAY WENT" title="Reports" detail="A clear summary you can send to yourself or someone you trust." right={<span className="report-date-chip"><CalendarDays size={14} /> {dateText(reportDate, { day: 'numeric', month: 'short' })}</span>} />
     <div className="report-workspace">
       <section className="report-controls surface">
         <div className="eyebrow">CHOOSE YOUR VIEW</div>
@@ -871,8 +884,8 @@ function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUse
       <section className="welcome-story">
         <Logo />
         <div className="welcome-copy">
-          <div className="eyebrow">A SIMPLE DAYBOOK FOR REAL SHOPS</div>
-          <h1>Your shop has enough to do. The book can wait.</h1>
+          <div className="eyebrow">ACCOUNTING FOR EVERYDAY BUSINESS</div>
+          <h1>Know your numbers. Run your business.</h1>
           <p>Keep sales, expenses, customer debts, stock and reminders together. No accounting lessons. No more hunting through yesterday’s pages.</p>
         </div>
         <div className="welcome-points">
@@ -882,15 +895,15 @@ function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUse
         </div>
       </section>
       <section className="welcome-setup">
-        <div className="welcome-form-head"><div className="eyebrow">LET’S SET THINGS UP</div><h2>Start with your shop.</h2><p>Use your own details to get started, or explore the sample shop first.</p></div>
+        <div className="welcome-form-head"><div className="eyebrow">LET’S SET THINGS UP</div><h2>Set up your business.</h2><p>Use your own details to get started, or explore the sample shop first.</p></div>
         <form className="welcome-form" onSubmit={event => { event.preventDefault(); onCreateShop({ name, owner, phone, businessType }); }}>
           <Field label="Shop name" value={name} onChange={setName} placeholder="e.g. Mwende General Shop" required autoFocus />
           <Field label="Your name (optional)" value={owner} onChange={setOwner} placeholder="What should Hesabu call you?" />
           <Field label="Phone number (optional)" value={phone} onChange={setPhone} placeholder="07… or 01…" type="tel" inputMode="tel" />
           <SelectField label="Type of business" value={businessType} onChange={setBusinessType} options={[{value:'General shop',label:'General shop / duka'},{value:'Kiosk',label:'Kiosk'},{value:'Grocery',label:'Grocery / food shop'},{value:'Hardware',label:'Hardware'},{value:'Clothing',label:'Clothing / boutique'},{value:'Other',label:'Other small business'}]} />
-          <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Set up my shop <ArrowRight size={16} /></Button>
+          <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Start my business ledger <ArrowRight size={16} /></Button>
         </form>
-        <div className="welcome-device-note"><CheckCircle2 size={15} /><span>Your records stay on this device in this preview. No account or payment is needed to try it.</span></div>
+        <div className="welcome-device-note"><CheckCircle2 size={15} /><span>Device-only setup, not an online account. Download backups until cloud sign-up and sync are connected.</span></div>
         <div className="welcome-demo-row"><span>Just looking around?</span><button type="button" onClick={onUseDemo}>Explore the sample ledger <ArrowRight size={14} /></button></div>
       </section>
     </div>
