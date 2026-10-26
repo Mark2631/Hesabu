@@ -5,12 +5,12 @@ export default {
     extend: {
       colors: {
         hesabu: {
-          green: '#1A7A4A',
-          deep: '#164C34',
-          ink: '#1D2D25',
-          muted: '#7B877F',
-          line: '#E8ECE8',
-          surface: '#F6F8F5',
+          green: '#395FF6',
+          deep: '#172747',
+          ink: '#17233A',
+          muted: '#738096',
+          line: '#E7EAF1',
+          surface: '#F5F7FB',
           cream: '#F9F8F2',
         },
       },
