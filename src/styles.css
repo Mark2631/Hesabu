@@ -458,3 +458,37 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .welcome-form-head h2 { font-size:23px; }
 }
 @media (max-width:380px) { .welcome-demo-row { align-items:flex-start; flex-direction:column; gap:7px; } }
+
+/* Refined financial-product visual system */
+:root{--green:#395ff6;--deep-green:#172747;--ink:#17233a;--muted:#738096;--line:#e7eaf1;--surface:#f5f7fb;color:#17233a;background:#f5f7fb}
+html,body{background:#f5f7fb}
+.app-header{background:rgba(255,255,255,.97);border-color:#e7eaf1}
+.brand-mark{background:#172747;color:white;border-radius:10px}
+.brand-mark:before,.brand-mark span{display:none}
+.brand-mark svg{width:27px;height:27px}
+.nav-link-active,.nav-link:hover{color:#395ff6}.nav-link-active:after{background:#395ff6}
+.app-main{max-width:1120px;padding-top:23px}
+.welcome-row{margin-bottom:19px;align-items:center}.welcome-title{color:#17233a;font-size:clamp(25px,3vw,33px)}.welcome-copy{color:#738096}
+.balance-panel{background:#172747;color:#fff;border-radius:20px;padding:24px 26px 0;margin-bottom:18px;position:relative;overflow:hidden;box-shadow:0 12px 30px #17274720}
+.balance-panel:after{content:'';position:absolute;right:-45px;top:-95px;width:260px;height:260px;border:1px solid #ffffff20;border-radius:50%;box-shadow:0 0 0 53px #ffffff06,0 0 0 105px #ffffff05;pointer-events:none}
+.balance-panel-copy,.balance-panel-bottom{position:relative;z-index:1}
+.balance-eyebrow{display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:.12em;font-weight:750;color:#b9c5e2}
+.balance-status{width:6px;height:6px;background:#76d5b5;border-radius:50%}
+.balance-total{font-family:Manrope,sans-serif;font-weight:800;letter-spacing:-.065em;font-size:clamp(32px,6vw,47px);line-height:1.3;margin-top:10px}
+.balance-caption{font-size:11px;color:#b6c3dd;margin-top:2px}
+.balance-panel-bottom{display:flex;gap:23px;align-items:center;border-top:1px solid #ffffff2a;margin-top:24px;padding:17px 0}
+.balance-panel-bottom div{display:flex;flex-direction:column;gap:6px}.balance-panel-bottom div span{font-size:10px;color:#acbbd8}
+.balance-panel-bottom div strong{font-size:15px;font-weight:750}.balance-divider{width:1px;background:#ffffff35;height:32px}
+.balance-view{margin-left:auto;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:#ffffff1a;border:1px solid #ffffff23;color:#fff;border-radius:12px}
+.action-panel{background:#fff;border:1px solid #e7eaf1;border-radius:17px;padding:17px 20px 18px;margin-bottom:18px}
+.action-panel-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.action-panel-top strong{font-size:14px;color:#182843}.action-panel-top>span{font-size:10px;color:#8994a5}
+.quick-actions{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.quick-actions button{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:9px;font-size:11px;font-weight:650;color:#33415b;min-width:0}
+.qa-icon{height:49px;width:49px;display:flex;align-items:center;justify-content:center;border-radius:16px}
+.qa-sale{background:#e9f5f0;color:#138363}.qa-expense{background:#fdf0ed;color:#bd6855}.qa-stock{background:#edf0ff;color:#4763d4}.qa-reports{background:#f1eefe;color:#7954b5}.qa-customers{background:#fff4df;color:#a67e37}.qa-whatsapp{background:#e9f7e9;color:#20884c}
+.metrics-grid{margin-bottom:20px;gap:12px}.metric-card{border-color:#e7eaf1;box-shadow:none}.metric-card .text-hesabu-green{color:#172747}
+.surface{border-color:#e7eaf1;box-shadow:none}.home-grid{grid-template-columns:minmax(0,1.7fr) minmax(270px,.9fr)}
+.home-aside .debt-summary{order:2}.home-aside .stock-callout{order:0}.home-aside>.surface:not(.debt-summary){order:1}.home-aside .privacy-note{order:3}
+.btn-primary{background:#375cf4!important;border-color:#375cf4!important}.mobile-nav-active,.mobile-nav-active .mobile-nav-icon{color:#3659e7!important}
+.stock-callout{background:#1f3355!important}.text-hesabu-green{color:#395ff6}.type-pick-active{border-color:#395ff6!important;color:#395ff6!important;background:#eef1ff!important}
+@media(max-width:720px){.app-main{padding:18px 15px 115px}.welcome-row{align-items:flex-start;gap:8px}.welcome-title{font-size:25px}.welcome-copy{font-size:11px}.today-pill{height:34px;padding:0 9px;font-size:10px}.balance-panel{border-radius:18px;padding:21px 20px 0}.balance-total{font-size:36px}.balance-panel-bottom{gap:20px;margin-top:22px}.action-panel{padding:15px 11px 16px}.action-panel-top{padding:0 8px}.quick-actions{grid-template-columns:repeat(3,1fr);row-gap:17px;column-gap:2px}.quick-actions button{font-size:10px}.qa-icon{width:47px;height:47px;border-radius:15px}.metrics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metrics-grid>.metric-card:nth-child(3){grid-column:span 2}.metric-card{padding:16px}.home-grid{display:flex;flex-direction:column}.home-aside,.home-primary{width:100%}}
