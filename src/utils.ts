@@ -33,7 +33,7 @@ export const transactionColor: Record<TransactionType, string> = {
 };
 
 export function cashIn(tx: Transaction[]) {
-  return tx.filter(t => t.type === 'sale' || t.type === 'payment').reduce((sum, t) => sum + t.amount, 0);
+  return tx.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentStatus !== 'pending' && t.paymentStatus !== 'failed').reduce((sum, t) => sum + t.amount, 0);
 }
 export function cashOut(tx: Transaction[]) {
   return tx.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
@@ -42,6 +42,18 @@ export function creditGiven(tx: Transaction[]) {
   return tx.filter(t => t.type === 'credit').reduce((sum, t) => sum + t.amount, 0);
 }
 export function netCash(tx: Transaction[]) { return cashIn(tx) - cashOut(tx); }
+
+let paymentSequence = 0;
+export function makePaymentReference(now = Date.now(), nonce = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)) {
+  paymentSequence += 1;
+  return `HES-${now.toString(36).toUpperCase()}-${paymentSequence.toString(36).toUpperCase()}-${nonce.replaceAll('-', '').slice(0, 8).toUpperCase()}`;
+}
+
+export function reconcileDemoPayment(transactions: Transaction[], transactionId: string, status: 'confirmed' | 'failed'): Transaction[] {
+  const target = transactions.find(tx => tx.id === transactionId);
+  if (!target || target.paymentMethod !== 'mpesa-demo' || target.paymentStatus !== 'pending') return transactions;
+  return transactions.map(tx => tx.id === transactionId ? { ...tx, paymentStatus: status } : tx);
+}
 
 const aliases: Record<string, string[]> = {
   Sukari: ['sukari', 'sugar'],
