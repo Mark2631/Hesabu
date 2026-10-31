@@ -11,8 +11,8 @@ import { hasSavedData, makeDemoData, readSavedData, saveData } from './data';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabaseClient } from './lib/supabase';
 import { loadCloudLedger, saveCloudLedger, type CloudLedgerSnapshot } from './lib/ledger-cloud';
-import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, fullDateText, id, makePaymentReference, money, parseTransaction, reconcileDemoPayment, shortDay, timeText, today, transactionLabel } from './utils';
+import type { AppData, Customer, DailyClose, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
+import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, expectedDrawerCash, fullDateText, id, makeDailyClose, makePaymentReference, money, parseTransaction, reconcileDemoPayment, shortDay, suggestedOpeningCash, timeText, today, transactionLabel } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'home', label: 'Home', icon: House },
@@ -212,6 +212,10 @@ function App() {
   const closeToast = () => setToastMessage('');
   const closeModal = () => setModal(null);
   const updateData = (updater: (current: AppData) => AppData) => setData(current => updater(current));
+  const closeDay = (close: DailyClose) => {
+    updateData(current => ({ ...current, dailyCloses: [...(current.dailyCloses ?? []), close] }));
+    notify(close.difference === 0 ? 'Day balanced. Closing count saved.' : 'Closing count saved with a difference to review.');
+  };
 
   const chooseDemo = () => {
     const demo = makeDemoData();
@@ -621,7 +625,7 @@ function App() {
 
       {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const text = `Hello ${customer.name}, this is a friendly reminder from ${data.shopInfo.name} regarding your balance of ${money(customer.balance)}. Please let us know when you expect to make payment. Thank you.`; const digits = customer.phone.replace(/\D/g, ''); const phone = digits.startsWith('0') ? `254${digits.slice(1)}` : digits.startsWith('254') ? digits : `254${digits}`; if (!/^254[17]\d{8}$/.test(phone)) { notify('Please add a valid Kenyan phone number for this customer.'); return; } window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); }} />}
       {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} />}
-      {section === 'reports' && <ReportsSection data={data} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={shareReport} onEmail={emailReport} onCopy={copyReport} />}
+      {section === 'reports' && <ReportsSection data={data} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onCloseDay={closeDay} onShare={shareReport} onEmail={emailReport} onCopy={copyReport} />}
     </main>
 
     <nav className="mobile-nav" aria-label="Primary navigation">{NAV.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => navigate(item.id)} className={cn('mobile-nav-item', section === item.id && 'mobile-nav-active')}><span className="mobile-nav-icon"><Icon size={21} strokeWidth={section === item.id ? 2.2 : 1.8} /></span><span>{item.label}</span>{section === item.id && <span className="mobile-nav-dot" />}</button>; })}</nav>
@@ -712,9 +716,9 @@ function StockCard({ item, onEdit, onRestock, onAdjust }: { item: StockItem; onE
   </section>;
 }
 
-function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onEmail, onCopy }: {
+function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onCloseDay, onShare, onEmail, onCopy }: {
   data: AppData; report: ReturnType<typeof buildReport>; reportPeriod: 'daily' | 'weekly' | 'monthly'; setReportPeriod: (v: 'daily' | 'weekly' | 'monthly') => void;
-  reportDate: string; setReportDate: (v: string) => void; onShare: () => void; onEmail: () => void; onCopy: () => void;
+  reportDate: string; setReportDate: (v: string) => void; onCloseDay: (close: DailyClose) => void; onShare: () => void; onEmail: () => void; onCopy: () => void;
 }) {
   const periodLabel = reportPeriod === 'daily'
     ? (reportDate === today() ? 'Today’s report' : `Report for ${dateText(reportDate, { day: 'numeric', month: 'short', year: 'numeric' })}`)
@@ -729,6 +733,7 @@ function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDat
         <label className="field-wrap mt-5 block"><span className="field-label">Report date</span><input type="date" className="field-control" value={reportDate} max={today()} onChange={e => setReportDate(e.target.value)} /></label>
         <div className="report-mini-stats"><div><span>Cash in</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div><div><span>Cash out</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div><div><span>Net cash</span><b>{money(report.net)}</b></div></div>
         <div className="mt-4 rounded-xl bg-[#F5F7F4] px-3.5 py-3 text-[10px] leading-5 text-hesabu-muted">Net cash is money in minus money out. It is not profit because cost of goods sold and other accounting adjustments are not calculated here.</div>
+        <DailyClosePanel data={data} date={reportDate} closes={data.dailyCloses ?? []} onSave={onCloseDay} />
         <div className="mt-5 grid grid-cols-2 gap-2"><Button onClick={onShare}><Share2 size={15} /> WhatsApp</Button><Button variant="secondary" onClick={onEmail}><FileText size={15} /> Email</Button></div><Button variant="ghost" className="mt-2 w-full" onClick={onCopy}><ClipboardList size={15} /> Copy report text</Button>
       </section>
       <section className="report-preview-wrap"><div className="mb-3 flex items-center justify-between gap-3"><div><div className="eyebrow">MESSAGE PREVIEW</div><h2 className="mt-1 font-display text-[17px] font-extrabold tracking-[-.03em]">{periodLabel}</h2></div><span className="share-ready"><span className="share-ready-dot" /> Ready to share</span></div>
@@ -748,6 +753,38 @@ function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDat
       </section>
     </div>
   </>;
+}
+
+function DailyClosePanel({ data, date, closes, onSave }: { data: AppData; date: string; closes: DailyClose[]; onSave: (close: DailyClose) => void }) {
+  const previous = useMemo(() => closes.filter(close => close.date === date).sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0], [closes, date]);
+  const [openingCash, setOpeningCash] = useState(String(previous?.openingCash ?? suggestedOpeningCash(closes, date)));
+  const [countedCash, setCountedCash] = useState(previous ? String(previous.countedCash) : '');
+  useEffect(() => {
+    setOpeningCash(String(previous?.openingCash ?? suggestedOpeningCash(closes, date)));
+    setCountedCash(previous ? String(previous.countedCash) : '');
+  }, [date, previous?.id]);
+
+  const opening = Number(openingCash);
+  const counted = Number(countedCash);
+  const expected = expectedDrawerCash(data, date, opening);
+  const valid = Number.isFinite(opening) && opening >= 0 && Number.isFinite(counted) && counted >= 0 && countedCash !== '';
+  const difference = valid ? Math.round(counted) - expected : null;
+
+  return <section className="mt-5 rounded-2xl border border-[#DDE8DE] bg-[#F8FBF8] p-4">
+    <div className="eyebrow">CLOSE THE DAY</div>
+    <h3 className="mt-1 font-display text-[15px] font-extrabold tracking-[-.03em]">Count the cash drawer</h3>
+    <p className="mt-1 text-[10px] leading-4 text-hesabu-muted">Compare the money in the till with recorded cash sales and expenses. Demo M-Pesa payments are excluded.</p>
+    {previous && <p className="mt-2 rounded-lg bg-white px-3 py-2 text-[10px] leading-4 text-hesabu-muted">Previous count saved {new Date(previous.closedAt).toLocaleString()}. Saving again keeps a new count in the history.</p>}
+    <div className="mt-4 space-y-3">
+      <Field label="Cash at opening (KES)" value={openingCash} onChange={setOpeningCash} type="number" min={0} inputMode="numeric" />
+      <Field label="Cash counted now (KES)" value={countedCash} onChange={setCountedCash} type="number" min={0} inputMode="numeric" />
+    </div>
+    <div className="mt-4 space-y-2 rounded-xl bg-white px-3 py-3 text-[11px]">
+      <div className="flex justify-between gap-2 text-hesabu-muted"><span>Expected cash</span><b className="text-hesabu-ink">{money(expected)}</b></div>
+      {difference !== null && <div className="flex justify-between gap-2"><span className="text-hesabu-muted">{difference === 0 ? 'Difference' : difference > 0 ? 'Extra cash' : 'Cash short'}</span><b className={difference === 0 ? 'text-hesabu-green' : difference > 0 ? 'text-[#A4762A]' : 'text-[#B94C46]'}>{difference < 0 ? '−' : difference > 0 ? '+' : ''}{money(Math.abs(difference))}</b></div>}
+    </div>
+    <Button size="sm" className="mt-3 w-full" disabled={!valid} onClick={() => onSave(makeDailyClose(data, date, opening, counted))}>{previous ? 'Save another cash count' : 'Save daily close'}</Button>
+  </section>;
 }
 
 function CustomerModal({ onClose, onSave }: { onClose: () => void; onSave: (values: { name: string; phone: string; balance: string; direction: 'owed-to-us' | 'we-owe'; kind: 'customer' | 'supplier'; dueDate: string; note: string }) => void }) {
