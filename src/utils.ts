@@ -180,6 +180,9 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
   const credit = creditGiven(tx);
   const due = data.reminders.filter(r => !r.done && r.dueDate >= from && r.dueDate <= addDays(reportDate, 3));
   const lowStock = data.stock.filter(s => s.quantity <= s.lowStockAt);
+  const dailyClose = period === 'daily'
+    ? [...(data.dailyCloses ?? [])].filter(close => close.date === reportDate).sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0]
+    : undefined;
   const label = period === 'daily' ? 'Daily' : period === 'weekly' ? 'Weekly' : 'Monthly';
   const lines = [
     `Hesabu yako · ${label} report`,
@@ -188,6 +191,11 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
     `Pesa iliyoingia: ${money(inTotal)}`,
     `Matumizi: ${money(outTotal)}`,
     `Net cash: ${money(inTotal - outTotal)}`,
+    ...(dailyClose ? [
+      `Till expected: ${money(dailyClose.expectedCash)}`,
+      `Till counted: ${money(dailyClose.countedCash)}`,
+      `Till difference: ${dailyClose.difference === 0 ? money(0) : `${dailyClose.difference > 0 ? '+' : '−'}${money(Math.abs(dailyClose.difference))}`}`,
+    ] : []),
     `Madeni mapya: ${money(credit)}`,
     '',
     'Wateja waliochukua kwa deni:',
@@ -199,5 +207,5 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
     '',
     'Keep your records close. Hesabu.',
   ];
-  return { transactions: tx, cashIn: inTotal, cashOut: outTotal, net: inTotal - outTotal, credit, lowStock, due, text: lines.join('\n') };
+  return { transactions: tx, cashIn: inTotal, cashOut: outTotal, net: inTotal - outTotal, credit, lowStock, due, dailyClose, text: lines.join('\n') };
 }
