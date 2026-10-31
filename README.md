@@ -21,6 +21,7 @@ Install Node.js 22 or newer, then run `npm install`, `npm run dev`, `npm test`, 
 - Duplicate safeguards for contacts and stock items, plus a warning when a sale exceeds the tracked shelf count.
 - Bill and follow-up reminders inside the app.
 - Daily, weekly and monthly report previews that can be copied or shared through WhatsApp.
+- M-Pesa payment flow simulation with unique references and pending, confirmed and failed states. Only a confirmed demo payment enters cash totals; each reference can be reconciled once.
 - CSV export, JSON backup and restore, editable shop details, and a resettable Mama Grace demo ledger.
 - Local-first persistence, a mobile bottom navigation bar, responsive desktop layout, and a basic PWA shell.
 
@@ -34,4 +35,4 @@ Install Node.js 22 or newer, then run `npm install`, `npm run dev`, `npm test`, 
 
 ## Data and limitations
 
-This is an MVP, not a hosted multi-user product. All ledger data stays in the current browser's local storage. It is not synced across devices; downloading backups regularly is important. Voice capture needs microphone permission and support from the current browser, and may require HTTPS. Report sharing opens WhatsApp with a prepared message; scheduled WhatsApp or email delivery is not connected. The parser uses rules, not an AI model. It can make mistakes, so confirm each draft.
+This is an MVP, not a hosted multi-user product. All ledger data stays in the current browser's local storage. It is not synced across devices; downloading backups regularly is important. The M-Pesa flow is a clearly labeled simulation: its scannable QR contains only the demo amount and reference; it does not initiate a live payment, contact Daraja, move money, or receive provider callbacks. A real integration needs a supported collection and settlement setup plus server-side webhook verification; never treat demo confirmations as proof of payment. Voice capture needs microphone permission and support from the current browser, and may require HTTPS. Report sharing opens WhatsApp with a prepared message; scheduled WhatsApp or email delivery is not connected. The parser uses rules, not an AI model. It can make mistakes, so confirm each draft.
