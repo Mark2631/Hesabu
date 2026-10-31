@@ -62,6 +62,7 @@ export function makeDemoData(): AppData {
     customers,
     stock,
     reminders,
+    dailyCloses: [],
   };
 }
 
@@ -86,7 +87,7 @@ export function readSavedData(): AppData {
       if (parsed?.shopInfo && Array.isArray(parsed.transactions) && Array.isArray(parsed.customers) && Array.isArray(parsed.stock)) {
         const fallback = makeDemoData();
         const customers = parsed.customers.map(c => ({ ...c, kind: c.kind ?? (c.balance < 0 ? 'supplier' as const : 'customer' as const) }));
-        return { ...fallback, ...parsed, customers, reminders: parsed.reminders ?? fallback.reminders };
+        return { ...fallback, ...parsed, customers, reminders: parsed.reminders ?? fallback.reminders, dailyCloses: parsed.dailyCloses ?? [] };
       }
     }
   } catch {
