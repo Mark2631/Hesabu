@@ -59,12 +59,23 @@ export interface Reminder {
   done: boolean;
 }
 
+export interface DailyClose {
+  id: string;
+  date: string;
+  openingCash: number;
+  expectedCash: number;
+  countedCash: number;
+  difference: number;
+  closedAt: string;
+}
+
 export interface AppData {
   shopInfo: ShopInfo;
   transactions: Transaction[];
   customers: Customer[];
   stock: StockItem[];
   reminders: Reminder[];
+  dailyCloses?: DailyClose[];
 }
 
 export interface TransactionDraft {
