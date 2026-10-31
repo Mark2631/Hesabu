@@ -10,6 +10,7 @@ import {
 import { hasSavedData, makeDemoData, readSavedData, saveData } from './data';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabaseClient } from './lib/supabase';
+import { loadCloudLedger, saveCloudLedger, type CloudLedgerSnapshot } from './lib/ledger-cloud';
 import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
 import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, fullDateText, id, makePaymentReference, money, parseTransaction, reconcileDemoPayment, shortDay, timeText, today, transactionLabel } from './utils';
 
@@ -632,7 +633,10 @@ function App() {
     {modal?.kind === 'stock-edit' && data.stock.find(s => s.id === modal.itemId) && <StockEditModal item={data.stock.find(s => s.id === modal.itemId)!} onClose={closeModal} onSave={saveStockDetails} />}
     {modal?.kind === 'reminder' && <ReminderModal reminder={modal.reminder} onClose={closeModal} onSave={values => saveReminder(values, modal.reminder)} onDelete={deleteReminder} />}
     {modal?.kind === 'profile' && <ProfileModal data={data} onClose={closeModal} onSave={updateProfile} />}
-    {modal?.kind === 'account' && <AccountModal email={data.shopInfo.email ?? ''} onClose={closeModal} onNotify={notify} />}
+    {modal?.kind === 'account' && <AccountModal email={data.shopInfo.email ?? ''} ledgerData={data} hasLocalLedger={!showWelcome} onRestoreLedger={restored => {
+      if (!window.confirm('Replace the ledger currently saved on this device with the cloud copy? This cannot be undone from Hesabu.')) return;
+      setData(restored); saveData(restored); notify('Cloud backup restored to this device.'); closeModal();
+    }} onClose={closeModal} onNotify={notify} />}
     {modal?.kind === 'settings' && <SettingsModal onClose={closeModal} onReset={resetDemo} onProfile={() => setModal({ kind: 'profile' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} />}
     {modal?.kind === 'edit-draft' && pending && <EditDraftModal draft={pending} items={data.stock} onClose={closeModal} onSave={editDraft} />}
     {modal?.kind === 'transaction' && data.transactions.find(t => t.id === modal.transactionId) && <TransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} customer={data.customers.find(c => c.id === data.transactions.find(t => t.id === modal.transactionId)?.customerId)} onClose={closeModal} onEdit={transaction => setModal({ kind: 'edit-transaction', transactionId: transaction.id })} onDelete={deleteTransaction} />}
@@ -843,7 +847,7 @@ function ProfileModal({ data, onClose, onSave }: { data: AppData; onClose: () =>
   </Modal>;
 }
 
-function AccountModal({ email: ownerEmail, onClose, onNotify }: { email: string; onClose: () => void; onNotify: (message: string) => void }) {
+function AccountModal({ email: ownerEmail, ledgerData, hasLocalLedger, onRestoreLedger, onClose, onNotify }: { email: string; ledgerData: AppData; hasLocalLedger: boolean; onRestoreLedger: (data: AppData) => void; onClose: () => void; onNotify: (message: string) => void }) {
   const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [email, setEmail] = useState(ownerEmail);
   const [password, setPassword] = useState('');
@@ -851,6 +855,33 @@ function AccountModal({ email: ownerEmail, onClose, onNotify }: { email: string;
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [cloudState, setCloudState] = useState<'idle' | 'loading' | 'missing' | 'ready' | 'error'>('idle');
+  const [cloudSnapshot, setCloudSnapshot] = useState<CloudLedgerSnapshot | null>(null);
+  const [cloudMessage, setCloudMessage] = useState('');
+
+  const refreshCloudLedger = async () => {
+    if (!supabaseClient) return;
+    setCloudState('loading'); setCloudMessage('');
+    const result = await loadCloudLedger(supabaseClient);
+    if (!result.ok) { setCloudState('error'); setCloudMessage(result.message); return; }
+    setCloudSnapshot(result.snapshot);
+    setCloudState(result.snapshot ? 'ready' : 'missing');
+  };
+
+  const saveCloudBackup = async () => {
+    if (!supabaseClient || !hasLocalLedger) return;
+    if (cloudSnapshot && !window.confirm('Replace the existing cloud backup with the ledger on this device? The cloud copy may include entries from another device.')) return;
+    setCloudState('loading'); setCloudMessage('');
+    const result = await saveCloudLedger(supabaseClient, ledgerData, cloudSnapshot?.revision ?? null);
+    if (!result.ok) {
+      setCloudState(result.kind === 'conflict' ? 'error' : cloudSnapshot ? 'ready' : 'missing');
+      setCloudMessage(result.message);
+      if (result.kind === 'conflict') setCloudSnapshot(null);
+      return;
+    }
+    setCloudSnapshot(result.snapshot); setCloudState('ready');
+    setCloudMessage('Cloud backup saved. Device records remain available offline.');
+  };
 
   useEffect(() => {
     if (!supabaseClient) return;
@@ -859,6 +890,11 @@ function AccountModal({ email: ownerEmail, onClose, onNotify }: { email: string;
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => setAccountEmail(session?.user?.email ?? ''));
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    if (!accountEmail || !supabaseClient) { setCloudState('idle'); setCloudSnapshot(null); return; }
+    void refreshCloudLedger();
+  }, [accountEmail]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setError(''); setMessage('');
@@ -893,7 +929,15 @@ function AccountModal({ email: ownerEmail, onClose, onNotify }: { email: string;
   };
 
   return <Modal title="Your Hesabu account" detail="Account access and business records should always be clear about where your data lives." onClose={onClose} size="lg">
-    {accountEmail ? <div className="space-y-4"><div className="rounded-2xl border border-[#DDE9E0] bg-[#F5FAF6] p-4"><div className="eyebrow">SIGNED IN</div><div className="mt-1 text-sm font-bold text-hesabu-ink">{accountEmail}</div><p className="mt-2 text-[11px] leading-5 text-hesabu-muted">Your account can authenticate you. Cloud ledger sync is not enabled in this preview; your business records remain in this browser.</p></div><Button variant="secondary" onClick={signOut}>Sign out</Button></div> : <>
+    {accountEmail ? <div className="space-y-4"><div className="rounded-2xl border border-[#DDE9E0] bg-[#F5FAF6] p-4"><div className="eyebrow">SIGNED IN</div><div className="mt-1 text-sm font-bold text-hesabu-ink">{accountEmail}</div><p className="mt-2 text-[11px] leading-5 text-hesabu-muted">Your ledger stays on this device unless you choose a cloud backup below. Backups replace a single snapshot; entries are not merged between devices.</p></div>
+      <section className="rounded-2xl border border-hesabu-line p-4"><div className="font-display text-sm font-extrabold">Cloud backup</div>
+        <div className="mt-2 text-[11px] leading-5 text-hesabu-muted">{cloudState === 'loading' ? 'Checking your secure cloud copy…' : cloudState === 'ready' && cloudSnapshot ? `Last saved ${new Date(cloudSnapshot.updatedAt).toLocaleString()}. Revision ${cloudSnapshot.revision}.` : cloudState === 'missing' ? 'No cloud copy exists for this account yet.' : cloudState === 'error' ? 'The cloud copy needs your attention.' : 'Cloud backup is not connected.'}</div>
+        {cloudMessage && <p className={cn('mt-2 rounded-lg px-3 py-2 text-[11px] leading-5', cloudState === 'error' ? 'bg-[#FBEDEC] text-[#A63D39]' : 'bg-[#EEF6EF] text-[#456A50]')} role={cloudState === 'error' ? 'alert' : 'status'}>{cloudMessage}</p>}
+        {!hasLocalLedger && <p className="mt-2 text-[10px] text-hesabu-muted">Set up a business ledger before restoring or saving a cloud copy.</p>}
+        <div className="mt-4 grid grid-cols-2 gap-2"><Button variant="secondary" size="sm" disabled={cloudState === 'loading' || !supabaseClient} onClick={() => void refreshCloudLedger()}>Check cloud copy</Button><Button size="sm" disabled={cloudState === 'loading' || cloudState === 'error' || !hasLocalLedger || !supabaseClient} onClick={() => void saveCloudBackup()}>{cloudSnapshot ? 'Update backup' : 'Save backup'}</Button></div>
+        {cloudSnapshot && <Button variant="ghost" className="mt-1 w-full" disabled={cloudState === 'loading'} onClick={() => onRestoreLedger(cloudSnapshot.data)}>Restore cloud copy to this device</Button>}
+      </section>
+      <Button variant="secondary" onClick={signOut}>Sign out</Button></div> : <>
       <div className="rounded-xl border border-[#E6EDE7] bg-[#F8FAF7] px-3 py-2.5 text-[10px] leading-5 text-hesabu-muted">{supabaseClient ? 'Email account service is connected.' : 'Account screen preview · Secure sign-in will work when the HESABU service is connected.'} Ledger data in this build stays on this device.</div>
       <div className="choice-two mt-4"><button type="button" className={cn(mode === 'signin' && 'choice-two-active')} onClick={() => { setMode('signin'); setMessage(''); setError(''); }}>Sign in</button><button type="button" className={cn(mode === 'signup' && 'choice-two-active')} onClick={() => { setMode('signup'); setMessage(''); setError(''); }}>Create account</button></div>
       <form className="mt-4 space-y-4" onSubmit={submit}>
