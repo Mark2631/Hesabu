@@ -22,6 +22,7 @@ Install Node.js 22 or newer, then run `npm install`, `npm run dev`, `npm test`, 
 - Bill and follow-up reminders inside the app.
 - Daily, weekly and monthly report previews that can be copied or shared through WhatsApp.
 - Daily cash-drawer close with opening float, recorded expected cash, counted cash, variance history, and next-day opening suggestions. Demo M-Pesa requests never increase the physical till total.
+- Daily owner reports include the latest till count and any cash difference, ready for the same manual WhatsApp/email share flow.
 - Owner-directed manual report sharing through WhatsApp or email using the contact saved in the shop profile.
 - Account access screens for email sign-up, sign-in and password reset, enabled only when a dedicated HESABU Supabase project is configured.
 - Signed-in owners can manually save or restore a version-checked cloud ledger snapshot. Cloud backups are owner-isolated, and conflicting edits are surfaced instead of silently replacing another device’s newer copy.
