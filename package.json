@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "engines": { "node": ">=22.6.0" },
+  "engines": {
+    "node": ">=22.6.0"
+  },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
@@ -13,6 +15,7 @@
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
+    "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
