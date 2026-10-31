@@ -109,3 +109,14 @@ test('next daily close suggests the prior saved cash count as opening float', ()
   assert.equal(suggestedOpeningCash(closes, '2026-10-31'), 875);
   assert.equal(suggestedOpeningCash(closes, '2026-10-28'), 0);
 });
+
+test('daily owner report includes the latest till reconciliation result', () => {
+  const first = { id: 'first', date: '2026-10-31', openingCash: 0, expectedCash: 1000, countedCash: 950, difference: -50, closedAt: '2026-10-31T17:00:00Z' };
+  const latest = { ...first, id: 'latest', countedCash: 975, difference: -25, closedAt: '2026-10-31T18:00:00Z' };
+  const report = buildReport({ ...data, dailyCloses: [first, latest] }, 'daily', '2026-10-31');
+  assert.equal(report.dailyClose.id, 'latest');
+  assert.match(report.text, /Till expected: KES 1,000/);
+  assert.match(report.text, /Till counted: KES 975/);
+  assert.match(report.text, /Till difference: −KES 25/);
+  assert.equal(buildReport({ ...data, dailyCloses: [latest] }, 'weekly', '2026-10-31').dailyClose, undefined);
+});
