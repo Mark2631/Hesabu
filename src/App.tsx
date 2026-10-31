@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { hasSavedData, makeDemoData, readSavedData, saveData } from './data';
 import { QRCodeSVG } from 'qrcode.react';
+import { supabaseClient } from './lib/supabase';
 import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
 import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, fullDateText, id, makePaymentReference, money, parseTransaction, reconcileDemoPayment, shortDay, timeText, today, transactionLabel } from './utils';
 
@@ -38,6 +39,7 @@ type ModalState =
   | { kind: 'stock-edit'; itemId: string }
   | { kind: 'reminder'; reminder?: Reminder }
   | { kind: 'profile' }
+  | { kind: 'account' }
   | { kind: 'edit-draft' }
   | { kind: 'transaction'; transactionId: string }
   | { kind: 'edit-transaction'; transactionId: string }
@@ -48,7 +50,7 @@ function cn(...classes: Array<string | undefined | null | false>) { return class
 
 function Logo({ compact = false }: { compact?: boolean }) {
   return <div className="flex min-w-0 items-center gap-3">
-    <div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M9 9v22M9 20h22M31 9v22" stroke="currentColor" strokeWidth="4.1" strokeLinecap="round"/><circle cx="31" cy="9" r="3.2" fill="#F3AC63" /></svg></div>
+    <div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M10.5 11.5c5.4-2.6 9.3-2.6 15 0v17c-5.7-2.7-9.6-2.7-15 0v-17Z" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round"/><path d="M25.5 11.5c1.5-.8 2.8-1.2 4-1.4v17c-1.2.2-2.5.6-4 1.4" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round"/><path d="M14 17h7M14 21h7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/><circle cx="29.5" cy="10.1" r="3.2" fill="#F3AC63" /></svg></div>
     {!compact && <div className="min-w-0"><div className="font-display text-[18px] font-extrabold tracking-[-.055em] text-hesabu-ink">hesabu<span className="text-hesabu-green">.</span></div><div className="-mt-0.5 text-[10px] font-medium tracking-[.03em] text-hesabu-muted">Business, in balance.</div></div>}
   </div>;
 }
@@ -214,9 +216,9 @@ function App() {
     const demo = makeDemoData();
     setData(demo); saveData(demo); setShowWelcome(false); setSection('home');
   };
-  const createLocalShop = (values: { name: string; owner: string; phone: string; businessType: string }) => {
+  const createLocalShop = (values: { name: string; owner: string; phone: string; email: string; businessType: string }) => {
     const fresh: AppData = {
-      shopInfo: { name: values.name.trim(), owner: values.owner.trim(), phone: values.phone.trim(), businessType: values.businessType },
+      shopInfo: { name: values.name.trim(), owner: values.owner.trim(), phone: values.phone.trim(), email: values.email.trim(), businessType: values.businessType },
       transactions: [], customers: [], stock: [], reminders: [],
     };
     setData(fresh); saveData(fresh); setShowWelcome(false); setSection('home');
@@ -434,8 +436,18 @@ function App() {
   };
 
   const shareReport = async () => {
-    const url = `https://wa.me/?text=${encodeURIComponent(report.text)}`;
+    const digits = (data.shopInfo.phone ?? '').replace(/\D/g, '');
+    const phone = digits.startsWith('0') ? `254${digits.slice(1)}` : digits.startsWith('254') ? digits : `254${digits}`;
+    if (!/^254[17]\d{8}$/.test(phone)) { notify('Add the owner’s valid Kenyan mobile number in Shop profile to send this report to them.'); return; }
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(report.text)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const emailReport = () => {
+    const email = data.shopInfo.email?.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { notify('Add the owner’s email address in Shop profile before emailing a report.'); return; }
+    const subject = `${data.shopInfo.name} · ${reportPeriod} Hesabu report · ${dateText(reportDate, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    window.location.href = `mailto:${encodeURIComponent(email).replace('%40', '@')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(report.text)}`;
   };
 
   const copyReport = async () => {
@@ -448,8 +460,8 @@ function App() {
     }
   };
 
-  const updateProfile = (name: string, owner: string, phone: string, businessType: string) => {
-    updateData(current => ({ ...current, shopInfo: { name: name.trim(), owner: owner.trim(), phone: phone.trim(), businessType } }));
+  const updateProfile = (name: string, owner: string, phone: string, email: string, businessType: string) => {
+    updateData(current => ({ ...current, shopInfo: { name: name.trim(), owner: owner.trim(), phone: phone.trim(), email: email.trim(), businessType } }));
     setModal(null); notify('Shop details saved.');
   };
 
@@ -512,7 +524,7 @@ function App() {
         <div className="header-tools">
           <div className="hidden text-right sm:block"><div className="text-[11px] font-bold text-hesabu-ink">{shortDay(today())}</div><div className="mt-0.5 text-[10px] text-hesabu-muted">Local ledger</div></div>
           <button className="profile-chip" onClick={() => setProfileMenuOpen(v => !v)} aria-label="Shop settings"><span className="profile-avatar">{(data.shopInfo.owner || data.shopInfo.name || 'H').slice(0, 1).toUpperCase()}</span><ChevronDown size={14} className="text-hesabu-muted" /></button>
-          {profileMenuOpen && <div className="profile-menu"><div className="border-b border-hesabu-line px-3 pb-3 pt-1"><div className="text-xs font-bold">{data.shopInfo.name}</div><div className="mt-1 text-[10px] text-hesabu-muted">{data.shopInfo.businessType}</div></div><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'profile' }); }}><Settings2 size={15} /> Shop details</button><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'settings' }); }}><SlidersHorizontal size={15} /> Preferences</button></div>}
+          {profileMenuOpen && <div className="profile-menu"><div className="border-b border-hesabu-line px-3 pb-3 pt-1"><div className="text-xs font-bold">{data.shopInfo.name}</div><div className="mt-1 text-[10px] text-hesabu-muted">{data.shopInfo.businessType}</div></div><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'profile' }); }}><Settings2 size={15} /> Shop details</button><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'account' }); }}><Users size={15} /> Account access</button><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'settings' }); }}><SlidersHorizontal size={15} /> Preferences</button></div>}
         </div>
       </div>
     </header>
@@ -608,7 +620,7 @@ function App() {
 
       {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const text = `Hello ${customer.name}, this is a friendly reminder from ${data.shopInfo.name} regarding your balance of ${money(customer.balance)}. Please let us know when you expect to make payment. Thank you.`; const digits = customer.phone.replace(/\D/g, ''); const phone = digits.startsWith('0') ? `254${digits.slice(1)}` : digits.startsWith('254') ? digits : `254${digits}`; if (!/^254[17]\d{8}$/.test(phone)) { notify('Please add a valid Kenyan phone number for this customer.'); return; } window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); }} />}
       {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} />}
-      {section === 'reports' && <ReportsSection data={data} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={shareReport} onCopy={copyReport} />}
+      {section === 'reports' && <ReportsSection data={data} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={shareReport} onEmail={emailReport} onCopy={copyReport} />}
     </main>
 
     <nav className="mobile-nav" aria-label="Primary navigation">{NAV.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => navigate(item.id)} className={cn('mobile-nav-item', section === item.id && 'mobile-nav-active')}><span className="mobile-nav-icon"><Icon size={21} strokeWidth={section === item.id ? 2.2 : 1.8} /></span><span>{item.label}</span>{section === item.id && <span className="mobile-nav-dot" />}</button>; })}</nav>
@@ -620,11 +632,12 @@ function App() {
     {modal?.kind === 'stock-edit' && data.stock.find(s => s.id === modal.itemId) && <StockEditModal item={data.stock.find(s => s.id === modal.itemId)!} onClose={closeModal} onSave={saveStockDetails} />}
     {modal?.kind === 'reminder' && <ReminderModal reminder={modal.reminder} onClose={closeModal} onSave={values => saveReminder(values, modal.reminder)} onDelete={deleteReminder} />}
     {modal?.kind === 'profile' && <ProfileModal data={data} onClose={closeModal} onSave={updateProfile} />}
+    {modal?.kind === 'account' && <AccountModal email={data.shopInfo.email ?? ''} onClose={closeModal} onNotify={notify} />}
     {modal?.kind === 'settings' && <SettingsModal onClose={closeModal} onReset={resetDemo} onProfile={() => setModal({ kind: 'profile' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} />}
     {modal?.kind === 'edit-draft' && pending && <EditDraftModal draft={pending} items={data.stock} onClose={closeModal} onSave={editDraft} />}
     {modal?.kind === 'transaction' && data.transactions.find(t => t.id === modal.transactionId) && <TransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} customer={data.customers.find(c => c.id === data.transactions.find(t => t.id === modal.transactionId)?.customerId)} onClose={closeModal} onEdit={transaction => setModal({ kind: 'edit-transaction', transactionId: transaction.id })} onDelete={deleteTransaction} />}
     {modal?.kind === 'edit-transaction' && data.transactions.find(t => t.id === modal.transactionId) && <EditTransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} onClose={closeModal} onSave={saveTransactionEdit} />}
-    <WelcomeScreen show={showWelcome} onUseDemo={chooseDemo} onCreateShop={createLocalShop} />
+    <WelcomeScreen show={showWelcome} onUseDemo={chooseDemo} onCreateShop={createLocalShop} onAccount={() => setModal({ kind: 'account' })} />
     <Toast message={toastMessage} onClose={closeToast} />
   </div>;
 }
@@ -695,9 +708,9 @@ function StockCard({ item, onEdit, onRestock, onAdjust }: { item: StockItem; onE
   </section>;
 }
 
-function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onCopy }: {
+function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onEmail, onCopy }: {
   data: AppData; report: ReturnType<typeof buildReport>; reportPeriod: 'daily' | 'weekly' | 'monthly'; setReportPeriod: (v: 'daily' | 'weekly' | 'monthly') => void;
-  reportDate: string; setReportDate: (v: string) => void; onShare: () => void; onCopy: () => void;
+  reportDate: string; setReportDate: (v: string) => void; onShare: () => void; onEmail: () => void; onCopy: () => void;
 }) {
   const periodLabel = reportPeriod === 'daily'
     ? (reportDate === today() ? 'Today’s report' : `Report for ${dateText(reportDate, { day: 'numeric', month: 'short', year: 'numeric' })}`)
@@ -712,7 +725,7 @@ function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDat
         <label className="field-wrap mt-5 block"><span className="field-label">Report date</span><input type="date" className="field-control" value={reportDate} max={today()} onChange={e => setReportDate(e.target.value)} /></label>
         <div className="report-mini-stats"><div><span>Cash in</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div><div><span>Cash out</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div><div><span>Net cash</span><b>{money(report.net)}</b></div></div>
         <div className="mt-4 rounded-xl bg-[#F5F7F4] px-3.5 py-3 text-[10px] leading-5 text-hesabu-muted">Net cash is money in minus money out. It is not profit because cost of goods sold and other accounting adjustments are not calculated here.</div>
-        <Button className="mt-5 w-full" onClick={onShare}><Share2 size={16} /> Share on WhatsApp</Button><Button variant="secondary" className="mt-2 w-full" onClick={onCopy}><ClipboardList size={16} /> Copy report text</Button>
+        <div className="mt-5 grid grid-cols-2 gap-2"><Button onClick={onShare}><Share2 size={15} /> WhatsApp</Button><Button variant="secondary" onClick={onEmail}><FileText size={15} /> Email</Button></div><Button variant="ghost" className="mt-2 w-full" onClick={onCopy}><ClipboardList size={15} /> Copy report text</Button>
       </section>
       <section className="report-preview-wrap"><div className="mb-3 flex items-center justify-between gap-3"><div><div className="eyebrow">MESSAGE PREVIEW</div><h2 className="mt-1 font-display text-[17px] font-extrabold tracking-[-.03em]">{periodLabel}</h2></div><span className="share-ready"><span className="share-ready-dot" /> Ready to share</span></div>
         <div className="whatsapp-sheet"><div className="wa-header"><span className="wa-avatar"><span className="brand-mark brand-mark-small"><span /><span /><span /></span></span><span><b>Hesabu</b><small>Shop summary</small></span><MoreHorizontal size={18} className="ml-auto text-[#6C8275]" /></div>
@@ -819,14 +832,81 @@ function ReminderModal({ reminder, onClose, onSave, onDelete }: { reminder?: Rem
   </Modal>;
 }
 
-function ProfileModal({ data, onClose, onSave }: { data: AppData; onClose: () => void; onSave: (name: string, owner: string, phone: string, businessType: string) => void }) {
-  const [name, setName] = useState(data.shopInfo.name); const [owner, setOwner] = useState(data.shopInfo.owner); const [phone, setPhone] = useState(data.shopInfo.phone); const [businessType, setBusinessType] = useState(data.shopInfo.businessType);
+function ProfileModal({ data, onClose, onSave }: { data: AppData; onClose: () => void; onSave: (name: string, owner: string, phone: string, email: string, businessType: string) => void }) {
+  const [name, setName] = useState(data.shopInfo.name); const [owner, setOwner] = useState(data.shopInfo.owner); const [phone, setPhone] = useState(data.shopInfo.phone); const [email, setEmail] = useState(data.shopInfo.email ?? ''); const [businessType, setBusinessType] = useState(data.shopInfo.businessType);
   return <Modal title="Your shop details" detail="These details are used in your reports and shop header." onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(name, owner, phone, businessType); }}>
-      <Field label="Shop name" value={name} onChange={setName} required autoFocus /><Field label="Your name" value={owner} onChange={setOwner} required /><Field label="Phone number" value={phone} onChange={setPhone} inputMode="tel" />
+    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(name, owner, phone, email, businessType); }}>
+      <Field label="Shop name" value={name} onChange={setName} required autoFocus /><Field label="Owner name" value={owner} onChange={setOwner} required /><Field label="Owner WhatsApp number" value={phone} onChange={setPhone} inputMode="tel" placeholder="07xx xxx xxx" /><Field label="Owner email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" />
       <SelectField label="Business type" value={businessType} onChange={setBusinessType} options={[{ value: 'General shop', label: 'General shop' }, { value: 'Mama Mboga', label: 'Mama Mboga' }, { value: 'Hardware', label: 'Hardware' }, { value: 'Pharmacy', label: 'Pharmacy' }, { value: 'Other', label: 'Other' }]} />
       <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit"><Check size={15} /> Save details</Button></div>
     </form>
+  </Modal>;
+}
+
+function AccountModal({ email: ownerEmail, onClose, onNotify }: { email: string; onClose: () => void; onNotify: (message: string) => void }) {
+  const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>('signin');
+  const [email, setEmail] = useState(ownerEmail);
+  const [password, setPassword] = useState('');
+  const [accountEmail, setAccountEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!supabaseClient) return;
+    let mounted = true;
+    supabaseClient.auth.getUser().then(({ data }) => { if (mounted) setAccountEmail(data.user?.email ?? ''); });
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => setAccountEmail(session?.user?.email ?? ''));
+    return () => { mounted = false; subscription.unsubscribe(); };
+  }, []);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setError(''); setMessage('');
+    if (!supabaseClient) { setMessage('Secure sign-in is shown here, but this preview has no HESABU account service connected yet. Your ledger stays on this device.'); return; }
+    if (!email.trim()) { setError('Enter your email address.'); return; }
+    setBusy(true);
+    try {
+      if (mode === 'signin') {
+        const { error: authError } = await supabaseClient.auth.signInWithPassword({ email: email.trim(), password });
+        if (authError) throw authError;
+        setAccountEmail(email.trim()); onNotify('You are signed in. This preview still keeps ledger data on this device.');
+      } else if (mode === 'signup') {
+        const { data, error: authError } = await supabaseClient.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: window.location.origin } });
+        if (authError) throw authError;
+        if (data.session) { setAccountEmail(email.trim()); onNotify('Your account is ready. This preview still keeps ledger data on this device.'); }
+        else setMessage('Check your email for a confirmation link, then come back here to sign in.');
+      } else {
+        const { error: authError } = await supabaseClient.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin });
+        if (authError) throw authError;
+        setMessage('If this address has a Hesabu account, a password reset link is on its way.');
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'We could not complete that request. Please try again.');
+    } finally { setBusy(false); }
+  };
+
+  const signOut = async () => {
+    if (!supabaseClient) return;
+    const { error: authError } = await supabaseClient.auth.signOut();
+    if (authError) { setError(authError.message); return; }
+    setAccountEmail(''); setMessage('Signed out. The device ledger remains available in this browser.');
+  };
+
+  return <Modal title="Your Hesabu account" detail="Account access and business records should always be clear about where your data lives." onClose={onClose} size="lg">
+    {accountEmail ? <div className="space-y-4"><div className="rounded-2xl border border-[#DDE9E0] bg-[#F5FAF6] p-4"><div className="eyebrow">SIGNED IN</div><div className="mt-1 text-sm font-bold text-hesabu-ink">{accountEmail}</div><p className="mt-2 text-[11px] leading-5 text-hesabu-muted">Your account can authenticate you. Cloud ledger sync is not enabled in this preview; your business records remain in this browser.</p></div><Button variant="secondary" onClick={signOut}>Sign out</Button></div> : <>
+      <div className="rounded-xl border border-[#E6EDE7] bg-[#F8FAF7] px-3 py-2.5 text-[10px] leading-5 text-hesabu-muted">{supabaseClient ? 'Email account service is connected.' : 'Account screen preview · Secure sign-in will work when the HESABU service is connected.'} Ledger data in this build stays on this device.</div>
+      <div className="choice-two mt-4"><button type="button" className={cn(mode === 'signin' && 'choice-two-active')} onClick={() => { setMode('signin'); setMessage(''); setError(''); }}>Sign in</button><button type="button" className={cn(mode === 'signup' && 'choice-two-active')} onClick={() => { setMode('signup'); setMessage(''); setError(''); }}>Create account</button></div>
+      <form className="mt-4 space-y-4" onSubmit={submit}>
+        <Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@example.com" required autoFocus />
+        {mode !== 'reset' && <Field label="Password" type="password" value={password} onChange={setPassword} placeholder={mode === 'signup' ? 'At least 8 characters' : 'Your password'} required />}
+        {mode === 'signup' && <p className="-mt-2 text-[10px] leading-4 text-hesabu-muted">Use a password you do not use for M-Pesa, email or other services.</p>}
+        {error && <p className="rounded-lg bg-[#FBEDEC] px-3 py-2 text-[11px] text-[#A63D39]" role="alert">{error}</p>}{message && <p className="rounded-lg bg-[#EEF6EF] px-3 py-2 text-[11px] leading-5 text-[#456A50]" role="status">{message}</p>}
+        {!supabaseClient && <p className="text-[10px] leading-4 text-hesabu-muted">To enable account sign-in, HESABU needs its own database and secure account settings. No other app’s database is used.</p>}
+        <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Close</Button><Button type="submit" disabled={busy || !supabaseClient}>{busy ? 'Please wait…' : mode === 'signup' ? 'Create account' : mode === 'reset' ? 'Send reset link' : 'Sign in securely'}</Button></div>
+        {mode === 'signin' && <button className="mx-auto block text-[11px] font-bold text-hesabu-green" type="button" onClick={() => { setMode('reset'); setMessage(''); setError(''); }}>Forgot your password?</button>}
+        {mode === 'reset' && <button className="mx-auto block text-[11px] font-bold text-hesabu-green" type="button" onClick={() => { setMode('signin'); setMessage(''); setError(''); }}>Back to sign in</button>}
+      </form>
+    </>}
   </Modal>;
 }
 
@@ -835,7 +915,7 @@ function SettingsModal({ onClose, onReset, onProfile, onExportBackup, onExportCs
     <div className="settings-list">
       <button onClick={onProfile}><span className="settings-item-icon"><Store size={17} /></span><span><b>Shop profile</b><small>Name, phone number and business type</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
       <div className="settings-info"><span className="settings-item-icon"><Settings2 size={17} /></span><span><b>Stored on this device</b><small>Hesabu uses this browser’s local storage. Clearing browser data removes this ledger.</small></span></div>
-      <div className="settings-info"><span className="settings-item-icon"><Bell size={17} /></span><span><b>Reminders</b><small>Shown inside the app. Automatic WhatsApp delivery is not connected in this prototype.</small></span></div>
+      <div className="settings-info"><span className="settings-item-icon"><Bell size={17} /></span><span><b>Report delivery</b><small>Send reports manually to the owner’s saved WhatsApp or email. Automatic delivery is waiting for HESABU’s secure cloud and approved message providers.</small></span></div>
       <button onClick={onExportBackup}><span className="settings-item-icon"><Download size={17} /></span><span><b>Download a backup</b><small>Save your shop, transactions, people, stock and reminders as a JSON file.</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
       <button onClick={onExportCsv}><span className="settings-item-icon"><FileSpreadsheet size={17} /></span><span><b>Export transactions (CSV)</b><small>Open your ledger in Excel, Google Sheets or another spreadsheet.</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
       <label className="settings-info settings-upload"><span className="settings-item-icon"><Upload size={17} /></span><span><b>Restore from backup</b><small>Choose a Hesabu JSON backup. Your current browser data will be replaced after confirmation.</small><input className="settings-file-input" type="file" accept="application/json,.json" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) onImportBackup(file); e.currentTarget.value = ''; }} /></span></label>
@@ -890,10 +970,11 @@ function TransactionModal({ transaction, customer, onClose, onEdit, onDelete }: 
 }
 
 
-function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUseDemo: () => void; onCreateShop: (values: { name: string; owner: string; phone: string; businessType: string }) => void }) {
+function WelcomeScreen({ show, onUseDemo, onCreateShop, onAccount }: { show: boolean; onUseDemo: () => void; onCreateShop: (values: { name: string; owner: string; phone: string; email: string; businessType: string }) => void; onAccount: () => void }) {
   const [name, setName] = useState('');
   const [owner, setOwner] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [businessType, setBusinessType] = useState('General shop');
   if (!show) return null;
   return <main className="welcome-screen">
@@ -913,15 +994,17 @@ function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUse
       </section>
       <section className="welcome-setup">
         <div className="welcome-form-head"><div className="eyebrow">LET’S SET THINGS UP</div><h2>Set up your business.</h2><p>Use your own details to get started, or explore the sample shop first.</p></div>
-        <form className="welcome-form" onSubmit={event => { event.preventDefault(); onCreateShop({ name, owner, phone, businessType }); }}>
+        <form className="welcome-form" onSubmit={event => { event.preventDefault(); onCreateShop({ name, owner, phone, email, businessType }); }}>
           <Field label="Shop name" value={name} onChange={setName} placeholder="e.g. Mwende General Shop" required autoFocus />
           <Field label="Your name (optional)" value={owner} onChange={setOwner} placeholder="What should Hesabu call you?" />
           <Field label="Phone number (optional)" value={phone} onChange={setPhone} placeholder="07… or 01…" type="tel" inputMode="tel" />
+          <Field label="Owner email (optional)" value={email} onChange={setEmail} placeholder="you@example.com" type="email" />
           <SelectField label="Type of business" value={businessType} onChange={setBusinessType} options={[{value:'General shop',label:'General shop / duka'},{value:'Kiosk',label:'Kiosk'},{value:'Grocery',label:'Grocery / food shop'},{value:'Hardware',label:'Hardware'},{value:'Clothing',label:'Clothing / boutique'},{value:'Other',label:'Other small business'}]} />
           <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Start my business ledger <ArrowRight size={16} /></Button>
         </form>
         <div className="welcome-device-note"><CheckCircle2 size={15} /><span>Device-only setup, not an online account. Download backups until cloud sign-up and sync are connected.</span></div>
         <div className="welcome-demo-row"><span>Just looking around?</span><button type="button" onClick={onUseDemo}>Explore the sample ledger <ArrowRight size={14} /></button></div>
+        <div className="welcome-demo-row"><span>Already have a Hesabu account?</span><button type="button" onClick={onAccount}>Sign in <ArrowRight size={14} /></button></div>
       </section>
     </div>
   </main>;
