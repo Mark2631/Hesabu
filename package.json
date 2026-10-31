@@ -14,6 +14,7 @@
     "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.118.0",
     "lucide-react": "^0.468.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
