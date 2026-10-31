@@ -1,4 +1,4 @@
-import type { AppData, Transaction, TransactionDraft, TransactionType } from './types';
+import type { AppData, DailyClose, Transaction, TransactionDraft, TransactionType } from './types';
 
 export const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 export const id = (prefix = 'id') => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -42,6 +42,26 @@ export function creditGiven(tx: Transaction[]) {
   return tx.filter(t => t.type === 'credit').reduce((sum, t) => sum + t.amount, 0);
 }
 export function netCash(tx: Transaction[]) { return cashIn(tx) - cashOut(tx); }
+export function drawerCashIn(tx: Transaction[]) {
+  return tx.filter(t => (t.type === 'sale' || t.type === 'payment')
+    && t.paymentMethod !== 'mpesa-demo'
+    && t.paymentStatus !== 'pending' && t.paymentStatus !== 'failed')
+    .reduce((sum, t) => sum + t.amount, 0);
+}
+export function expectedDrawerCash(data: AppData, date: string, openingCash: number) {
+  const transactions = data.transactions.filter(tx => tx.date === date);
+  return Math.max(0, Math.round(openingCash)) + drawerCashIn(transactions) - cashOut(transactions);
+}
+export function makeDailyClose(data: AppData, date: string, openingCash: number, countedCash: number, closedAt = new Date()) : DailyClose {
+  const opening = Math.max(0, Math.round(openingCash));
+  const counted = Math.max(0, Math.round(countedCash));
+  const expected = expectedDrawerCash(data, date, opening);
+  return { id: id('close'), date, openingCash: opening, expectedCash: expected, countedCash: counted, difference: counted - expected, closedAt: closedAt.toISOString() };
+}
+export function suggestedOpeningCash(closes: DailyClose[], date: string) {
+  const prior = [...closes].filter(close => close.date < date).sort((a, b) => `${b.date}${b.closedAt}`.localeCompare(`${a.date}${a.closedAt}`))[0];
+  return prior?.countedCash ?? 0;
+}
 
 let paymentSequence = 0;
 export function makePaymentReference(now = Date.now(), nonce = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)) {
