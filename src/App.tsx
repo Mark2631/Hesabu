@@ -8,8 +8,9 @@ import {
   Wallet, X, type LucideIcon,
 } from 'lucide-react';
 import { hasSavedData, makeDemoData, readSavedData, saveData } from './data';
+import { QRCodeSVG } from 'qrcode.react';
 import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, fullDateText, id, money, parseTransaction, shortDay, timeText, today, transactionLabel } from './utils';
+import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, fullDateText, id, makePaymentReference, money, parseTransaction, reconcileDemoPayment, shortDay, timeText, today, transactionLabel } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'home', label: 'Home', icon: House },
@@ -136,6 +137,7 @@ function TransactionRow({ transaction, onClick, onDelete, compact = false }: { t
       </span>
       <span className="ml-2 shrink-0 text-right">
         <span className={cn('block text-[13px] font-bold tabular-nums', `amount-${transaction.type}`)}>{prefix}{money(transaction.amount)}</span>
+        {transaction.paymentStatus && <span className={cn('mt-1 block text-[9px] font-semibold uppercase tracking-[.06em]', transaction.paymentStatus === 'confirmed' ? 'text-hesabu-green' : transaction.paymentStatus === 'failed' ? 'text-[#B94C46]' : 'text-[#A47731]')}>{transaction.paymentStatus === 'pending' ? 'M-Pesa pending' : transaction.paymentStatus}</span>}
         {transaction.type === 'credit' && <span className="mt-1 block text-[9px] font-semibold uppercase tracking-[.06em] text-[#A47731]">On credit</span>}
       </span>
     </button>
@@ -152,7 +154,7 @@ function Metric({ label, value, hint, tone, icon: Icon }: { label: string; value
 }
 
 function ActivityProgress({ transactions }: { transactions: Transaction[] }) {
-  const sales = transactions.filter(t => t.type === 'sale').length;
+  const sales = transactions.filter(t => t.type === 'sale' && t.paymentStatus !== 'pending' && t.paymentStatus !== 'failed').length;
   const credits = transactions.filter(t => t.type === 'credit').length;
   const expenses = transactions.filter(t => t.type === 'expense').length;
   return <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-hesabu-line pt-3 text-[10px] font-semibold text-hesabu-muted">
@@ -234,7 +236,7 @@ function App() {
     setSection(next); setQuery(''); setPending(null); setProfileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const applyTransaction = (draft: TransactionDraft) => {
+  const applyTransaction = (draft: TransactionDraft, simulatedPayment = false) => {
     let createdName = draft.customerName?.trim();
     const current = data;
     let nextCustomers = [...current.customers];
@@ -255,6 +257,9 @@ function App() {
       customerId: customer?.id, customerName: createdName, dueDate: draft.dueDate,
       stockItemId: matchedStock?.id, stockQuantityDelta: draft.stockQuantityDelta,
       category: draft.category,
+      paymentStatus: simulatedPayment ? 'pending' : undefined,
+      paymentMethod: simulatedPayment ? 'mpesa-demo' : undefined,
+      paymentReference: simulatedPayment ? makePaymentReference() : undefined,
     };
     const effectiveStockDelta = matchedStock && draft.stockQuantityDelta !== undefined && draft.stockQuantityDelta < 0
       ? -Math.min(matchedStock.quantity, Math.abs(draft.stockQuantityDelta))
@@ -265,8 +270,13 @@ function App() {
       : current.stock;
     updateData(c => ({ ...c, customers: nextCustomers, stock: nextStock, transactions: [txn, ...c.transactions] }));
     setPending(null); setQuickText(''); setTypeChoice('auto');
-    notify('Imeandikwa. Record saved.');
+    notify(simulatedPayment ? 'Demo M-Pesa payment is waiting for confirmation.' : 'Imeandikwa. Record saved.');
     if (navigator.vibrate) navigator.vibrate(18);
+  };
+
+  const reconcilePayment = (transactionId: string, status: 'confirmed' | 'failed') => {
+    updateData(current => ({ ...current, transactions: reconcileDemoPayment(current.transactions, transactionId, status) }));
+    notify(status === 'confirmed' ? 'Demo payment confirmed and added to cash received.' : 'Demo payment marked failed. No cash was recorded.');
   };
 
   const handleQuickSubmit = (event?: FormEvent) => {
@@ -529,7 +539,7 @@ function App() {
           </div>
         </section>
         <section className="metrics-grid" aria-label="Today's accounting summary">
-          <Metric label="Cash sales" value={todayTransactions.filter(t => t.type === 'sale').reduce((sum,t) => sum + t.amount, 0)} hint="Sales paid today" tone="green" icon={TrendingUp}/>
+          <Metric label="Cash sales" value={cashIn(todayTransactions.filter(t => t.type === 'sale'))} hint="Confirmed sales only" tone="green" icon={TrendingUp}/>
           <Metric label="Expenses" value={todaysOut} hint="Money paid out" tone="red" icon={TrendingDown}/>
           <Metric label="Credit sales" value={todaysCredit} hint="Not yet collected" tone="amber" icon={HandCoins}/>
         </section>
@@ -552,6 +562,7 @@ function App() {
               {pending && <div className="draft-review" aria-live="polite">
                 <div className="flex items-start gap-3"><div className="draft-check"><Check size={17} /></div><div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-[.13em] text-hesabu-green">Review before saving</div><div className="mt-1 text-[13px] font-bold leading-5 text-hesabu-ink">{pending.summary}</div>{pending.type === 'credit' && <div className="mt-1 text-[11px] text-hesabu-muted">Due {dateText(pending.dueDate ?? addDays(today(), 7), { weekday: 'long', day: 'numeric', month: 'short' })}. This creates a receivable, not cash collected.</div>}{pending.stockQuantityDelta !== undefined && <div className="mt-1 text-[11px] text-hesabu-muted">Stock adjustment: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</div>}{pendingStockExceedsCount && pendingStockItem && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-[#8D6321]">Only <b>{pendingStockItem.quantity} {pendingStockItem.unit}</b> tracked. Saving will bring this item’s tracked count to zero. Use “Edit details” if the quantity or product is wrong.</div>}</div><button onClick={() => setPending(null)} className="icon-button !h-7 !w-7" aria-label="Dismiss review"><X size={14} /></button></div>
                 <div className="mt-4 grid grid-cols-2 gap-2"><Button onClick={() => applyTransaction(pending)}><Check size={15} /> Confirm & save</Button><Button variant="outline" onClick={() => setModal({ kind: 'edit-draft' })}>Edit details</Button></div>
+                {pending.type === 'sale' && <div className="mt-2 rounded-xl border border-[#DCE9DF] bg-[#F6FAF6] p-3"><div className="flex items-start gap-2"><div className="mt-0.5 rounded-md bg-white p-1.5 text-hesabu-green"><ReceiptText size={15}/></div><div className="min-w-0 flex-1"><div className="text-[11px] font-bold text-hesabu-ink">Try M-Pesa QR payment · Demo</div><div className="mt-1 text-[10px] leading-4 text-hesabu-muted">Creates a unique pending payment reference. No money moves and it is excluded from cash received until you confirm it.</div><Button size="sm" variant="secondary" className="mt-2 w-full" onClick={() => applyTransaction(pending, true)}>Create demo payment request</Button></div></div></div>}
               </div>}
               <div className="voice-note"><Mic size={15} /><span>Try: “Njeri paid 500 towards her balance” or “Bought stock for 800”.</span></div>
             </section>
@@ -561,6 +572,12 @@ function App() {
               {showAllTransactions && <div className="mb-3 flex gap-2"><label className="search-field flex-1"><Search size={15} /><input value={transactionSearch} onChange={e => setTransactionSearch(e.target.value)} placeholder="Search transactions" /></label><select className="filter-select" value={filterTransactions} onChange={e => setFilterTransactions(e.target.value as 'all' | TransactionType)} aria-label="Filter transaction type"><option value="all">All</option>{Object.entries(TYPE_META).map(([type, meta]) => <option key={type} value={type}>{meta.label}</option>)}</select></div>}
               {sortedTransactions.length === 0 ? <EmptyState title="No entries yet" detail="Your transactions will appear here as soon as you log the first one." /> : <div className="divide-y divide-hesabu-line/80">{sortedTransactions.filter(t => !showAllTransactions || (filterTransactions === 'all' || t.type === filterTransactions)).filter(t => !showAllTransactions || `${t.description} ${t.customerName ?? ''}`.toLowerCase().includes(transactionSearch.toLowerCase())).slice(0, showAllTransactions ? 80 : 5).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact={!showAllTransactions} />)}</div>}
               <ActivityProgress transactions={todayTransactions} />
+            </section>
+
+            <section className="surface activity-surface" aria-label="M-Pesa demo reconciliation feed">
+              <div className="section-heading-row"><div><div className="eyebrow">SIMULATION ONLY</div><h2 className="surface-title">M-Pesa payment feed</h2><p className="surface-subtitle">Match each payment to its unique reference before confirming.</p></div><span className="aside-icon"><ReceiptText size={18}/></span></div>
+              <div className="mt-3 rounded-lg bg-[#FFF8EA] px-3 py-2 text-[10px] leading-4 text-[#80622B]">Demo only. No M-Pesa request or transfer is sent. Never treat this feed as a real provider confirmation.</div>
+              {data.transactions.filter(tx => tx.paymentMethod === 'mpesa-demo').length === 0 ? <EmptyState title="No demo payments yet" detail="Create one from the sale review to explore pending, confirmed and failed payment handling." /> : <div className="mt-3 divide-y divide-hesabu-line">{data.transactions.filter(tx => tx.paymentMethod === 'mpesa-demo').slice(0, 8).map(tx => <div key={tx.id} className="py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-[12px] font-bold text-hesabu-ink">{tx.description}</div><div className="mt-1 break-all font-mono text-[10px] text-hesabu-muted">{tx.paymentReference}</div><div className="mt-1 text-[10px] text-hesabu-muted">{dateText(tx.date)} · {timeText(tx.time)} · {money(tx.amount)}</div></div><span className={cn('shrink-0 rounded-full px-2 py-1 text-[9px] font-bold uppercase', tx.paymentStatus === 'confirmed' ? 'bg-[#E7F4EA] text-hesabu-green' : tx.paymentStatus === 'failed' ? 'bg-[#FBEDEC] text-[#B94C46]' : 'bg-[#FFF3D8] text-[#93661E]')}>{tx.paymentStatus}</span></div>{tx.paymentStatus === 'pending' && <div className="mt-3 flex flex-col items-center gap-2 rounded-xl border border-hesabu-line bg-[#FAFCFA] p-3"><QRCodeSVG value={`HESABU DEMO MPESA|amount=${tx.amount}|reference=${tx.paymentReference}`} size={128} level="M" marginSize={3} title={`Demo payment QR for ${money(tx.amount)}, reference ${tx.paymentReference}`} /><div className="text-center text-[10px] font-semibold text-hesabu-ink">Scan to read the demo amount and reference</div><div className="text-center text-[9px] text-hesabu-muted">This QR does not initiate a payment or verify money received.</div></div>}{tx.paymentStatus === 'pending' && <div className="mt-2 flex gap-2"><Button size="sm" onClick={() => reconcilePayment(tx.id, 'confirmed')}><Check size={13}/> Simulate confirmed</Button><Button size="sm" variant="outline" onClick={() => reconcilePayment(tx.id, 'failed')}>Simulate failed</Button></div>}{tx.paymentStatus === 'confirmed' && <p className="mt-2 text-[10px] font-semibold text-hesabu-green">Reconciled to cash received. Reference can only be confirmed once.</p>}{tx.paymentStatus === 'failed' && <p className="mt-2 text-[10px] text-hesabu-muted">Not counted as cash. This failed request cannot be confirmed again.</p>}</div>)}</div>}
             </section>
           </div>
 
