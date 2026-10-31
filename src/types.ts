@@ -23,6 +23,9 @@ export interface Transaction {
   stockQuantityDelta?: number;
   category?: string;
   note?: string;
+  paymentStatus?: 'pending' | 'confirmed' | 'failed';
+  paymentReference?: string;
+  paymentMethod?: 'cash' | 'mpesa-demo';
 }
 
 export interface Customer {
