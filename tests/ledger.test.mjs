@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeDemoData } from '../src/data.ts';
-import { buildReport, cashIn, cashOut, creditGiven, makePaymentReference, parseTransaction, reconcileDemoPayment } from '../src/utils.ts';
+import { buildReport, cashIn, cashOut, creditGiven, drawerCashIn, expectedDrawerCash, makeDailyClose, makePaymentReference, parseTransaction, reconcileDemoPayment, suggestedOpeningCash } from '../src/utils.ts';
 
 const data = makeDemoData();
 
@@ -82,4 +82,30 @@ test('demo reconciliation is reference-specific and cannot change a terminal sta
 
 test('payment references are unique for distinct random values', () => {
   assert.notEqual(makePaymentReference(1_700_000_000_000, 'first'), makePaymentReference(1_700_000_000_000, 'second'));
+});
+
+test('daily close counts till cash and excludes M-Pesa demo receipts', () => {
+  const date = '2026-10-31';
+  const tx = [
+    { id: 'cash', type: 'sale', amount: 1000, date, time: '08:00' },
+    { id: 'debt', type: 'payment', amount: 200, date, time: '09:00' },
+    { id: 'expense', type: 'expense', amount: 250, date, time: '09:30' },
+    { id: 'mpesa', type: 'sale', amount: 600, date, time: '10:00', paymentMethod: 'mpesa-demo', paymentStatus: 'confirmed' },
+    { id: 'pending', type: 'sale', amount: 90, date, time: '10:01', paymentMethod: 'mpesa-demo', paymentStatus: 'pending' },
+  ];
+  const shop = { ...data, transactions: tx };
+  assert.equal(drawerCashIn(tx), 1200);
+  assert.equal(expectedDrawerCash(shop, date, 100), 1050);
+  const close = makeDailyClose(shop, date, 100, 1000, new Date('2026-10-31T17:00:00Z'));
+  assert.equal(close.expectedCash, 1050);
+  assert.equal(close.difference, -50);
+});
+
+test('next daily close suggests the prior saved cash count as opening float', () => {
+  const closes = [
+    { id: 'old', date: '2026-10-29', openingCash: 0, expectedCash: 0, countedCash: 450, difference: 450, closedAt: '2026-10-29T18:00:00Z' },
+    { id: 'latest', date: '2026-10-30', openingCash: 450, expectedCash: 900, countedCash: 875, difference: -25, closedAt: '2026-10-30T18:00:00Z' },
+  ];
+  assert.equal(suggestedOpeningCash(closes, '2026-10-31'), 875);
+  assert.equal(suggestedOpeningCash(closes, '2026-10-28'), 0);
 });
