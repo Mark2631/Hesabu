@@ -6,6 +6,7 @@ export interface ShopInfo {
   name: string;
   owner: string;
   phone: string;
+  email?: string;
   businessType: string;
 }
 
