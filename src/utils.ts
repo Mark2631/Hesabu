@@ -1,4 +1,4 @@
-import type { AppData, Transaction, TransactionDraft, TransactionType } from './types';
+import type { AppData, DailyClose, Transaction, TransactionDraft, TransactionType } from './types';
 
 export const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 export const id = (prefix = 'id') => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -33,7 +33,7 @@ export const transactionColor: Record<TransactionType, string> = {
 };
 
 export function cashIn(tx: Transaction[]) {
-  return tx.filter(t => t.type === 'sale' || t.type === 'payment').reduce((sum, t) => sum + t.amount, 0);
+  return tx.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentStatus !== 'pending' && t.paymentStatus !== 'failed').reduce((sum, t) => sum + t.amount, 0);
 }
 export function cashOut(tx: Transaction[]) {
   return tx.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
@@ -42,6 +42,38 @@ export function creditGiven(tx: Transaction[]) {
   return tx.filter(t => t.type === 'credit').reduce((sum, t) => sum + t.amount, 0);
 }
 export function netCash(tx: Transaction[]) { return cashIn(tx) - cashOut(tx); }
+export function drawerCashIn(tx: Transaction[]) {
+  return tx.filter(t => (t.type === 'sale' || t.type === 'payment')
+    && t.paymentMethod !== 'mpesa-demo'
+    && t.paymentStatus !== 'pending' && t.paymentStatus !== 'failed')
+    .reduce((sum, t) => sum + t.amount, 0);
+}
+export function expectedDrawerCash(data: AppData, date: string, openingCash: number) {
+  const transactions = data.transactions.filter(tx => tx.date === date);
+  return Math.max(0, Math.round(openingCash)) + drawerCashIn(transactions) - cashOut(transactions);
+}
+export function makeDailyClose(data: AppData, date: string, openingCash: number, countedCash: number, closedAt = new Date()) : DailyClose {
+  const opening = Math.max(0, Math.round(openingCash));
+  const counted = Math.max(0, Math.round(countedCash));
+  const expected = expectedDrawerCash(data, date, opening);
+  return { id: id('close'), date, openingCash: opening, expectedCash: expected, countedCash: counted, difference: counted - expected, closedAt: closedAt.toISOString() };
+}
+export function suggestedOpeningCash(closes: DailyClose[], date: string) {
+  const prior = [...closes].filter(close => close.date < date).sort((a, b) => `${b.date}${b.closedAt}`.localeCompare(`${a.date}${a.closedAt}`))[0];
+  return prior?.countedCash ?? 0;
+}
+
+let paymentSequence = 0;
+export function makePaymentReference(now = Date.now(), nonce = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)) {
+  paymentSequence += 1;
+  return `HES-${now.toString(36).toUpperCase()}-${paymentSequence.toString(36).toUpperCase()}-${nonce.replaceAll('-', '').slice(0, 8).toUpperCase()}`;
+}
+
+export function reconcileDemoPayment(transactions: Transaction[], transactionId: string, status: 'confirmed' | 'failed'): Transaction[] {
+  const target = transactions.find(tx => tx.id === transactionId);
+  if (!target || target.paymentMethod !== 'mpesa-demo' || target.paymentStatus !== 'pending') return transactions;
+  return transactions.map(tx => tx.id === transactionId ? { ...tx, paymentStatus: status } : tx);
+}
 
 const aliases: Record<string, string[]> = {
   Sukari: ['sukari', 'sugar'],
@@ -148,6 +180,9 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
   const credit = creditGiven(tx);
   const due = data.reminders.filter(r => !r.done && r.dueDate >= from && r.dueDate <= addDays(reportDate, 3));
   const lowStock = data.stock.filter(s => s.quantity <= s.lowStockAt);
+  const dailyClose = period === 'daily'
+    ? [...(data.dailyCloses ?? [])].filter(close => close.date === reportDate).sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0]
+    : undefined;
   const label = period === 'daily' ? 'Daily' : period === 'weekly' ? 'Weekly' : 'Monthly';
   const lines = [
     `Hesabu yako · ${label} report`,
@@ -156,6 +191,11 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
     `Pesa iliyoingia: ${money(inTotal)}`,
     `Matumizi: ${money(outTotal)}`,
     `Net cash: ${money(inTotal - outTotal)}`,
+    ...(dailyClose ? [
+      `Till expected: ${money(dailyClose.expectedCash)}`,
+      `Till counted: ${money(dailyClose.countedCash)}`,
+      `Till difference: ${dailyClose.difference === 0 ? money(0) : `${dailyClose.difference > 0 ? '+' : '−'}${money(Math.abs(dailyClose.difference))}`}`,
+    ] : []),
     `Madeni mapya: ${money(credit)}`,
     '',
     'Wateja waliochukua kwa deni:',
@@ -167,5 +207,5 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
     '',
     'Keep your records close. Hesabu.',
   ];
-  return { transactions: tx, cashIn: inTotal, cashOut: outTotal, net: inTotal - outTotal, credit, lowStock, due, text: lines.join('\n') };
+  return { transactions: tx, cashIn: inTotal, cashOut: outTotal, net: inTotal - outTotal, credit, lowStock, due, dailyClose, text: lines.join('\n') };
 }

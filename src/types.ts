@@ -6,6 +6,7 @@ export interface ShopInfo {
   name: string;
   owner: string;
   phone: string;
+  email?: string;
   businessType: string;
 }
 
@@ -23,6 +24,9 @@ export interface Transaction {
   stockQuantityDelta?: number;
   category?: string;
   note?: string;
+  paymentStatus?: 'pending' | 'confirmed' | 'failed';
+  paymentReference?: string;
+  paymentMethod?: 'cash' | 'mpesa-demo';
 }
 
 export interface Customer {
@@ -55,12 +59,23 @@ export interface Reminder {
   done: boolean;
 }
 
+export interface DailyClose {
+  id: string;
+  date: string;
+  openingCash: number;
+  expectedCash: number;
+  countedCash: number;
+  difference: number;
+  closedAt: string;
+}
+
 export interface AppData {
   shopInfo: ShopInfo;
   transactions: Transaction[];
   customers: Customer[];
   stock: StockItem[];
   reminders: Reminder[];
+  dailyCloses?: DailyClose[];
 }
 
 export interface TransactionDraft {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeDemoData } from '../src/data.ts';
-import { buildReport, cashIn, cashOut, creditGiven, parseTransaction } from '../src/utils.ts';
+import { buildReport, cashIn, cashOut, creditGiven, drawerCashIn, expectedDrawerCash, makeDailyClose, makePaymentReference, parseTransaction, reconcileDemoPayment, suggestedOpeningCash } from '../src/utils.ts';
 
 const data = makeDemoData();
 
@@ -61,4 +61,62 @@ test('daily cash summary excludes credit sales', () => {
   assert.equal(cashOut(tx), tx.filter(t => t.type === 'expense').reduce((a, t) => a + t.amount, 0));
   assert.equal(creditGiven(tx), tx.filter(t => t.type === 'credit').reduce((a, t) => a + t.amount, 0));
   assert.equal(buildReport(data, 'daily', tx[0]?.date ?? new Date().toLocaleDateString('en-CA')).credit, creditGiven(tx));
+});
+
+test('pending and failed demo payments never count as cash received', () => {
+  const base = { id: 'demo-1', type: 'sale', description: 'Samosas', amount: 60, date: '2026-10-31', time: '10:00', paymentMethod: 'mpesa-demo', paymentReference: 'HES-ONE' };
+  assert.equal(cashIn([{ ...base, paymentStatus: 'pending' }]), 0);
+  assert.equal(cashIn([{ ...base, paymentStatus: 'failed' }]), 0);
+  assert.equal(cashIn([{ ...base, paymentStatus: 'confirmed' }]), 60);
+});
+
+test('demo reconciliation is reference-specific and cannot change a terminal status', () => {
+  const first = { id: 'first', type: 'sale', description: 'Samosas', amount: 60, date: '2026-10-31', time: '10:00', paymentMethod: 'mpesa-demo', paymentReference: 'HES-FIRST', paymentStatus: 'pending' };
+  const second = { ...first, id: 'second', paymentReference: 'HES-SECOND' };
+  const confirmed = reconcileDemoPayment([first, second], 'first', 'confirmed');
+  assert.equal(confirmed[0].paymentStatus, 'confirmed');
+  assert.equal(confirmed[1].paymentStatus, 'pending');
+  assert.equal(reconcileDemoPayment(confirmed, 'first', 'failed')[0].paymentStatus, 'confirmed');
+  assert.equal(reconcileDemoPayment([first], 'missing', 'confirmed')[0].paymentStatus, 'pending');
+});
+
+test('payment references are unique for distinct random values', () => {
+  assert.notEqual(makePaymentReference(1_700_000_000_000, 'first'), makePaymentReference(1_700_000_000_000, 'second'));
+});
+
+test('daily close counts till cash and excludes M-Pesa demo receipts', () => {
+  const date = '2026-10-31';
+  const tx = [
+    { id: 'cash', type: 'sale', amount: 1000, date, time: '08:00' },
+    { id: 'debt', type: 'payment', amount: 200, date, time: '09:00' },
+    { id: 'expense', type: 'expense', amount: 250, date, time: '09:30' },
+    { id: 'mpesa', type: 'sale', amount: 600, date, time: '10:00', paymentMethod: 'mpesa-demo', paymentStatus: 'confirmed' },
+    { id: 'pending', type: 'sale', amount: 90, date, time: '10:01', paymentMethod: 'mpesa-demo', paymentStatus: 'pending' },
+  ];
+  const shop = { ...data, transactions: tx };
+  assert.equal(drawerCashIn(tx), 1200);
+  assert.equal(expectedDrawerCash(shop, date, 100), 1050);
+  const close = makeDailyClose(shop, date, 100, 1000, new Date('2026-10-31T17:00:00Z'));
+  assert.equal(close.expectedCash, 1050);
+  assert.equal(close.difference, -50);
+});
+
+test('next daily close suggests the prior saved cash count as opening float', () => {
+  const closes = [
+    { id: 'old', date: '2026-10-29', openingCash: 0, expectedCash: 0, countedCash: 450, difference: 450, closedAt: '2026-10-29T18:00:00Z' },
+    { id: 'latest', date: '2026-10-30', openingCash: 450, expectedCash: 900, countedCash: 875, difference: -25, closedAt: '2026-10-30T18:00:00Z' },
+  ];
+  assert.equal(suggestedOpeningCash(closes, '2026-10-31'), 875);
+  assert.equal(suggestedOpeningCash(closes, '2026-10-28'), 0);
+});
+
+test('daily owner report includes the latest till reconciliation result', () => {
+  const first = { id: 'first', date: '2026-10-31', openingCash: 0, expectedCash: 1000, countedCash: 950, difference: -50, closedAt: '2026-10-31T17:00:00Z' };
+  const latest = { ...first, id: 'latest', countedCash: 975, difference: -25, closedAt: '2026-10-31T18:00:00Z' };
+  const report = buildReport({ ...data, dailyCloses: [first, latest] }, 'daily', '2026-10-31');
+  assert.equal(report.dailyClose.id, 'latest');
+  assert.match(report.text, /Till expected: KES 1,000/);
+  assert.match(report.text, /Till counted: KES 975/);
+  assert.match(report.text, /Till difference: −KES 25/);
+  assert.equal(buildReport({ ...data, dailyCloses: [latest] }, 'weekly', '2026-10-31').dailyClose, undefined);
 });

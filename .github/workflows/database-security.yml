@@ -1,0 +1,28 @@
+name: Hesabu database security
+
+on:
+  push:
+    branches:
+      - main
+      - build/hesabu-ledger-mvp
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  rls-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start the local Supabase stack
+        run: supabase start
+      - name: Run owner access and revision tests
+        run: supabase test db

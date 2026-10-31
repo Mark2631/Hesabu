@@ -4,7 +4,7 @@ Hesabu is a mobile-first, voice-friendly micro-ledger for Kenyan small shops. It
 
 ## Preview
 
-Open the latest preview at https://hesabu-99jho74ke-marksanchez2631-1753s-projects.vercel.app. It is a preview deployment, not the production release.
+Open the current feature preview at https://hesabu-thb1hob2r-nexus-workspace.vercel.app. It is a preview deployment, not the production release.
 
 ## Run locally
 
@@ -21,6 +21,12 @@ Install Node.js 22 or newer, then run `npm install`, `npm run dev`, `npm test`, 
 - Duplicate safeguards for contacts and stock items, plus a warning when a sale exceeds the tracked shelf count.
 - Bill and follow-up reminders inside the app.
 - Daily, weekly and monthly report previews that can be copied or shared through WhatsApp.
+- Daily cash-drawer close with opening float, recorded expected cash, counted cash, variance history, and next-day opening suggestions. Demo M-Pesa requests never increase the physical till total.
+- Daily owner reports include the latest till count and any cash difference, ready for the same manual WhatsApp/email share flow.
+- Owner-directed manual report sharing through WhatsApp or email using the contact saved in the shop profile.
+- Account access screens for email sign-up, sign-in and password reset, enabled only when a dedicated HESABU Supabase project is configured.
+- Signed-in owners can manually save or restore a version-checked cloud ledger snapshot. Cloud backups are owner-isolated, and conflicting edits are surfaced instead of silently replacing another device’s newer copy.
+- M-Pesa payment flow simulation with unique references and pending, confirmed and failed states. Only a confirmed demo payment enters cash totals; each reference can be reconciled once.
 - CSV export, JSON backup and restore, editable shop details, and a resettable Mama Grace demo ledger.
 - Local-first persistence, a mobile bottom navigation bar, responsive desktop layout, and a basic PWA shell.
 
@@ -34,4 +40,4 @@ Install Node.js 22 or newer, then run `npm install`, `npm run dev`, `npm test`, 
 
 ## Data and limitations
 
-This is an MVP, not a hosted multi-user product. All ledger data stays in the current browser's local storage. It is not synced across devices; downloading backups regularly is important. Voice capture needs microphone permission and support from the current browser, and may require HTTPS. Report sharing opens WhatsApp with a prepared message; scheduled WhatsApp or email delivery is not connected. The parser uses rules, not an AI model. It can make mistakes, so confirm each draft.
+This is an MVP, not a hosted multi-business accounting service. Ledger data stays in the current browser unless the signed-in owner explicitly saves a cloud snapshot. Cloud restore replaces local records only after confirmation; cloud update requires the revision last seen by the app, and a conflict must be checked before trying again. The cloud migration and RLS tests are in `supabase/`; they must be applied to a dedicated HESABU project before adding its URL and publishable key. The current preview has no HESABU backend connected. Account authentication alone does not sync records. The M-Pesa flow is a clearly labeled simulation: its scannable QR contains only the demo amount and reference; it does not initiate a live payment, contact Daraja, move money, or receive provider callbacks. A real integration needs a supported collection and settlement setup plus server-side webhook verification; never treat demo confirmations as proof of payment. Report sharing opens WhatsApp or an email draft for the owner; automatic sending is not connected. Voice capture needs microphone permission and support from the current browser, and may require HTTPS. The parser uses rules, not an AI model. It can make mistakes, so confirm each draft.
