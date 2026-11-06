@@ -43,6 +43,44 @@ export function creditGiven(tx: Transaction[]) {
 }
 export function netCash(tx: Transaction[]) { return cashIn(tx) - cashOut(tx); }
 
+export function mpesaReceived(tx: Transaction[]) {
+  return tx.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0);
+}
+export function cashReceived(tx: Transaction[]) {
+  return tx.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0);
+}
+export function normalizeKenyanWhatsAppNumber(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '');
+  if (/^0[17]\d{8}$/.test(digits)) return '254' + digits.slice(1);
+  if (/^254[17]\d{8}$/.test(digits)) return digits;
+  return null;
+}
+export function whatsAppUrl(message: string, phone?: string | null) {
+  return 'https://wa.me/' + (phone ?? '') + '?text=' + encodeURIComponent(message);
+}
+export function debtReminderMessage(customerName: string, shopName: string, balance: number, dueDate?: string) {
+  return [
+    'Habari ' + customerName + ',',
+    'Tunakuandikia kutoka ' + shopName + ' kukukumbusha salio lako la ' + money(balance) + '.',
+    dueDate ? 'Tarehe ya kulipa ilikuwa/ni ' + dateText(dueDate, { day: 'numeric', month: 'short' }) + '.' : '',
+    'Tafadhali tujulishe utakapoweza kulipa. Asante kwa biashara yako.',
+  ].filter(Boolean).join('\n');
+}
+export function receiptMessage(shopName: string, transaction: Transaction, outstandingBalance?: number) {
+  const credit = transaction.type === 'credit';
+  return [
+    shopName,
+    credit ? 'CREDIT NOTE' : 'SALES RECEIPT',
+    'Item / maelezo: ' + transaction.description,
+    'Amount: ' + money(transaction.amount),
+    'Date: ' + dateText(transaction.date, { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' + timeText(transaction.time),
+    'Payment: ' + (credit ? 'Credit / Deni' : transaction.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'),
+    ...(credit && outstandingBalance !== undefined ? ['Outstanding balance: ' + money(outstandingBalance)] : []),
+    'Asante kwa biashara yako.',
+  ].join('\n');
+}
+
+
 const aliases: Record<string, string[]> = {
   Sukari: ['sukari', 'sugar'],
   'Unga wa mahindi': ['unga', 'maize flour', 'flour'],
@@ -131,6 +169,7 @@ export function parseTransaction(input: string, data: AppData): TransactionDraft
 
   return {
     type, description, amount, customerName,
+    paymentMethod: (type === 'sale' || type === 'payment') && /m[\s-]?pesa|paybill|till number/i.test(lower) ? 'mpesa' : undefined,
     dueDate: type === 'credit' ? dueDateFromText(text) : undefined,
     stockItemName: stockEntry?.name,
     stockQuantityDelta,
@@ -146,6 +185,8 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
   const inTotal = cashIn(tx);
   const outTotal = cashOut(tx);
   const credit = creditGiven(tx);
+  const cashReceivedTotal = cashReceived(tx);
+  const mpesaReceivedTotal = mpesaReceived(tx);
   const due = data.reminders.filter(r => !r.done && r.dueDate >= from && r.dueDate <= addDays(reportDate, 3));
   const lowStock = data.stock.filter(s => s.quantity <= s.lowStockAt);
   const label = period === 'daily' ? 'Daily' : period === 'weekly' ? 'Weekly' : 'Monthly';
@@ -154,6 +195,8 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
     new Date(`${reportDate}T12:00:00`).toLocaleDateString('en-KE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
     '',
     `Pesa iliyoingia: ${money(inTotal)}`,
+    `Cash received: ${money(cashReceivedTotal)}`,
+    `M-Pesa received: ${money(mpesaReceivedTotal)}`,
     `Matumizi: ${money(outTotal)}`,
     `Net cash: ${money(inTotal - outTotal)}`,
     `Madeni mapya: ${money(credit)}`,
@@ -167,5 +210,5 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
     '',
     'Keep your records close. Hesabu.',
   ];
-  return { transactions: tx, cashIn: inTotal, cashOut: outTotal, net: inTotal - outTotal, credit, lowStock, due, text: lines.join('\n') };
+  return { transactions: tx, cashIn: inTotal, cashOut: outTotal, net: inTotal - outTotal, cashReceived: cashReceivedTotal, mpesaReceived: mpesaReceivedTotal, credit, lowStock, due, text: lines.join('\n') };
 }

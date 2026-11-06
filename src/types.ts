@@ -1,4 +1,5 @@
 export type TransactionType = 'sale' | 'credit' | 'expense' | 'payment';
+export type PaymentMethod = 'cash' | 'mpesa';
 export type Section = 'home' | 'debts' | 'stock' | 'reports';
 export type DebtDirection = 'they-owe' | 'we-owe';
 
@@ -16,6 +17,7 @@ export interface Transaction {
   amount: number;
   date: string;
   time: string;
+  paymentMethod?: PaymentMethod;
   customerId?: string;
   customerName?: string;
   dueDate?: string;
@@ -67,6 +69,7 @@ export interface TransactionDraft {
   type: TransactionType;
   description: string;
   amount: number;
+  paymentMethod?: PaymentMethod;
   customerName?: string;
   dueDate?: string;
   stockItemName?: string;
