@@ -572,91 +572,88 @@ function App() {
 
     <main className="app-main">
       {section === 'home' && <>
-
         <section className="welcome-row">
-          <div><div className="eyebrow">{fullDateText()}</div><h1 className="welcome-title">Business overview</h1><p className="welcome-copy">{data.shopInfo.name} · {data.shopInfo.owner ? `Welcome, ${data.shopInfo.owner}` : 'Your daily overview'}</p></div>
-          <button className="today-pill" onClick={() => { setReportDate(today()); setReportPeriod('daily'); navigate('reports'); }}><CalendarDays size={15}/><span>Today's report</span><ArrowRight size={13}/></button>
+          <div>
+            <div className="eyebrow">{fullDateText()}</div>
+            <h1 className="welcome-title">{data.shopInfo.name}</h1>
+            <p className="welcome-copy">{data.shopInfo.owner ? 'Today’s book, ' + data.shopInfo.owner : 'Today’s shop book'}</p>
+          </div>
+          <button className="today-pill" onClick={() => { setReportDate(today()); setReportPeriod('daily'); navigate('reports'); }}>Today’s report</button>
         </section>
-        <section className="balance-panel" aria-label="Today's net cash position">
-          <div className="balance-panel-copy"><span className="balance-eyebrow"><span className="balance-status"/> TODAY'S NET CASH</span><div className="balance-total">{money(todaysIn - todaysOut)}</div><div className="balance-caption">Cash received less expenses recorded today</div></div>
-          <div className="balance-panel-bottom"><div><span>Money in</span><strong>+{money(todaysIn)}</strong></div><span className="balance-divider"/><div><span>Money out</span><strong>−{money(todaysOut)}</strong></div><button aria-label="Open financial reports" className="balance-view" onClick={() => navigate('reports')}><ArrowUpRight size={19}/></button></div>
+
+        <section className="today-summary" aria-label="Today’s shop totals">
+          <div><span>Money received</span><strong>{money(todaysIn)}</strong><small>Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0))} · M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0))}</small></div>
+          <div><span>Money spent</span><strong>{money(todaysOut)}</strong><small>Expenses recorded today</small></div>
+          <div><span>Customers owe you</span><strong>{money(outstanding)}</strong><small>{data.customers.filter(c => c.balance > 0).length} people with a balance</small></div>
         </section>
-        {(backupNeedsAttention || storageWriteFailed) && <section className={cn('mb-5 flex flex-col gap-3 rounded-xl border px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between', storageWriteFailed ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50')} role="status">
-          <div className="min-w-0"><div className={cn('text-[12px] font-extrabold', storageWriteFailed ? 'text-red-800' : 'text-[#805B20]')}>{storageWriteFailed ? 'Your latest changes may not be saved' : backupAgeDays === null ? 'Protect your business records' : 'It has been a week since your last backup'}</div>
-          <p className={cn('mt-1 text-[11px] leading-5', storageWriteFailed ? 'text-red-700' : 'text-[#8A6A35]')}>{storageWriteFailed ? 'Browser storage could not save this ledger. Download a backup now before closing or refreshing Hesabu.' : 'Hesabu keeps records on this device. Download a backup and keep it somewhere separate from this phone.'}</p></div>
-          <Button size="sm" onClick={exportBackup}><Download size={14}/>{lastBackupAt ? 'Back up now' : 'Create first backup'}</Button>
+
+        {(backupNeedsAttention || storageWriteFailed) && <section className="backup-notice" role="status">
+          <div><strong>{storageWriteFailed ? 'Your latest changes may not be saved' : backupAgeDays === null ? 'Make a backup of your shop book' : 'Your shop book needs a new backup'}</strong>
+          <p>{storageWriteFailed ? 'Hesabu could not save to this browser. Download a copy before closing the app.' : 'Your records are saved on this device. Download a copy and keep it somewhere safe.'}</p></div>
+          <Button size="sm" onClick={exportBackup}>Download backup</Button>
         </section>}
-        <div className="mb-5 text-[10px] font-medium text-hesabu-muted">Today’s receipts: Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum,t) => sum + t.amount, 0))} · M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum,t) => sum + t.amount, 0))}</div>
-        {!backupNeedsAttention && !storageWriteFailed && <div className="mb-4 flex items-center justify-between gap-3 text-[10px] text-hesabu-muted"><span>Last backup: {lastBackupAt ? dateText(lastBackupAt.slice(0, 10), { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not recorded'}</span><button type="button" className="font-bold text-hesabu-green" onClick={exportBackup}>Back up now</button></div>}
-        <section className="action-panel" aria-label="Quick actions"><div className="action-panel-top"><strong>Quick actions</strong><span>Your everyday tools</span></div>
-          <div className="quick-actions">
-            <button onClick={() => {setTypeChoice('sale'); document.getElementById('transaction-entry')?.scrollIntoView({behavior:'smooth'});}}><span className="qa-icon qa-sale"><ArrowDownLeft size={21}/></span><span>Record sale</span></button>
-            <button onClick={() => {setTypeChoice('expense'); document.getElementById('transaction-entry')?.scrollIntoView({behavior:'smooth'});}}><span className="qa-icon qa-expense"><ReceiptText size={21}/></span><span>Add expense</span></button>
-            <button onClick={() => navigate('stock')}><span className="qa-icon qa-stock"><Package size={21}/></span><span>Inventory</span></button>
-            <button onClick={() => navigate('reports')}><span className="qa-icon qa-reports"><FileSpreadsheet size={21}/></span><span>Reports</span></button>
-            <button onClick={() => navigate('debts')}><span className="qa-icon qa-customers"><Users size={21}/></span><span>Customers</span></button>
-            <button onClick={shareReport}><span className="qa-icon qa-whatsapp"><Share2 size={21}/></span><span>WhatsApp</span></button>
-          </div>
-        </section>
-        <section className="metrics-grid" aria-label="Today's accounting summary">
-          <Metric label="Cash sales" value={todayTransactions.filter(t => t.type === 'sale').reduce((sum,t) => sum + t.amount, 0)} hint="Sales paid today" tone="green" icon={TrendingUp}/>
-          <Metric label="Expenses" value={todaysOut} hint="Money paid out" tone="red" icon={TrendingDown}/>
-          <Metric label="Credit sales" value={todaysCredit} hint="Not yet collected" tone="amber" icon={HandCoins}/>
-        </section>
-        <div className="home-grid">
-          <div className="home-primary">
-            <section id="transaction-entry" className="surface log-surface">
-              <div className="section-heading-row"><div><div className="eyebrow">QUICK ENTRY</div><h2 className="surface-title">Record a transaction</h2><p className="surface-subtitle">Record sales, expenses and payments in one place.</p></div><span className="keyboard-shortcut">FAST ENTRY</span></div>
-              <div className="type-picker" role="group" aria-label="Transaction type">
-                {(['auto', 'sale', 'credit', 'expense', 'payment'] as const).map(type => <button key={type} onClick={() => setTypeChoice(type)} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
-                  {type === 'auto' ? <Sparkles size={15} /> : (() => { const Icon = TYPE_META[type].icon; return <Icon size={15} />; })()}
-                  <span>{type === 'auto' ? 'Auto' : TYPE_META[type].label}</span>
-                </button>)}
-              </div>
-              {(typeChoice === 'auto' || typeChoice === 'sale' || typeChoice === 'payment') && <div className="mb-3 flex items-center justify-between gap-3 text-[11px]"><span className="font-semibold text-hesabu-muted">Received via</span><div className="flex rounded-lg border border-hesabu-line bg-[#F6F8F5] p-1"><button type="button" onClick={() => setPaymentMethodChoice('cash')} className={cn('rounded-md px-3 py-1.5 font-bold', paymentMethodChoice === 'cash' ? 'bg-white text-hesabu-green shadow-sm' : 'text-hesabu-muted')}>Cash</button><button type="button" onClick={() => setPaymentMethodChoice('mpesa')} className={cn('rounded-md px-3 py-1.5 font-bold', paymentMethodChoice === 'mpesa' ? 'bg-white text-hesabu-green shadow-sm' : 'text-hesabu-muted')}>M-Pesa</button></div></div>}
-              <form onSubmit={handleQuickSubmit}>
-                <label className="quick-input-wrap"><span className="sr-only">Describe the transaction</span><input value={quickText} onChange={e => setQuickText(e.target.value)} placeholder="e.g. Sold groceries for KES 1,200" className="quick-input" /><button type="button" className={cn('mic-button', voiceState === 'listening' && 'mic-button-listening')} onClick={startVoice} aria-label="Record by voice">{voiceState === 'listening' ? <span className="listening-dot" /> : <Mic2 size={19} />}</button></label>
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row"><Button type="submit" className="flex-1">Review transaction <ArrowRight size={16} /></Button><Button variant="secondary" onClick={() => { setQuickText(''); setPending(null); setTypeChoice('auto'); }} className="sm:!w-[100px]">Clear</Button></div>
-              </form>
-              
-              <div className="helper-row"><span><CheckCircle2 size={13} /> Confirm before it’s saved</span><span className="helper-divider" /><span>English voice input where supported</span></div>
-              {pending && <div className="draft-review" aria-live="polite">
-                <div className="flex items-start gap-3"><div className="draft-check"><Check size={17} /></div><div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-[.13em] text-hesabu-green">Review before saving</div><div className="mt-1 text-[13px] font-bold leading-5 text-hesabu-ink">{pending.summary}</div>{pending.type === 'credit' && <div className="mt-1 text-[11px] text-hesabu-muted">Due {dateText(pending.dueDate ?? addDays(today(), 7), { weekday: 'long', day: 'numeric', month: 'short' })}. This creates a receivable, not cash collected.</div>}{pending.stockQuantityDelta !== undefined && <div className="mt-1 text-[11px] text-hesabu-muted">Stock adjustment: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</div>}{pendingStockExceedsCount && pendingStockItem && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-[#8D6321]">Only <b>{pendingStockItem.quantity} {pendingStockItem.unit}</b> tracked. Saving will bring this item’s tracked count to zero. Use “Edit details” if the quantity or product is wrong.</div>}</div><button onClick={() => setPending(null)} className="icon-button !h-7 !w-7" aria-label="Dismiss review"><X size={14} /></button></div>
-                <div className="mt-4 grid grid-cols-2 gap-2"><Button onClick={() => applyTransaction(pending)}><Check size={15} /> Confirm & save</Button><Button variant="outline" onClick={() => setModal({ kind: 'edit-draft' })}>Edit details</Button></div>
-              </div>}
-              <div className="voice-note"><Mic size={15} /><span>Try: “Njeri paid 500 towards her balance” or “Bought stock for 800”.</span></div>
-            </section>
 
-            <section className="surface activity-surface">
-              <div className="section-heading-row"><div><h2 className="surface-title">Recent transactions</h2><p className="surface-subtitle">Your latest entries, in one place.</p></div><button className="text-action" onClick={() => { setShowAllTransactions(v => !v); setFilterTransactions('all'); }}>{showAllTransactions ? 'Show less' : 'View all'} <ArrowRight size={14} /></button></div>
-              {showAllTransactions && <div className="mb-3 flex gap-2"><label className="search-field flex-1"><Search size={15} /><input value={transactionSearch} onChange={e => setTransactionSearch(e.target.value)} placeholder="Search transactions" /></label><select className="filter-select" value={filterTransactions} onChange={e => setFilterTransactions(e.target.value as 'all' | TransactionType)} aria-label="Filter transaction type"><option value="all">All</option>{Object.entries(TYPE_META).map(([type, meta]) => <option key={type} value={type}>{meta.label}</option>)}</select></div>}
-              {sortedTransactions.length === 0 ? <EmptyState title="No entries yet" detail="Your transactions will appear here as soon as you log the first one." /> : <div className="divide-y divide-hesabu-line/80">{sortedTransactions.filter(t => !showAllTransactions || (filterTransactions === 'all' || t.type === filterTransactions)).filter(t => !showAllTransactions || `${t.description} ${t.customerName ?? ''}`.toLowerCase().includes(transactionSearch.toLowerCase())).slice(0, showAllTransactions ? 80 : 5).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact={!showAllTransactions} />)}</div>}
-              <ActivityProgress transactions={todayTransactions} />
-            </section>
+        <section id="transaction-entry" className="surface log-surface">
+          <div className="simple-section-heading">
+            <h2 className="surface-title">Add to today’s book</h2>
+            <p className="surface-subtitle">Choose what happened, then enter the details.</p>
+            <button type="button" className="speak-link" onClick={startVoice}>{voiceState === 'listening' ? 'Listening…' : 'Speak instead'}</button>
           </div>
 
-          <aside className="home-aside">
-            <section className="surface aside-surface debt-summary">
-              <div className="flex items-start justify-between gap-3"><div><div className="eyebrow">CREDIT BOOK</div><h2 className="surface-title mt-1">Customer balances</h2></div><span className="aside-icon"><Users size={18} /></span></div>
-              <div className="mt-5 font-display text-[28px] font-extrabold tracking-[-.06em] text-hesabu-ink">{money(outstanding)}</div>
-              <div className="mt-1 text-[11px] text-hesabu-muted">Owed to your shop by {data.customers.filter(c => c.balance > 0).length} people</div>
-              <div className="mt-4 flex items-center justify-between border-t border-hesabu-line pt-3"><span className="text-[10px] font-semibold text-hesabu-muted">Oldest outstanding</span><span className="text-[11px] font-bold text-[#B96D3C]">{data.customers.filter(c => c.balance > 0 && c.dueDate).some(c => daysUntil(c.dueDate!) < 0) ? 'Needs follow-up' : 'On track'}</span></div>
-              <Button variant="secondary" className="mt-4 w-full" onClick={() => navigate('debts')}>Manage balances <ArrowRight size={15} /></Button>
-            </section>
+          <div className="type-picker simple-type-picker" role="group" aria-label="What happened?">
+            {(['sale', 'credit', 'expense', 'payment'] as const).map(type => <button key={type} onClick={() => { setTypeChoice(type); setPending(null); }} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
+              <span>{TYPE_META[type].label}</span>
+            </button>)}
+          </div>
 
-            <section className="surface aside-surface">
-              <div className="section-heading-row !items-start"><div><div className="eyebrow">DON’T FORGET</div><h2 className="surface-title mt-1">Upcoming</h2></div><button className="icon-button" onClick={() => setModal({ kind: 'reminder' })} aria-label="Add reminder"><Plus size={18} /></button></div>
-              {(showAllReminders ? allReminders : activeReminders.slice(0, 3)).length ? <div className="mt-2">{(showAllReminders ? allReminders : activeReminders.slice(0, 3)).map(reminder => <ReminderLine key={reminder.id} reminder={reminder} onDone={() => toggleReminder(reminder)} onEdit={() => setModal({ kind: 'reminder', reminder })} />)}</div> : <p className="py-4 text-xs text-hesabu-muted">{allReminders.length ? 'You’re all caught up. Open all reminders to review completed items.' : 'No reminders yet. Add a bill or follow-up so it doesn’t get forgotten.'}</p>}
-              <div className="mt-3 flex items-center justify-between border-t border-hesabu-line pt-3"><button onClick={() => setShowAllReminders(v => !v)} className="text-action">{showAllReminders ? 'Show fewer' : 'All reminders'} <ArrowRight size={13} /></button><button onClick={() => setModal({ kind: 'reminder' })} className="text-action">Add new <Plus size={13} /></button></div>
-            </section>
+          <form className="simple-entry-form" onSubmit={handleQuickSubmit}>
+            <Field label={typeChoice === 'credit' ? 'What did the customer take?' : typeChoice === 'expense' ? 'What did you pay for?' : typeChoice === 'payment' ? 'What was the payment for?' : 'What did you sell?'} value={quickText} onChange={setQuickText} placeholder={typeChoice === 'credit' ? 'e.g. 2 loaves of bread' : typeChoice === 'expense' ? 'e.g. Shop rent' : typeChoice === 'payment' ? 'e.g. Kamau’s debt' : 'e.g. Bread and milk'} required />
+            <Field label="Amount (KES)" value={quickAmount} onChange={setQuickAmount} placeholder="0" type="number" min={1} required inputMode="numeric" />
+            {(typeChoice === 'credit' || typeChoice === 'payment') && <Field label={typeChoice === 'credit' ? 'Customer name' : 'Who paid you?'} value={quickPerson} onChange={setQuickPerson} placeholder="Enter customer name" required />}
+            {typeChoice === 'credit' && <Field label="When should they pay? (optional)" value={quickDueDate} onChange={setQuickDueDate} type="date" />}
+            {(typeChoice === 'sale' || typeChoice === 'payment') && <div className="simple-payment-choice"><span>Received by</span><div><button type="button" onClick={() => setPaymentMethodChoice('cash')} className={paymentMethodChoice === 'cash' ? 'selected' : ''}>Cash</button><button type="button" onClick={() => setPaymentMethodChoice('mpesa')} className={paymentMethodChoice === 'mpesa' ? 'selected' : ''}>M-Pesa</button></div></div>}
+            <div className="simple-form-actions">
+              <Button type="submit" className="flex-1">Check entry</Button>
+              <button type="button" className="clear-entry" onClick={() => { setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setPending(null); setTypeChoice('sale'); setPaymentMethodChoice('cash'); }}>Clear</button>
+            </div>
+          </form>
 
-            <section className="stock-callout">
-              <div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold uppercase tracking-[.14em] text-[#A0C9AE]">STOCK CHECK</div><div className="mt-2 font-display text-[17px] font-bold text-white">{lowStock.length ? `${lowStock.length} items need a look` : 'Stock is looking good'}</div></div><div className="stock-callout-icon"><Package size={19} /></div></div>
-              {lowStock.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{lowStock.slice(0, 3).map(s => <span key={s.id} className="stock-callout-chip">{s.name}</span>)}</div>}
-              <button className="stock-callout-action" onClick={() => navigate('stock')}>View inventory <ArrowRight size={14} /></button>
-            </section>
-            <div className="privacy-note"><div className="privacy-lock"><Settings2 size={14} /></div><span><b>Your ledger stays on this device.</b><br />This prototype saves data in this browser only.</span></div>
-          </aside>
+          {pending && <div className="draft-review" aria-live="polite">
+            <div className="simple-review-heading">Check this entry</div>
+            <div className="simple-review-copy">{pending.summary}</div>
+            {pending.type === 'credit' && <p className="simple-review-note">Payment due {dateText(pending.dueDate ?? addDays(today(), 7), { day: 'numeric', month: 'short', year: 'numeric' })}. This amount has not been received yet.</p>}
+            {pending.stockQuantityDelta !== undefined && <p className="simple-review-note">Stock change: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</p>}
+            {pendingStockExceedsCount && pendingStockItem && <p className="simple-review-warning}>Only {pendingStockItem.quantity} {pendingStockItem.unit} are in the stock record. Saving will bring the recorded quantity to zero.</p>}
+            <div className="simple-form-actions"><Button onClick={() => applyTransaction(pending)} className="flex-1">Save entry</Button><button type="button" className="clear-entry" onClick={() => setPending(null)}>Change entry</button></div>
+          </div>}
+          {voiceState === 'unsupported' && <p className="simple-review-note">Voice entry is not available in this browser. Type the entry above.</p>}
+        </section>
+
+        <div className="simple-lower-grid">
+          <section className="surface activity-surface">
+            <div className="section-heading-row"><div><h2 className="surface-title">Recent entries</h2><p className="surface-subtitle">Sales, payments and expenses recorded today.</p></div><button className="text-action" onClick={() => { setShowAllTransactions(v => !v); setFilterTransactions('all'); }}>{showAllTransactions ? 'Show recent' : 'See all'}</button></div>
+            {showAllTransactions && <div className="mb-3 flex gap-2"><label className="search-field flex-1"><input value={transactionSearch} onChange={e => setTransactionSearch(e.target.value)} placeholder="Search entries" /></label><select className="filter-select" value={filterTransactions} onChange={e => setFilterTransactions(e.target.value as 'all' | TransactionType)} aria-label="Filter entries"><option value="all">All entries</option>{Object.entries(TYPE_META).map(([type, meta]) => <option key={type} value={type}>{meta.label}</option>)}</select></div>}
+            {sortedTransactions.length === 0 ? <EmptyState title="No entries yet" detail="Your entries will appear here after you save the first one." /> : <div className="simple-transaction-list">{sortedTransactions.filter(t => !showAllTransactions || (filterTransactions === 'all' || t.type === filterTransactions)).filter(t => !showAllTransactions || `${t.description} ${t.customerName ?? ''}`.toLowerCase().includes(transactionSearch.toLowerCase())).slice(0, showAllTransactions ? 80 : 6).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact />)}</div>}
+          </section>
+
+          <section className="surface aside-surface">
+            <h2 className="surface-title">People who owe you</h2>
+            <p className="surface-subtitle">Outstanding customer balances.</p>
+            {data.customers.filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 4).length ? <div className="simple-list">{data.customers.filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 4).map(c => <div key={c.id}><span>{c.name}</span><strong>{money(c.balance)}</strong></div>)}</div> : <p className="simple-empty">No one owes the shop at the moment.</p>}
+            <button className="text-action" onClick={() => navigate('debts')}>View people and balances</button>
+          </section>
+
+          <section className="surface aside-surface">
+            <h2 className="surface-title">Stock running low</h2>
+            <p className="surface-subtitle">Items to check before you run out.</p>
+            {lowStock.length ? <div className="simple-list">{lowStock.slice(0, 4).map(item => <div key={item.id}><span>{item.name} · {item.quantity} {item.unit} left</span><strong>Buy more</strong></div>)}</div> : <p className="simple-empty">No low-stock items.</p>}
+            <button className="text-action" onClick={() => navigate('stock')}>View stock</button>
+          </section>
+
+          <section className="surface aside-surface">
+            <div className="section-heading-row"><div><h2 className="surface-title">Reminders</h2><p className="surface-subtitle">Bills and people to follow up.</p></div><button className="text-action" onClick={() => setModal({ kind: 'reminder' })}>Add reminder</button></div>
+            {activeReminders.slice(0, 3).length ? <div className="simple-list">{activeReminders.slice(0, 3).map(rem => <div key={rem.id}><span>{rem.title}<small>{dateText(rem.dueDate, { day: 'numeric', month: 'short' })}</small></span><button className="text-action" onClick={() => toggleReminder(rem)}>Done</button></div>)}</div> : <p className="simple-empty">No reminders to show.</p>}
+          </section>
         </div>
       </>}
 
