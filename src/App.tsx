@@ -19,10 +19,10 @@ const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
 ];
 
 const TYPE_META: Record<TransactionType, { label: string; swahili: string; icon: LucideIcon; hint: string }> = {
-  sale: { label: 'Cash sale', swahili: 'Mauzo', icon: ArrowDownLeft, hint: 'Cash or M-Pesa received' },
-  credit: { label: 'Credit given', swahili: 'Deni', icon: HandCoins, hint: 'Someone takes goods and pays later' },
-  expense: { label: 'Expense', swahili: 'Expenses', icon: ArrowUpRight, hint: 'Stock, bills or day-to-day costs' },
-  payment: { label: 'Debt payment', swahili: 'Malipo ya deni', icon: Wallet, hint: 'A customer pays what they owe' },
+  sale: { label: 'Sale', swahili: 'Mauzo', icon: ArrowDownLeft, hint: 'Money received for goods' },
+  credit: { label: 'On credit', swahili: 'Deni', icon: HandCoins, hint: 'Goods taken and paid for later' },
+  expense: { label: 'Expense', swahili: 'Matumizi', icon: ArrowUpRight, hint: 'Money paid out' },
+  payment: { label: 'Debt repayment', swahili: 'Malipo ya deni', icon: Wallet, hint: 'A customer pays what they owe' },
 };
 
 const TYPE_TONE: Record<TransactionType, string> = {
@@ -46,10 +46,7 @@ type ModalState =
 function cn(...classes: Array<string | undefined | null | false>) { return classes.filter(Boolean).join(' '); }
 
 function Logo({ compact = false }: { compact?: boolean }) {
-  return <div className="flex min-w-0 items-center gap-3">
-    <div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M9 9v22M9 20h22M31 9v22" stroke="currentColor" strokeWidth="4.1" strokeLinecap="round"/><circle cx="31" cy="9" r="3.2" fill="#F3AC63" /></svg></div>
-    {!compact && <div className="min-w-0"><div className="font-display text-[18px] font-extrabold tracking-[-.055em] text-hesabu-ink">hesabu<span className="text-hesabu-green">.</span></div><div className="-mt-0.5 text-[10px] font-medium tracking-[.03em] text-hesabu-muted">Business, in balance.</div></div>}
-  </div>;
+  return <div className="hesabu-wordmark" aria-label="Hesabu">Hesabu</div>;
 }
 
 function SectionTitle({ eyebrow, title, detail, right }: { eyebrow?: string; title: string; detail?: string; right?: ReactNode }) {
@@ -99,7 +96,7 @@ function Modal({ title, detail, onClose, children, size = 'md' }: { title: strin
     <section role="dialog" aria-modal="true" aria-label={title} className={cn('modal-panel', size === 'lg' && 'modal-panel-lg')}>
       <header className="mb-5 flex items-start justify-between gap-4 border-b border-hesabu-line pb-4">
         <div><h2 className="font-display text-xl font-extrabold tracking-[-.04em]">{title}</h2>{detail && <p className="mt-1.5 text-[12px] leading-5 text-hesabu-muted">{detail}</p>}</div>
-        <button className="icon-button -mr-1 -mt-1" onClick={onClose} aria-label="Close dialog"><X size={19} /></button>
+        <button className="modal-close" onClick={onClose} aria-label="Close dialog">Close</button>
       </header>
       {children}
     </section>
@@ -187,9 +184,12 @@ function App() {
   const [modal, setModal] = useState<ModalState>(null);
   const [pending, setPending] = useState<TransactionDraft | null>(null);
   const [quickText, setQuickText] = useState('');
+  const [quickAmount, setQuickAmount] = useState('');
+  const [quickPerson, setQuickPerson] = useState('');
+  const [quickDueDate, setQuickDueDate] = useState('');
   const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'unsupported'>('idle');
   const voiceLanguage = 'en-KE';
-  const [typeChoice, setTypeChoice] = useState<TransactionType | 'auto'>('auto');
+  const [typeChoice, setTypeChoice] = useState<TransactionType | 'auto'>('sale');
   const [paymentMethodChoice, setPaymentMethodChoice] = useState<'cash' | 'mpesa'>('cash');
   const [storageWriteFailed, setStorageWriteFailed] = useState(false);
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => readLastBackupAt());
@@ -289,30 +289,34 @@ function App() {
       ? current.stock.map(s => s.id === matchedStock.id ? { ...s, quantity: Math.max(0, s.quantity + effectiveStockDelta), lastRestocked: effectiveStockDelta > 0 ? today() : s.lastRestocked } : s)
       : current.stock;
     updateData(c => ({ ...c, customers: nextCustomers, stock: nextStock, transactions: [txn, ...c.transactions] }));
-    setPending(null); setQuickText(''); setTypeChoice('auto');
-    notify('Imeandikwa. Record saved.');
+    setPending(null); setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setTypeChoice('sale');
+    notify('Entry saved.');
     if (navigator.vibrate) navigator.vibrate(18);
   };
 
   const handleQuickSubmit = (event?: FormEvent) => {
     event?.preventDefault();
-    const parsed = parseTransaction(quickText, data);
-    if (!parsed) { notify('Add the amount so Hesabu can record it.'); return; }
-    if (typeChoice !== 'auto') {
-      parsed.type = typeChoice;
-      if (typeChoice === 'credit' && !parsed.dueDate) parsed.dueDate = addDays(today(), 7);
-      const typeName = TYPE_META[typeChoice].label.toLowerCase();
-      parsed.summary = `${typeName}${parsed.customerName ? ` for ${parsed.customerName}` : ''} — ${money(parsed.amount)}`;
-      if (parsed.stockItemName && (typeChoice === 'sale' || typeChoice === 'credit')) parsed.stockQuantityDelta = -(parsed.stockQuantityDelta ? Math.abs(parsed.stockQuantityDelta) : 1);
-      else if (typeChoice === 'expense' && parsed.stockQuantityDelta !== undefined && parsed.stockQuantityDelta < 0) parsed.stockQuantityDelta = undefined;
-      else if (typeChoice === 'payment') parsed.stockQuantityDelta = undefined;
+    const description = quickText.trim();
+    const amount = Number(quickAmount);
+    if (!description) { notify('Enter what the sale or payment was for.'); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { notify('Enter an amount greater than zero.'); return; }
+    const selectedType = typeChoice === 'auto' ? 'sale' : typeChoice;
+    const parsed = parseTransaction(description + ' for KES ' + amount, data);
+    if (!parsed) { notify('Check the description and amount, then try again.'); return; }
+    parsed.type = selectedType;
+    parsed.description = description;
+    parsed.amount = Math.round(amount);
+    parsed.customerName = selectedType === 'credit' || selectedType === 'payment' ? (quickPerson.trim() || undefined) : undefined;
+    if ((selectedType === 'credit' || selectedType === 'payment') && !parsed.customerName) {
+      notify('Enter the customer’s name.'); return;
     }
-    if (parsed.type === 'credit' && !parsed.customerName) {
-      const name = quickText.trim().match(/\b([A-Z][a-z]{2,})\b/)?.[1];
-      if (name && !['I', 'Bought', 'Supplier', 'Cash', 'Sale'].includes(name)) parsed.customerName = name;
-    }
-    if (parsed.type === 'sale' || parsed.type === 'payment') parsed.paymentMethod = parsed.paymentMethod ?? paymentMethodChoice;
+    parsed.dueDate = selectedType === 'credit' ? (quickDueDate || addDays(today(), 7)) : undefined;
+    if (selectedType === 'sale' || selectedType === 'payment') parsed.paymentMethod = paymentMethodChoice;
     else parsed.paymentMethod = undefined;
+    if (selectedType === 'payment') parsed.stockQuantityDelta = undefined;
+    if (selectedType === 'expense' && parsed.stockQuantityDelta !== undefined && parsed.stockQuantityDelta < 0) parsed.stockQuantityDelta = undefined;
+    const person = parsed.customerName ? parsed.customerName + ' · ' : '';
+    parsed.summary = person + TYPE_META[selectedType].label + ' · ' + money(parsed.amount) + ' · ' + description;
     setPending(parsed);
   };
 
@@ -326,11 +330,19 @@ function App() {
       setVoiceState('listening');
       recognition.onresult = event => {
         const text = event.results?.[0]?.[0]?.transcript ?? '';
-        setQuickText(text);
         setVoiceState('idle');
         const parsed = parseTransaction(text, data);
-        if (parsed) setPending(parsed);
-        else notify('I heard you, but could not find the amount. Check the words and try again.');
+        if (parsed) {
+          setQuickText(parsed.description);
+          setQuickAmount(String(parsed.amount));
+          setQuickPerson(parsed.customerName ?? '');
+          setTypeChoice(parsed.type);
+          setPaymentMethodChoice(parsed.paymentMethod ?? 'cash');
+          setPending(parsed);
+        } else {
+          setQuickText(text);
+          notify('I heard you, but could not identify the amount. Check the entry before saving.');
+        }
       };
       recognition.onerror = () => { setVoiceState('idle'); notify('Could not hear that clearly. Try again or type it.'); };
       recognition.onend = () => setVoiceState(s => s === 'listening' ? 'idle' : s);
