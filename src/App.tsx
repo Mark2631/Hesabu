@@ -13,8 +13,8 @@ import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateTe
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'home', label: 'Home', icon: House },
-  { id: 'debts', label: 'Customers', icon: Users },
-  { id: 'stock', label: 'Inventory', icon: Package },
+  { id: 'debts', label: 'People', icon: Users },
+  { id: 'stock', label: 'Stock', icon: Package },
   { id: 'reports', label: 'Reports', icon: FileText },
 ];
 
@@ -695,7 +695,7 @@ function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, o
     <SectionTitle title="People and balances" detail="See who owes the shop and who the shop needs to pay." right={<Button onClick={onAdd}>Add person</Button>} />
     <div className="debt-overview"><div><div className="text-[13px] font-medium">{direction === 'owed-to-us' ? 'Customers owe the shop' : 'The shop owes'}</div><div className="mt-2 font-display text-[28px] font-bold">{money(total)}</div><div className="mt-1 text-[12px]">{customerList.length} {customerList.length === 1 ? 'person' : 'people'}</div></div></div>
     <div className="section-tabs mt-5" role="tablist"><button role="tab" aria-selected={direction === 'owed-to-us'} className={cn(direction === 'owed-to-us' && 'section-tab-active')} onClick={() => setDirection('owed-to-us')}>Owe me <span>{data.customers.filter(c => c.balance > 0).length}</span></button><button role="tab" aria-selected={direction === 'we-owe'} className={cn(direction === 'we-owe' && 'section-tab-active')} onClick={() => setDirection('we-owe')}>I owe <span>{data.customers.filter(c => c.balance < 0).length}</span></button></div>
-    <div className="debt-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search a name or phone number" /></label><div className="text-[11px] font-medium text-hesabu-muted">Sorted by amount owed</div></div>
+    <div className="debt-toolbar"><label className="search-field"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Find a person by name or phone" /></label><div className="text-[12px] text-hesabu-muted">Largest balance first</div></div>
     <section className="surface list-surface">
       {customerList.length === 0 ? <EmptyState title={query ? 'No matching person' : 'No outstanding balances'} detail={query ? 'Try another name or phone number.' : direction === 'owed-to-us' ? 'When someone takes goods on credit, they will appear here.' : 'Any unpaid supplier balances will show up here.'} action={!query ? <Button variant="secondary" onClick={onAdd}><Plus size={15} /> Add a person</Button> : undefined} /> : customerList.map(customer => {
         const overdue = customer.dueDate && daysUntil(customer.dueDate) < 0;
@@ -705,7 +705,7 @@ function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, o
           <button className="person-main" onClick={() => setExpanded(expandedNow ? null : customer.id)} aria-expanded={expandedNow}>
             <span className={cn('person-avatar', customer.balance < 0 && 'person-avatar-supplier')}>{customer.name.slice(0, 1).toUpperCase()}</span>
             <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="text-[14px] font-bold text-hesabu-ink">{customer.name}</span>{overdue && <span className="overdue-badge">{Math.abs(daysUntil(customer.dueDate!))}d overdue</span>}</span><span className="mt-1 block text-[11px] text-hesabu-muted">{customer.phone || (customer.balance < 0 ? 'Supplier / business' : 'No phone added')}{customer.dueDate ? ` · Due ${shortDay(customer.dueDate)}` : ''}</span></span>
-            <span className="ml-2 shrink-0 text-right"><span className={cn('block text-[14px] font-bold tabular-nums', customer.balance < 0 ? 'text-[#597B9A]' : 'text-[#B94C46]')}>{money(Math.abs(customer.balance))}</span><span className="mt-1 block text-[10px] text-hesabu-muted">{customer.balance < 0 ? (customer.kind === 'customer' ? 'Customer credit' : 'You owe') : 'Owes you'}</span></span><ChevronDown size={16} className={cn('ml-1 shrink-0 text-[#9AA69D] transition-transform', expandedNow && 'rotate-180')} />
+            <span className="ml-2 shrink-0 text-right"><span className={cn('block text-[14px] font-bold tabular-nums', customer.balance < 0 ? 'text-[#597B9A]' : 'text-[#B94C46]')}>{money(Math.abs(customer.balance))}</span><span className="mt-1 block text-[10px] text-hesabu-muted">{customer.balance < 0 ? (customer.kind === 'customer' ? 'Customer credit' : 'You owe') : 'Owes you'}</span></span><span className="ml-2 shrink-0 text-action">{expandedNow ? 'Hide' : 'View'}</span>
           </button>
           {expandedNow && <div className="person-expanded"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[11px] font-semibold text-hesabu-muted">Recent history</span><span className="text-[10px] text-hesabu-muted">{history.length} entries</span></div>{history.length ? <div className="mt-2">{history.map(t => <div key={t.id} className="history-line"><span className="truncate">{t.description}</span><span className={cn(t.type === 'expense' ? 'text-[#B94C46]' : t.type === 'credit' ? 'text-[#A4762A]' : 'text-hesabu-green')}>{money(t.amount)}</span></div>)}</div> : <p className="mt-2 text-xs text-hesabu-muted">No linked transactions yet. This balance was entered manually.</p>}
             <div className="mt-4 flex flex-wrap gap-2">{customer.balance !== 0 && <Button size="sm" onClick={() => onPayment(customer.id)}><Wallet size={14} /> {customer.balance < 0 ? (customer.kind === 'customer' ? 'Return customer credit' : 'Record payment made') : 'Record payment received'}</Button>}{customer.balance > 0 && customer.phone && <Button size="sm" variant="secondary" onClick={() => onReminder(customer)}><Share2 size={14} /> WhatsApp reminder</Button>}</div>
@@ -723,7 +723,7 @@ function StockSection({ data, query, setQuery, onAdd, onEdit, onUpdate }: { data
   return <>
     <SectionTitle title="Stock" detail="See what is on the shelf and what needs buying." right={<Button onClick={onAdd}>Add item</Button>} />
     <div className="stock-summary-row"><div className="stock-summary-cell"><span>Items tracked</span><b>{data.stock.length}</b></div><div className="stock-summary-cell"><span>Need buying</span><b>{lowStockCount(data.stock)}</b></div></div>
-    <div className="stock-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search your stock" /></label><div className="segmented-control"><button className={cn(filter === 'all' && 'segment-active')} onClick={() => setFilter('all')}>All items</button><button className={cn(filter === 'low' && 'segment-active')} onClick={() => setFilter('low')}>Low stock <span className="count-badge">{lowStockCount(data.stock)}</span></button></div></div>
+    <div className="stock-toolbar"><label className="search-field"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Find an item" /></label><div className="segmented-control"><button className={cn(filter === 'all' && 'segment-active')} onClick={() => setFilter('all')}>All items</button><button className={cn(filter === 'low' && 'segment-active')} onClick={() => setFilter('low')}>Need buying <span className="count-badge">{lowStockCount(data.stock)}</span></button></div></div>
     {shown.length === 0 ? <section className="surface"><EmptyState title={filter === 'low' ? 'No stock alerts' : 'No matching item'} detail={filter === 'low' ? 'Your quantities are above their reorder levels.' : 'Try another product name or add the item to your shelf list.'} action={filter === 'all' ? <Button onClick={onAdd}><Plus size={15} /> Add item</Button> : undefined} /></section> : <div className="stock-grid">{shown.map(item => <StockCard key={item.id} item={item} onEdit={() => onEdit(item.id)} onRestock={() => onUpdate(item.id, 'restock')} onAdjust={() => onUpdate(item.id, 'adjust')} />)}</div>}
     <p className="mt-4 text-[12px] leading-5 text-hesabu-muted">When you record a sale, add the item name in the description to reduce its stock count automatically. You can also change the count yourself.</p>
   </>;
@@ -735,7 +735,7 @@ function StockCard({ item, onEdit, onRestock, onAdjust }: { item: StockItem; onE
   const critical = item.quantity <= Math.max(1, Math.floor(item.lowStockAt / 2));
   const low = item.quantity <= item.lowStockAt;
   return <section className="surface stock-card">
-    <div className="flex items-start justify-between gap-2"><div className="stock-product-icon"><Package size={19} strokeWidth={1.7} /></div><div className="flex items-center gap-2"><StockStatus item={item} /><button type="button" className="icon-button !h-8 !w-8" onClick={onEdit} aria-label={`Edit ${item.name} details`} title="Edit item details"><Settings2 size={14} /></button></div></div>
+    <div className="flex items-start justify-between gap-2"><div className="stock-product-icon"><Package size={19} strokeWidth={1.7} /></div><div className="flex items-center gap-2"><StockStatus item={item} /><button type="button" className="text-action" onClick={onEdit}>Edit</button></div></div>
     <h3 className="mt-4 font-display text-[16px] font-extrabold tracking-[-.03em]">{item.name}</h3><div className="mt-1 text-[10px] text-hesabu-muted">Last restocked {dateText(item.lastRestocked)}</div>
     <div className="mt-5 flex items-end justify-between gap-2"><div><span className={cn('font-display text-[28px] font-extrabold leading-none tracking-[-.06em]', critical ? 'text-[#B94C46]' : low ? 'text-[#A4762A]' : 'text-hesabu-ink')}>{item.quantity}</span><span className="ml-1.5 text-[11px] font-semibold text-hesabu-muted">{item.unit}</span></div><div className="text-right text-[10px] leading-4 text-hesabu-muted">Reorder at<br /><b className="text-hesabu-ink">{item.lowStockAt} {item.unit}</b></div></div>
     <div className="stock-progress"><span className={cn(critical ? 'progress-critical' : low ? 'progress-low' : 'progress-good')} style={{ width: `${percent}%` }} /></div>
@@ -792,7 +792,7 @@ function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDat
 
 function CustomerModal({ onClose, onSave }: { onClose: () => void; onSave: (values: { name: string; phone: string; balance: string; direction: 'owed-to-us' | 'we-owe'; kind: 'customer' | 'supplier'; dueDate: string; note: string }) => void }) {
   const [name, setName] = useState(''); const [phone, setPhone] = useState(''); const [balance, setBalance] = useState(''); const [direction, setDirection] = useState<'owed-to-us' | 'we-owe'>('owed-to-us'); const [kind, setKind] = useState<'customer' | 'supplier'>('customer'); const [dueDate, setDueDate] = useState(''); const [note, setNote] = useState('');
-  return <Modal title="Add a person" detail="Customers, suppliers and anyone you keep a balance with." onClose={onClose}>
+  return <Modal title="Add a person" detail="Save customer and supplier names with what is owed." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ name, phone, balance, direction, kind, dueDate, note }); }}>
       <Field label="Name" value={name} onChange={setName} placeholder="e.g. Kamau or Madam Annette" required autoFocus />
       <Field label="Phone number (optional)" value={phone} onChange={setPhone} placeholder="07xx xxx xxx" inputMode="tel" />
@@ -828,7 +828,7 @@ function PaymentModal({ customer, onClose, onSave }: { customer: Customer; onClo
 }
 function StockModal({ onClose, onSave }: { onClose: () => void; onSave: (values: { name: string; quantity: string; unit: string; threshold: string; cost: string }) => void }) {
   const [name, setName] = useState(''); const [quantity, setQuantity] = useState('0'); const [unit, setUnit] = useState('pcs'); const [threshold, setThreshold] = useState('5'); const [cost, setCost] = useState('');
-  return <Modal title="Add an item" detail="Start with the quantity on your shelf and when you want a reminder to reorder." onClose={onClose}>
+  return <Modal title="Add an item" detail="Enter the amount you have now and when you want to buy more." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ name, quantity, unit, threshold, cost }); }}>
       <Field label="Product name" value={name} onChange={setName} placeholder="e.g. Maziwa" required autoFocus />
       <div className="grid grid-cols-2 gap-3"><Field label="Current quantity" value={quantity} onChange={setQuantity} type="number" min={0} required /><Field label="Unit" value={unit} onChange={setUnit} placeholder="pcs, kg, packets" required /></div>
@@ -867,7 +867,7 @@ function StockUpdateModal({ item, mode, onClose, onSave }: { item: StockItem; mo
 
 function ReminderModal({ reminder, onClose, onSave, onDelete }: { reminder?: Reminder; onClose: () => void; onSave: (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }) => void; onDelete: (reminder: Reminder) => void }) {
   const [title, setTitle] = useState(reminder?.title ?? ''); const [detail, setDetail] = useState(reminder?.detail ?? ''); const [amount, setAmount] = useState(reminder?.amount === undefined ? '' : String(reminder.amount)); const [dueDate, setDueDate] = useState(reminder?.dueDate ?? today()); const [kind, setKind] = useState<Reminder['kind']>(reminder?.kind ?? 'bill');
-  return <Modal title={reminder ? 'Edit reminder' : 'Add a reminder'} detail="A bill, supplier follow-up or a customer you need to call." onClose={onClose}>
+  return <Modal title={reminder ? 'Edit reminder' : 'Add a reminder'} detail="Add a bill to pay or someone to call." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ title, detail, amount, dueDate, kind }); }}>
       <Field label="Reminder" value={title} onChange={setTitle} placeholder="e.g. Pay electricity tokens" required autoFocus />
       <SelectField label="Type" value={kind} onChange={v => setKind(v as Reminder['kind'])} options={[{ value: 'bill', label: 'Bill / expense' }, { value: 'supplier', label: 'Supplier' }, { value: 'customer', label: 'Customer follow-up' }, { value: 'other', label: 'Other' }]} />
@@ -880,7 +880,7 @@ function ReminderModal({ reminder, onClose, onSave, onDelete }: { reminder?: Rem
 
 function ProfileModal({ data, onClose, onSave }: { data: AppData; onClose: () => void; onSave: (name: string, owner: string, phone: string, businessType: string) => void }) {
   const [name, setName] = useState(data.shopInfo.name); const [owner, setOwner] = useState(data.shopInfo.owner); const [phone, setPhone] = useState(data.shopInfo.phone); const [businessType, setBusinessType] = useState(data.shopInfo.businessType);
-  return <Modal title="Your shop details" detail="These details are used in your reports and shop header." onClose={onClose}>
+  return <Modal title="Your shop details" detail="Change the name and contact details for this shop." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(name, owner, phone, businessType); }}>
       <Field label="Shop name" value={name} onChange={setName} required autoFocus /><Field label="Your name" value={owner} onChange={setOwner} required /><Field label="Phone number" value={phone} onChange={setPhone} inputMode="tel" />
       <SelectField label="Business type" value={businessType} onChange={setBusinessType} options={[{ value: 'General shop', label: 'General shop' }, { value: 'Mama Mboga', label: 'Mama Mboga' }, { value: 'Hardware', label: 'Hardware' }, { value: 'Pharmacy', label: 'Pharmacy' }, { value: 'Other', label: 'Other' }]} />
@@ -906,7 +906,7 @@ function SettingsModal({ onClose, onReset, onProfile, onExportBackup, onExportCs
 }
 function EditDraftModal({ draft, items, onClose, onSave }: { draft: TransactionDraft; items: StockItem[]; onClose: () => void; onSave: (values: { type: TransactionType; description: string; amount: string; customerName: string; dueDate: string; stockItemName: string }) => void }) {
   const [type, setType] = useState<TransactionType>(draft.type); const [description, setDescription] = useState(draft.description); const [amount, setAmount] = useState(String(draft.amount)); const [customerName, setCustomerName] = useState(draft.customerName ?? ''); const [dueDate, setDueDate] = useState(draft.dueDate ?? addDays(today(), 7)); const [stockItemName, setStockItemName] = useState(draft.stockItemName ?? '');
-  return <Modal title="Edit transaction" detail="Check the details before they enter your ledger." onClose={onClose}>
+  return <Modal title="Edit transaction" detail="Check these details before saving." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ type, description, amount, customerName, dueDate, stockItemName }); }}>
       <SelectField label="Transaction type" value={type} onChange={v => setType(v as TransactionType)} options={Object.entries(TYPE_META).map(([key, value]) => ({ value: key, label: value.label }))} />
       <Field label="Description" value={description} onChange={setDescription} required />
@@ -925,7 +925,7 @@ function EditTransactionModal({ transaction, onClose, onSave }: { transaction: T
   const [date, setDate] = useState(transaction.date);
   const [time, setTime] = useState(transaction.time);
   const [dueDate, setDueDate] = useState(transaction.dueDate ?? '');
-  return <Modal title="Correct transaction" detail="The original transaction type, linked person and stock movement stay unchanged. To change those, delete this record and add it again." onClose={onClose}>
+  return <Modal title="Correct transaction" detail="Change the description, amount or date." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(transaction, { description, amount, date, time, dueDate }); }}>
       <Field label="Description" value={description} onChange={setDescription} required autoFocus />
       <Field label="Amount (KES)" value={amount} onChange={setAmount} type="number" min={1} required inputMode="numeric" />
