@@ -199,7 +199,6 @@ function App() {
   const [reportPeriod, setReportPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [reportDate, setReportDate] = useState(today());
   const [showAllTransactions, setShowAllTransactions] = useState(false);
-  const [showAllReminders, setShowAllReminders] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [filterTransactions, setFilterTransactions] = useState<'all' | TransactionType>('all');
   const [transactionSearch, setTransactionSearch] = useState('');
@@ -243,7 +242,6 @@ function App() {
   const todayTransactions = useMemo(() => data.transactions.filter(t => t.date === today()), [data.transactions]);
   const todaysIn = useMemo(() => cashIn(todayTransactions), [todayTransactions]);
   const todaysOut = useMemo(() => cashOut(todayTransactions), [todayTransactions]);
-  const todaysCredit = useMemo(() => creditGiven(todayTransactions), [todayTransactions]);
   const outstanding = useMemo(() => data.customers.filter(c => c.balance > 0).reduce((sum, c) => sum + c.balance, 0), [data.customers]);
   const lowStock = useMemo(() => data.stock.filter(s => s.quantity <= s.lowStockAt), [data.stock]);
   const allReminders = useMemo(() => [...data.reminders].sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [data.reminders]);
@@ -623,7 +621,7 @@ function App() {
             <div className="simple-review-copy">{pending.summary}</div>
             {pending.type === 'credit' && <p className="simple-review-note">Payment due {dateText(pending.dueDate ?? addDays(today(), 7), { day: 'numeric', month: 'short', year: 'numeric' })}. This amount has not been received yet.</p>}
             {pending.stockQuantityDelta !== undefined && <p className="simple-review-note">Stock change: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</p>}
-            {pendingStockExceedsCount && pendingStockItem && <p className="simple-review-warning}>Only {pendingStockItem.quantity} {pendingStockItem.unit} are in the stock record. Saving will bring the recorded quantity to zero.</p>}
+            {pendingStockExceedsCount && pendingStockItem && <p className="simple-review-warning">Only {pendingStockItem.quantity} {pendingStockItem.unit} are in the stock record. Saving will bring the recorded quantity to zero.</p>}
             <div className="simple-form-actions"><Button onClick={() => applyTransaction(pending)} className="flex-1">Save entry</Button><button type="button" className="clear-entry" onClick={() => setPending(null)}>Change entry</button></div>
           </div>}
           {voiceState === 'unsupported' && <p className="simple-review-note">Voice entry is not available in this browser. Type the entry above.</p>}
@@ -751,35 +749,43 @@ function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDat
   reportDate: string; setReportDate: (v: string) => void; onShare: () => void; onCopy: () => void;
 }) {
   const periodLabel = reportPeriod === 'daily'
-    ? (reportDate === today() ? 'Today’s report' : `Report for ${dateText(reportDate, { day: 'numeric', month: 'short', year: 'numeric' })}`)
-    : reportPeriod === 'weekly' ? `Week ending ${dateText(reportDate, { day: 'numeric', month: 'short' })}`
-    : `Month to ${dateText(reportDate, { day: 'numeric', month: 'short' })}`;
+    ? (reportDate === today() ? 'Today' : dateText(reportDate, { day: 'numeric', month: 'short', year: 'numeric' }))
+    : reportPeriod === 'weekly' ? 'Week ending ' + dateText(reportDate)
+    : 'Month to ' + dateText(reportDate);
   return <>
-    <SectionTitle eyebrow="KNOW HOW THE DAY WENT" title="Reports" detail="A clear summary you can send to yourself or someone you trust." right={<span className="report-date-chip"><CalendarDays size={14} /> {dateText(reportDate, { day: 'numeric', month: 'short' })}</span>} />
-    <div className="report-workspace">
-      <section className="report-controls surface">
-        <div className="eyebrow">CHOOSE YOUR VIEW</div>
-        <div className="period-tabs">{(['daily', 'weekly', 'monthly'] as const).map(period => <button key={period} className={cn(reportPeriod === period && 'period-tab-active')} onClick={() => setReportPeriod(period)}>{period[0].toUpperCase() + period.slice(1)}</button>)}</div>
-        <label className="field-wrap mt-5 block"><span className="field-label">Report date</span><input type="date" className="field-control" value={reportDate} max={today()} onChange={e => setReportDate(e.target.value)} /></label>
-        <div className="report-mini-stats"><div><span>Cash in</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div><div><span>Cash out</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div><div><span>Net cash</span><b>{money(report.net)}</b></div></div>
-        <div className="mt-2 text-[10px] font-semibold text-hesabu-muted">Cash {money(report.cashReceived)} <span className="mx-1">·</span> M-Pesa {money(report.mpesaReceived)}</div>
-        <div className="mt-4 rounded-xl bg-[#F5F7F4] px-3.5 py-3 text-[10px] leading-5 text-hesabu-muted">Net cash is money in minus money out. It is not profit because cost of goods sold and other accounting adjustments are not calculated here.</div>
-        <Button className="mt-5 w-full" onClick={onShare}><Share2 size={16} /> Share on WhatsApp</Button><Button variant="secondary" className="mt-2 w-full" onClick={onCopy}><ClipboardList size={16} /> Copy report text</Button>
-      </section>
-      <section className="report-preview-wrap"><div className="mb-3 flex items-center justify-between gap-3"><div><div className="eyebrow">MESSAGE PREVIEW</div><h2 className="mt-1 font-display text-[17px] font-extrabold tracking-[-.03em]">{periodLabel}</h2></div><span className="share-ready"><span className="share-ready-dot" /> Ready to share</span></div>
-        <div className="whatsapp-sheet"><div className="wa-header"><span className="wa-avatar"><span className="brand-mark brand-mark-small"><span /><span /><span /></span></span><span><b>Hesabu</b><small>Shop summary</small></span><MoreHorizontal size={18} className="ml-auto text-[#6C8275]" /></div>
-          <div className="wa-date-divider"><span>{dateText(reportDate, { weekday: 'short', day: 'numeric', month: 'short' })}</span></div>
-          <div className="wa-message">
-            <div className="flex items-center gap-2"><span className="report-symbol"><TrendingUp size={16} /></span><div><div className="text-[10px] font-bold uppercase tracking-[.1em] text-[#6B8172]">{data.shopInfo.name}</div><h3 className="mt-0.5 font-display text-[18px] font-extrabold tracking-[-.04em]">{periodLabel}</h3></div></div>
-            <div className="wa-metric-list"><div><span><ArrowDownRight size={14} /> Money received</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div><div><span>Cash</span><b>{money(report.cashReceived)}</b></div><div><span>M-Pesa</span><b>{money(report.mpesaReceived)}</b></div><div><span><ArrowUpRight size={14} /> Expenses</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div><div><span><Wallet size={14} /> Net cash</span><b>{money(report.net)}</b></div><div><span><HandCoins size={14} /> New credit sales</span><b className="text-[#A4762A]">{money(report.credit)}</b></div></div>
-            <div className="wa-divider" /><div className="wa-subhead"><Users size={15} /> New credit sales</div>
-            {report.transactions.filter(t => t.type === 'credit').length ? <div className="wa-list">{report.transactions.filter(t => t.type === 'credit').slice(0, 4).map(t => <div key={t.id}><span>{t.customerName ?? 'Customer'}{t.dueDate ? ` · ${dateText(t.dueDate)}` : ''}</span><b>{money(t.amount)}</b></div>)}</div> : <p className="wa-muted-line">No credit sales in this period.</p>}
-            <div className="wa-divider" /><div className="wa-subhead"><Bell size={15} /> Vitu vya kufuatilia</div>
-            {report.lowStock.length || report.due.length ? <div className="wa-list wa-alert-list">{report.lowStock.slice(0, 3).map(item => <div key={item.id}><span>{item.name} is running low ({item.quantity} {item.unit})</span><b>Restock</b></div>)}{report.due.slice(0, 3).map(rem => <div key={rem.id}><span>{rem.title}{rem.amount ? ` · ${money(rem.amount)}` : ''}</span><b>{daysUntil(rem.dueDate) < 0 ? 'Overdue' : daysUntil(rem.dueDate) === 0 ? 'Today' : dateText(rem.dueDate)}</b></div>)}</div> : <p className="wa-muted-line">Stock na bills ziko sawa.</p>}
-            <div className="mt-4 rounded-lg bg-[#EEF6EF] px-3 py-2.5 text-[11px] leading-5 text-[#55725F]">Your records are up to date. Keep the day moving.</div><div className="mt-2 flex justify-end text-[9px] text-[#8EA496]">Hesabu · preview</div>
-          </div>
-          <div className="wa-composer"><Plus size={17} className="text-[#7D9485]" /><span>Message</span><Headphones size={17} className="text-[#7D9485]" /></div>
+    <SectionTitle title="Reports" detail="See what your shop received, spent and still needs to collect." />
+    <div className="report-simple-layout">
+      <section className="surface report-controls">
+        <div className="report-filters">
+          <div className="period-tabs">{(['daily', 'weekly', 'monthly'] as const).map(period => <button key={period} className={cn(reportPeriod === period && 'period-tab-active')} onClick={() => setReportPeriod(period)}>{period === 'daily' ? 'Day' : period === 'weekly' ? 'Week' : 'Month'}</button>)}</div>
+          <label className="field-wrap"><span className="field-label">Date</span><input type="date" className="field-control" value={reportDate} max={today()} onChange={e => setReportDate(e.target.value)} /></label>
         </div>
+        <h2 className="surface-title report-period-title">{periodLabel}</h2>
+        <div className="report-mini-stats">
+          <div><span>Money received</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div>
+          <div><span>Cash</span><b>{money(report.cashReceived)}</b></div>
+          <div><span>M-Pesa</span><b>{money(report.mpesaReceived)}</b></div>
+          <div><span>Money spent</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div>
+          <div><span>New credit</span><b>{money(report.credit)}</b></div>
+          <div><span>Money left after expenses</span><b>{money(report.net)}</b></div>
+        </div>
+        <p className="simple-review-note">Money left is not the same as profit. This report does not calculate the cost of every item sold.</p>
+        <div className="report-share-actions"><Button onClick={onShare}>Share on WhatsApp</Button><Button variant="outline" onClick={onCopy}>Copy report</Button></div>
+      </section>
+
+      <section className="surface report-entry-list">
+        <h2 className="surface-title">Entries in this report</h2>
+        <p className="surface-subtitle">{report.transactions.length} entries recorded.</p>
+        {report.transactions.length ? <div className="simple-list">{report.transactions.map(tx => <div key={tx.id}><span>{tx.description}<small>{dateText(tx.date)} · {TYPE_META[tx.type].label}{tx.customerName ? ' · ' + tx.customerName : ''}</small></span><strong>{money(tx.amount)}</strong></div>)}</div> : <p className="simple-empty">No entries for this period.</p>}
+      </section>
+
+      <section className="surface report-entry-list">
+        <h2 className="surface-title">Things to check</h2>
+        <p className="surface-subtitle">Stock and payments that need attention.</p>
+        {report.lowStock.length || report.due.length ? <div className="simple-list">
+          {report.lowStock.map(item => <div key={item.id}><span>{item.name}<small>{item.quantity} {item.unit} left</small></span><strong>Buy more</strong></div>)}
+          {report.due.map(rem => <div key={rem.id}><span>{rem.title}<small>{dateText(rem.dueDate)}{rem.amount ? ' · ' + money(rem.amount) : ''}</small></span><strong>{daysUntil(rem.dueDate) < 0 ? 'Overdue' : daysUntil(rem.dueDate) === 0 ? 'Today' : 'Coming up'}</strong></div>)}
+        </div> : <p className="simple-empty">Nothing needs attention.</p>}
       </section>
     </div>
   </>;
