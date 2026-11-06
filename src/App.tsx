@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  ArrowDownLeft, ArrowUpRight, Bell, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
-  FileSpreadsheet, FileText, HandCoins, House, Package, Plus, Download, RotateCcw, Search, Settings2,
+  ArrowDownLeft, ArrowUpRight, Bell, Check, CheckCircle2, ChevronRight, ClipboardList,
+  FileSpreadsheet, FileText, HandCoins, House, Package, Plus, Download, RotateCcw, Settings2,
   Share2, SlidersHorizontal, Store, Upload, Trash2, Users, Wallet, type LucideIcon,
 } from 'lucide-react';
 import { createBackupEnvelope, hasSavedData, makeDemoData, markBackupAt, parseBackupPayload, readLastBackupAt, readSavedData, saveData } from './data';
