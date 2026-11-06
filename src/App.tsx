@@ -7,9 +7,9 @@ import {
   Trash2, TrendingDown, TrendingUp, Users,
   Wallet, X, type LucideIcon,
 } from 'lucide-react';
-import { hasSavedData, makeDemoData, readSavedData, saveData } from './data';
+import { createBackupEnvelope, hasSavedData, makeDemoData, markBackupAt, parseBackupPayload, readLastBackupAt, readSavedData, saveData } from './data';
 import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, fullDateText, id, money, parseTransaction, shortDay, timeText, today, transactionLabel } from './utils';
+import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, debtReminderMessage, daysUntil, fullDateText, id, money, normalizeKenyanWhatsAppNumber, parseTransaction, receiptMessage, shortDay, timeText, today, transactionLabel, whatsAppUrl } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'home', label: 'Home', icon: House },
@@ -190,6 +190,10 @@ function App() {
   const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'unsupported'>('idle');
   const voiceLanguage = 'en-KE';
   const [typeChoice, setTypeChoice] = useState<TransactionType | 'auto'>('auto');
+  const [paymentMethodChoice, setPaymentMethodChoice] = useState<'cash' | 'mpesa'>('cash');
+  const [storageWriteFailed, setStorageWriteFailed] = useState(false);
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => readLastBackupAt());
+  const [storageProtection, setStorageProtection] = useState<'checking' | 'protected' | 'standard' | 'unsupported'>('checking');
   const [query, setQuery] = useState('');
   const [debtDirection, setDebtDirection] = useState<'owed-to-us' | 'we-owe'>('owed-to-us');
   const [reportPeriod, setReportPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
@@ -201,9 +205,25 @@ function App() {
   const [transactionSearch, setTransactionSearch] = useState('');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
-  useEffect(() => { if (!showWelcome) saveData(data); }, [data, showWelcome]);
+  useEffect(() => { if (!showWelcome) setStorageWriteFailed(!saveData(data)); }, [data, showWelcome]);
+  useEffect(() => {
+    let active = true;
+    if (!navigator.storage?.persisted) { setStorageProtection('unsupported'); return () => { active = false; }; }
+    navigator.storage.persisted()
+      .then(persisted => { if (active) setStorageProtection(persisted ? 'protected' : 'standard'); })
+      .catch(() => { if (active) setStorageProtection('unsupported'); });
+    return () => { active = false; };
+  }, []);
 
   const notify = (message: string) => setToastMessage(message);
+  const protectDeviceStorage = async () => {
+    if (!navigator.storage?.persist) { setStorageProtection('unsupported'); notify('This browser does not support persistent storage requests.'); return; }
+    try {
+      const granted = await navigator.storage.persist();
+      setStorageProtection(granted ? 'protected' : 'standard');
+      notify(granted ? 'Browser storage protection is enabled. Keep a separate backup too.' : 'The browser did not grant storage protection. Keep regular backups.');
+    } catch { setStorageProtection('unsupported'); notify('Could not request browser storage protection. Download a backup regularly.'); }
+  };
   const closeToast = () => setToastMessage('');
   const closeModal = () => setModal(null);
   const updateData = (updater: (current: AppData) => AppData) => setData(current => updater(current));
@@ -229,6 +249,10 @@ function App() {
   const allReminders = useMemo(() => [...data.reminders].sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [data.reminders]);
   const activeReminders = useMemo(() => allReminders.filter(r => !r.done), [allReminders]);
   const report = useMemo(() => buildReport(data, reportPeriod, reportDate), [data, reportPeriod, reportDate]);
+  const backupAgeDays = lastBackupAt && Number.isFinite(Date.parse(lastBackupAt))
+    ? Math.max(0, Math.floor((Date.now() - Date.parse(lastBackupAt)) / 86_400_000))
+    : null;
+  const backupNeedsAttention = backupAgeDays === null || backupAgeDays >= 7;
 
   const navigate = (next: Section) => {
     setSection(next); setQuery(''); setPending(null); setProfileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -255,6 +279,7 @@ function App() {
       customerId: customer?.id, customerName: createdName, dueDate: draft.dueDate,
       stockItemId: matchedStock?.id, stockQuantityDelta: draft.stockQuantityDelta,
       category: draft.category,
+      paymentMethod: draft.type === 'sale' || draft.type === 'payment' ? (draft.paymentMethod ?? 'cash') : undefined,
     };
     const effectiveStockDelta = matchedStock && draft.stockQuantityDelta !== undefined && draft.stockQuantityDelta < 0
       ? -Math.min(matchedStock.quantity, Math.abs(draft.stockQuantityDelta))
@@ -286,6 +311,8 @@ function App() {
       const name = quickText.trim().match(/\b([A-Z][a-z]{2,})\b/)?.[1];
       if (name && !['I', 'Bought', 'Supplier', 'Cash', 'Sale'].includes(name)) parsed.customerName = name;
     }
+    if (parsed.type === 'sale' || parsed.type === 'payment') parsed.paymentMethod = parsed.paymentMethod ?? paymentMethodChoice;
+    else parsed.paymentMethod = undefined;
     setPending(parsed);
   };
 
@@ -481,6 +508,7 @@ function App() {
     const next: TransactionDraft = {
       ...pending, type: values.type, description: values.description.trim(), amount,
       customerName: values.customerName.trim() || undefined, dueDate: values.type === 'credit' ? values.dueDate || addDays(today(), 7) : undefined,
+      paymentMethod: values.type === 'sale' || values.type === 'payment' ? (pending.paymentMethod ?? paymentMethodChoice) : undefined,
       stockItemName: item?.name,
       stockQuantityDelta: item ? (values.type === 'sale' || values.type === 'credit' ? -(pending.stockQuantityDelta ? Math.abs(pending.stockQuantityDelta) : 1) : values.type === 'expense' ? (pending.stockQuantityDelta && pending.stockQuantityDelta > 0 ? pending.stockQuantityDelta : undefined) : undefined) : undefined,
       summary: `${TYPE_META[values.type].label}${values.customerName ? ` for ${values.customerName}` : ''} — ${money(amount)}`,
