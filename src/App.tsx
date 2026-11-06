@@ -393,13 +393,13 @@ function App() {
     setModal(null); notify('Contact added.');
   };
 
-  const recordPayment = (customer: Customer, amountValue: string, note: string) => {
+  const recordPayment = (customer: Customer, amountValue: string, note: string, paymentMethod: 'cash' | 'mpesa' = 'cash') => {
     const entered = Math.max(0, Number(amountValue) || 0);
     const supplierPayment = customer.kind === 'supplier' || (!customer.kind && customer.balance < 0);
     const refundingCustomerCredit = customer.kind === 'customer' && customer.balance < 0;
     const amount = supplierPayment || refundingCustomerCredit ? Math.min(Math.abs(customer.balance), entered) : entered;
     if (!amount) return;
-    const txn: Transaction = { id: id('txn'), type: supplierPayment || refundingCustomerCredit ? 'expense' : 'payment', description: note.trim() || (supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer credit refund' : 'Debt payment received'), amount, date: today(), time: currentTime(), customerId: customer.id, customerName: customer.name, category: supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer refund' : undefined };
+    const txn: Transaction = { id: id('txn'), type: supplierPayment || refundingCustomerCredit ? 'expense' : 'payment', description: note.trim() || (supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer credit refund' : 'Debt payment received'), amount, date: today(), time: currentTime(), customerId: customer.id, customerName: customer.name, category: supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer refund' : undefined, paymentMethod: supplierPayment || refundingCustomerCredit ? undefined : paymentMethod };
     updateData(current => ({ ...current, customers: current.customers.map(c => c.id === customer.id ? { ...c, balance: supplierPayment || refundingCustomerCredit ? Math.min(0, c.balance + amount) : c.balance - amount } : c), transactions: [txn, ...current.transactions] }));
     setModal(null); setSection('debts'); notify(`${money(amount)} ${supplierPayment ? 'paid to' : refundingCustomerCredit ? 'returned to' : 'received from'} ${customer.name}.`);
   };
@@ -575,6 +575,7 @@ function App() {
           <Button size="sm" onClick={exportBackup}><Download size={14}/>{lastBackupAt ? 'Back up now' : 'Create first backup'}</Button>
         </section>}
         <div className="mb-5 text-[10px] font-medium text-hesabu-muted">Today’s receipts: Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum,t) => sum + t.amount, 0))} · M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum,t) => sum + t.amount, 0))}</div>
+        {!backupNeedsAttention && !storageWriteFailed && <div className="mb-4 flex items-center justify-between gap-3 text-[10px] text-hesabu-muted"><span>Last backup: {lastBackupAt ? dateText(lastBackupAt.slice(0, 10), { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not recorded'}</span><button type="button" className="font-bold text-hesabu-green" onClick={exportBackup}>Back up now</button></div>}
         <section className="action-panel" aria-label="Quick actions"><div className="action-panel-top"><strong>Quick actions</strong><span>Your everyday tools</span></div>
           <div className="quick-actions">
             <button onClick={() => {setTypeChoice('sale'); document.getElementById('transaction-entry')?.scrollIntoView({behavior:'smooth'});}}><span className="qa-icon qa-sale"><ArrowDownLeft size={21}/></span><span>Record sale</span></button>
@@ -791,16 +792,18 @@ function CustomerModal({ onClose, onSave }: { onClose: () => void; onSave: (valu
   </Modal>;
 }
 
-function PaymentModal({ customer, onClose, onSave }: { customer: Customer; onClose: () => void; onSave: (customer: Customer, amount: string, note: string) => void }) {
+function PaymentModal({ customer, onClose, onSave }: { customer: Customer; onClose: () => void; onSave: (customer: Customer, amount: string, note: string, paymentMethod: 'cash' | 'mpesa') => void }) {
   const supplierPayment = customer.kind === 'supplier' || (!customer.kind && customer.balance < 0);
   const customerCredit = customer.kind === 'customer' && customer.balance < 0;
   const [amount, setAmount] = useState(String(Math.abs(customer.balance)));
   const [note, setNote] = useState(supplierPayment ? 'Supplier payment' : customerCredit ? 'Customer credit refund' : 'Debt payment received');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mpesa'>('cash');
   const capped = supplierPayment || customerCredit;
   const direction = supplierPayment ? 'paid out' : customerCredit ? 'returned to the customer' : 'received';
   return <Modal title={supplierPayment ? `Record payment to ${customer.name}` : customerCredit ? `Return balance to ${customer.name}` : `Payment from ${customer.name}`} detail={`${customerCredit ? 'Customer credit held' : 'Outstanding balance'}: ${money(Math.abs(customer.balance))}. This entry will be ${direction}.`} onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(customer, amount, note); }}>
+    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(customer, amount, note, paymentMethod); }}>
       <Field label={supplierPayment || customerCredit ? 'Amount paid (KES)' : 'Amount received (KES)'} type="number" min={1} value={amount} onChange={setAmount} required autoFocus inputMode="numeric" />
+      {!capped && <div className="flex items-center justify-between gap-3 rounded-lg border border-hesabu-line px-3 py-2 text-[11px]"><span className="font-semibold text-hesabu-muted">Received via</span><div className="flex gap-1"><button type="button" onClick={() => setPaymentMethod('cash')} className={cn('rounded-md px-3 py-1.5 font-bold', paymentMethod === 'cash' ? 'bg-hesabu-green text-white' : 'bg-hesabu-surface text-hesabu-muted')}>Cash</button><button type="button" onClick={() => setPaymentMethod('mpesa')} className={cn('rounded-md px-3 py-1.5 font-bold', paymentMethod === 'mpesa' ? 'bg-hesabu-green text-white' : 'bg-hesabu-surface text-hesabu-muted')}>M-Pesa</button></div></div>}
       <div className="flex flex-wrap gap-2"><button type="button" className="quick-amount" onClick={() => setAmount(String(Math.min(Math.abs(customer.balance), 100)))}>KES 100</button><button type="button" className="quick-amount" onClick={() => setAmount(String(Math.ceil(Math.abs(customer.balance) / 2)))}>Half balance</button><button type="button" className="quick-amount" onClick={() => setAmount(String(Math.abs(customer.balance)))}>Full balance</button></div>
       <Field label="Description" value={note} onChange={setNote} />
       {capped && Number(amount) > Math.abs(customer.balance) && <p className="text-[11px] text-[#B94C46]">This amount is higher than the balance and will be capped at {money(Math.abs(customer.balance))}.</p>}
