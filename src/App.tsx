@@ -151,6 +151,7 @@ function App() {
   const [data, setData] = useState<AppData>(() => readSavedData());
   const [showWelcome, setShowWelcome] = useState(() => !hasSavedData());
   const [section, setSection] = useState<Section>('home');
+  const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [pending, setPending] = useState<TransactionDraft | null>(null);
   const [quickText, setQuickText] = useState('');
@@ -223,7 +224,7 @@ function App() {
   const backupNeedsAttention = backupAgeDays === null || backupAgeDays >= 7;
 
   const navigate = (next: Section) => {
-    setSection(next); setQuery(''); setPending(null); setProfileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+    setSection(next); setQuery(''); setPending(null); setQuickEntryOpen(false); setProfileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const applyTransaction = (draft: TransactionDraft) => {
@@ -257,7 +258,7 @@ function App() {
       ? current.stock.map(s => s.id === matchedStock.id ? { ...s, quantity: Math.max(0, s.quantity + effectiveStockDelta), lastRestocked: effectiveStockDelta > 0 ? today() : s.lastRestocked } : s)
       : current.stock;
     updateData(c => ({ ...c, customers: nextCustomers, stock: nextStock, transactions: [txn, ...c.transactions] }));
-    setPending(null); setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setTypeChoice('sale');
+    setPending(null); setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setTypeChoice('sale'); setQuickEntryOpen(false);
     notify('Entry saved.');
     if (navigator.vibrate) navigator.vibrate(18);
   };
@@ -543,98 +544,135 @@ function App() {
 
     <main className="app-main">
       {section === 'home' && <>
-        <div className="dashboard-top">
-          <section className="welcome-row">
-            <div>
-              <div className="eyebrow"><span className="live-dot" /> {fullDateText()}</div>
-              <h1 className="welcome-title">{data.shopInfo.name}</h1>
-              <p className="welcome-copy">{data.shopInfo.owner ? 'Your shop at a glance, ' + data.shopInfo.owner : 'Your shop at a glance'}</p>
+        <div className="ledger-home">
+          <header className="ledger-page-head">
+            <div className="ledger-head-copy">
+              <div className="ledger-date-line">{fullDateText()} <span>·</span> DAILY BOOK</div>
+              <h1>{data.shopInfo.name}</h1>
+              <p>{data.shopInfo.owner ? `Shop records for ${data.shopInfo.owner}` : 'Your shop’s daily record'}</p>
             </div>
-            <button className="today-pill" onClick={() => { setReportDate(today()); setReportPeriod('daily'); navigate('reports'); }}><FileText size={15} /> Today’s report <ChevronRight size={14} /></button>
+            <button className="ledger-report-button" onClick={() => { setReportDate(today()); setReportPeriod('daily'); navigate('reports'); }}>
+              <FileText size={16} /> <span>Today’s report</span>
+            </button>
+          </header>
+
+          <section className="ledger-balance-band" aria-label="Today’s totals">
+            <div className="ledger-band-label"><span>Today at a glance</span><span>{todayTransactions.length} {todayTransactions.length === 1 ? 'entry' : 'entries'}</span></div>
+            <div className="ledger-stats">
+              <div className="ledger-stat ledger-stat-in">
+                <span>Money in</span>
+                <strong>{money(todaysIn)}</strong>
+                <small>Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0))} <i>·</i> M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0))}</small>
+              </div>
+              <div className="ledger-stat ledger-stat-out">
+                <span>Money out</span>
+                <strong>{money(todaysOut)}</strong>
+                <small>Shop expenses</small>
+              </div>
+              <div className="ledger-stat ledger-stat-due">
+                <span>To collect</span>
+                <strong>{money(outstanding)}</strong>
+                <small>Customer balances</small>
+              </div>
+            </div>
           </section>
 
-          <section className="today-summary" aria-label="Today’s shop totals">
-            <div className="summary-card summary-received">
-              <div className="summary-card-head"><span>Received today</span><span className="summary-icon"><ArrowDownLeft size={17} strokeWidth={2} /></span></div>
-              <strong>{money(todaysIn)}</strong>
-              <small>Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0))} <span>·</span> M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0))}</small>
-            </div>
-            <div className="summary-card summary-spent">
-              <div className="summary-card-head"><span>Spent today</span><span className="summary-icon"><ArrowUpRight size={17} strokeWidth={2} /></span></div>
-              <strong>{money(todaysOut)}</strong>
-              <small>Shop expenses recorded</small>
-            </div>
-            <div className="summary-card summary-owed">
-              <div className="summary-card-head"><span>Customers owe</span><span className="summary-icon"><HandCoins size={17} strokeWidth={2} /></span></div>
-              <strong>{money(outstanding)}</strong>
-              <small>{data.customers.filter(c => c.balance > 0).length} people with a balance</small>
+          <section className="ledger-quick-actions" aria-label="Add a transaction">
+            <div className="ledger-section-label">ADD TO THE BOOK</div>
+            <div className="ledger-action-list">
+              <button className="ledger-action ledger-action-sale" onClick={() => { setTypeChoice('sale'); setPending(null); setQuickEntryOpen(true); }}>
+                <span className="ledger-action-icon"><ArrowDownLeft size={18} /></span><span>Sale</span>
+              </button>
+              <button className="ledger-action ledger-action-credit" onClick={() => { setTypeChoice('credit'); setPending(null); setQuickEntryOpen(true); }}>
+                <span className="ledger-action-icon"><HandCoins size={18} /></span><span>Give credit</span>
+              </button>
+              <button className="ledger-action ledger-action-expense" onClick={() => { setTypeChoice('expense'); setPending(null); setQuickEntryOpen(true); }}>
+                <span className="ledger-action-icon"><ArrowUpRight size={18} /></span><span>Expense</span>
+              </button>
+              <button className="ledger-action ledger-action-payment" onClick={() => { setTypeChoice('payment'); setPending(null); setQuickEntryOpen(true); }}>
+                <span className="ledger-action-icon"><Wallet size={18} /></span><span>Collect payment</span>
+              </button>
             </div>
           </section>
-          {(backupNeedsAttention || storageWriteFailed) && <section className="backup-notice" role="status">
-            <div><strong>{storageWriteFailed ? 'Your latest changes may not be saved' : backupAgeDays === null ? 'Make a backup of your shop book' : 'Your shop book needs a new backup'}</strong>
-            <p>{storageWriteFailed ? 'Hesabu could not save to this browser. Download a copy before closing the app.' : 'Your records are saved on this device. Download a copy and keep it somewhere safe.'}</p></div>
-            <Button size="sm" onClick={exportBackup}><Download size={14} /> Download backup</Button>
+
+          {(backupNeedsAttention || storageWriteFailed) && <section className="ledger-backup-strip" role="status">
+            <span className="ledger-backup-mark"><Download size={15} /></span>
+            <span className="ledger-backup-copy"><strong>{storageWriteFailed ? 'Some changes may not be saved' : 'Keep a safe copy of your book'}</strong><small>{storageWriteFailed ? 'Download a backup before closing this page.' : 'Your records stay on this device. Make a backup at least once a week.'}</small></span>
+            <button onClick={exportBackup}>Download backup</button>
           </section>}
-        </div>
 
-        <div className="dashboard-grid">
-          <div className="dashboard-main">
-            <section id="transaction-entry" className="surface log-surface">
-              <div className="simple-section-heading">
-                <div><span className="section-kicker">QUICK ENTRY</span><h2 className="surface-title">Record a transaction</h2><p className="surface-subtitle">Add a sale, expense or customer payment to your book.</p></div>
-                <button type="button" className="speak-link" onClick={startVoice}><span className="speak-icon"><ClipboardList size={15} /></span>{voiceState === 'listening' ? 'Listening…' : 'Use voice'}</button>
+          {quickEntryOpen && <section id="transaction-entry" className="surface ledger-entry-panel">
+            <div className="ledger-entry-heading">
+              <div><div className="ledger-section-label">NEW RECORD</div><h2>{pending ? 'Review this entry' : 'Record a transaction'}</h2><p>Enter what happened, then check the details before saving.</p></div>
+              <button className="ledger-close-entry" onClick={() => { setQuickEntryOpen(false); setPending(null); }} aria-label="Close transaction form">×</button>
+            </div>
+            <div className="type-picker simple-type-picker" role="group" aria-label="What happened?">
+              {(['sale', 'credit', 'expense', 'payment'] as const).map(type => { const Icon = TYPE_META[type].icon; return <button key={type} onClick={() => { setTypeChoice(type); setPending(null); }} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
+                <Icon size={16} strokeWidth={1.9} /><span>{TYPE_META[type].label}</span>
+              </button>; })}
+            </div>
+            <form className="simple-entry-form ledger-entry-form" onSubmit={handleQuickSubmit}>
+              <Field label={typeChoice === 'credit' ? 'What did the customer take?' : typeChoice === 'expense' ? 'What did you pay for?' : typeChoice === 'payment' ? 'What was the payment for?' : 'What did you sell?'} value={quickText} onChange={setQuickText} placeholder={typeChoice === 'credit' ? 'e.g. 2 loaves of bread' : typeChoice === 'expense' ? 'e.g. Shop rent' : typeChoice === 'payment' ? 'e.g. Kamau’s debt' : 'e.g. Bread and milk'} required />
+              <Field label="Amount (KES)" value={quickAmount} onChange={setQuickAmount} placeholder="0" type="number" min={1} required inputMode="numeric" />
+              {(typeChoice === 'credit' || typeChoice === 'payment') && <Field label={typeChoice === 'credit' ? 'Customer name' : 'Who paid you?'} value={quickPerson} onChange={setQuickPerson} placeholder="Enter customer name" required />}
+              {typeChoice === 'credit' && <Field label="When should they pay? (optional)" value={quickDueDate} onChange={setQuickDueDate} type="date" />}
+              {(typeChoice === 'sale' || typeChoice === 'payment') && <div className="simple-payment-choice"><span>Paid by</span><div><button type="button" onClick={() => setPaymentMethodChoice('cash')} className={paymentMethodChoice === 'cash' ? 'selected' : ''}>Cash</button><button type="button" onClick={() => setPaymentMethodChoice('mpesa')} className={paymentMethodChoice === 'mpesa' ? 'selected' : ''}>M-Pesa</button></div></div>}
+              <div className="simple-form-actions">
+                <Button type="submit" className="flex-1"><Check size={16} strokeWidth={2.2} />Review entry</Button>
+                <button type="button" className="clear-entry" onClick={() => { setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setPending(null); setTypeChoice('sale'); setPaymentMethodChoice('cash'); }}>Clear</button>
               </div>
-              <div className="type-picker simple-type-picker" role="group" aria-label="What happened?">
-                {(['sale', 'credit', 'expense', 'payment'] as const).map(type => { const Icon = TYPE_META[type].icon; return <button key={type} onClick={() => { setTypeChoice(type); setPending(null); }} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
-                  <Icon size={16} strokeWidth={1.9} /><span>{TYPE_META[type].label}</span>
-                </button>; })}
-              </div>
-              <form className="simple-entry-form" onSubmit={handleQuickSubmit}>
-                <Field label={typeChoice === 'credit' ? 'What did the customer take?' : typeChoice === 'expense' ? 'What did you pay for?' : typeChoice === 'payment' ? 'What was the payment for?' : 'What did you sell?'} value={quickText} onChange={setQuickText} placeholder={typeChoice === 'credit' ? 'e.g. 2 loaves of bread' : typeChoice === 'expense' ? 'e.g. Shop rent' : typeChoice === 'payment' ? 'e.g. Kamau’s debt' : 'e.g. Bread and milk'} required />
-                <Field label="Amount (KES)" value={quickAmount} onChange={setQuickAmount} placeholder="0" type="number" min={1} required inputMode="numeric" />
-                {(typeChoice === 'credit' || typeChoice === 'payment') && <Field label={typeChoice === 'credit' ? 'Customer name' : 'Who paid you?'} value={quickPerson} onChange={setQuickPerson} placeholder="Enter customer name" required />}
-                {typeChoice === 'credit' && <Field label="When should they pay? (optional)" value={quickDueDate} onChange={setQuickDueDate} type="date" />}
-                {(typeChoice === 'sale' || typeChoice === 'payment') && <div className="simple-payment-choice"><span>Paid by</span><div><button type="button" onClick={() => setPaymentMethodChoice('cash')} className={paymentMethodChoice === 'cash' ? 'selected' : ''}>Cash</button><button type="button" onClick={() => setPaymentMethodChoice('mpesa')} className={paymentMethodChoice === 'mpesa' ? 'selected' : ''}>M-Pesa</button></div></div>}
-                <div className="simple-form-actions">
-                  <Button type="submit" className="flex-1"><Check size={16} strokeWidth={2.2} />Review transaction</Button>
-                  <button type="button" className="clear-entry" onClick={() => { setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setPending(null); setTypeChoice('sale'); setPaymentMethodChoice('cash'); }}>Clear</button>
-                </div>
-              </form>
-              {pending && <div className="draft-review" aria-live="polite">
-                <div className="simple-review-heading">Check this entry</div>
-                <div className="simple-review-copy">{pending.summary}</div>
-                {pending.type === 'credit' && <p className="simple-review-note">Payment due {dateText(pending.dueDate ?? addDays(today(), 7), { day: 'numeric', month: 'short', year: 'numeric' })}. This amount has not been received yet.</p>}
-                {pending.stockQuantityDelta !== undefined && <p className="simple-review-note">Stock change: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</p>}
-                {pendingStockExceedsCount && pendingStockItem && <p className="simple-review-warning">Only {pendingStockItem.quantity} {pendingStockItem.unit} are in the stock record. Saving will bring the recorded quantity to zero.</p>}
-                <div className="simple-form-actions"><Button onClick={() => applyTransaction(pending)} className="flex-1"><Check size={15} />Save transaction</Button><button type="button" className="clear-entry" onClick={() => setPending(null)}>Change details</button></div>
-              </div>}
+            </form>
+            {pending && <div className="draft-review" aria-live="polite">
+              <div className="simple-review-heading">Check this entry</div>
+              <div className="simple-review-copy">{pending.summary}</div>
+              {pending.type === 'credit' && <p className="simple-review-note">Payment due {dateText(pending.dueDate ?? addDays(today(), 7), { day: 'numeric', month: 'short', year: 'numeric' })}. This amount has not been received yet.</p>}
+              {pending.stockQuantityDelta !== undefined && <p className="simple-review-note">Stock change: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</p>}
+              {pendingStockExceedsCount && pendingStockItem && <p className="simple-review-warning">Only {pendingStockItem.quantity} {pendingStockItem.unit} are in the stock record. Saving will bring the recorded quantity to zero.</p>}
+              <div className="simple-form-actions"><Button onClick={() => applyTransaction(pending)} className="flex-1"><Check size={15} />Save entry</Button><button type="button" className="clear-entry" onClick={() => setPending(null)}>Change details</button></div>
+            </div>}
+            <div className="ledger-entry-footer">
+              <button type="button" className="speak-link" onClick={startVoice}><span className="speak-icon"><ClipboardList size={15} /></span>{voiceState === 'listening' ? 'Listening…' : 'Use voice instead'}</button>
               {voiceState === 'unsupported' && <p className="simple-review-note">Voice entry is not available in this browser. Type the entry above.</p>}
+            </div>
+          </section>}
+
+          <div className="ledger-main-layout">
+            <section className="surface ledger-book">
+              <header className="ledger-book-heading">
+                <div><div className="ledger-section-label">TRANSACTION HISTORY</div><h2>Shop book</h2><p>Every sale, expense and customer payment in one place.</p></div>
+                <button className="ledger-view-all" onClick={() => { setShowAllTransactions(v => !v); setFilterTransactions('all'); setTransactionSearch(''); }}>
+                  {showAllTransactions ? 'Recent only' : 'View all'} <ChevronRight size={15} />
+                </button>
+              </header>
+              {showAllTransactions && <div className="ledger-filters"><label className="search-field"><input value={transactionSearch} onChange={e => setTransactionSearch(e.target.value)} placeholder="Search the book" /></label><select className="filter-select" value={filterTransactions} onChange={e => setFilterTransactions(e.target.value as 'all' | TransactionType)} aria-label="Filter transactions"><option value="all">All entries</option>{Object.entries(TYPE_META).map(([type, meta]) => <option key={type} value={type}>{meta.label}</option>)}</select></div>}
+              {sortedTransactions.length === 0 ? <EmptyState title="Your book is ready" detail="The first sale, expense or customer credit you record will appear here." action={<Button onClick={() => { setTypeChoice('sale'); setQuickEntryOpen(true); }}><Plus size={15} /> Add first entry</Button>} /> :
+                <div className="simple-transaction-list ledger-transaction-list">
+                  {sortedTransactions.filter(t => !showAllTransactions || (filterTransactions === 'all' || t.type === filterTransactions)).filter(t => !showAllTransactions || `${t.description} ${t.customerName ?? ''}`.toLowerCase().includes(transactionSearch.toLowerCase())).slice(0, showAllTransactions ? 80 : 8).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact />)}
+                </div>}
             </section>
 
-            <section className="surface activity-surface">
-              <div className="section-heading-row"><div><span className="section-kicker">YOUR RECORDS</span><h2 className="surface-title">Recent transactions</h2><p className="surface-subtitle">The latest entries in your shop book.</p></div><button className="text-action" onClick={() => { setShowAllTransactions(v => !v); setFilterTransactions('all'); }}>{showAllTransactions ? 'Show recent' : 'View all'} <ChevronRight size={14} /></button></div>
-              {showAllTransactions && <div className="mb-3 flex gap-2"><label className="search-field flex-1"><input value={transactionSearch} onChange={e => setTransactionSearch(e.target.value)} placeholder="Search transactions" /></label><select className="filter-select" value={filterTransactions} onChange={e => setFilterTransactions(e.target.value as 'all' | TransactionType)} aria-label="Filter transactions"><option value="all">All entries</option>{Object.entries(TYPE_META).map(([type, meta]) => <option key={type} value={type}>{meta.label}</option>)}</select></div>}
-              {sortedTransactions.length === 0 ? <EmptyState title="No transactions yet" detail="Your saved sales, expenses and payments will appear here." /> : <div className="simple-transaction-list">{sortedTransactions.filter(t => !showAllTransactions || (filterTransactions === 'all' || t.type === filterTransactions)).filter(t => !showAllTransactions || `${t.description} ${t.customerName ?? ''}`.toLowerCase().includes(transactionSearch.toLowerCase())).slice(0, showAllTransactions ? 80 : 6).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact />)}</div>}
-            </section>
+            <aside className="ledger-side">
+              <section className="surface ledger-side-card">
+                <header className="ledger-side-heading"><div><div className="ledger-section-label">FOLLOW UP</div><h2>People owing</h2></div><button className="ledger-side-link" onClick={() => navigate('debts')}>All people <ChevronRight size={14} /></button></header>
+                {data.customers.filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 4).length ?
+                  <div className="ledger-side-list">{data.customers.filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 4).map(c => <button key={c.id} onClick={() => navigate('debts')}><span className="ledger-person-mark">{c.name.slice(0,1).toUpperCase()}</span><span className="ledger-side-name">{c.name}</span><strong>{money(c.balance)}</strong></button>)}</div> :
+                  <p className="ledger-empty-copy">No customer balances to collect.</p>}
+              </section>
+
+              <section className="surface ledger-side-card ledger-operations-card">
+                <div className="ledger-side-block">
+                  <header className="ledger-side-heading"><div><div className="ledger-section-label">INVENTORY</div><h2>Stock check</h2></div><button className="ledger-side-link" onClick={() => navigate('stock')}>Open stock <ChevronRight size={14} /></button></header>
+                  {lowStock.length ? <div className="ledger-side-list">{lowStock.slice(0, 3).map(item => <button key={item.id} onClick={() => navigate('stock')}><span className="ledger-stock-mark"><Package size={15} /></span><span className="ledger-side-name">{item.name}<small>{item.quantity} {item.unit} left</small></span><strong className="ledger-stock-low">Low</strong></button>)}</div> : <p className="ledger-empty-copy">All recorded stock levels look fine.</p>}
+                </div>
+                <div className="ledger-side-block">
+                  <header className="ledger-side-heading"><div><div className="ledger-section-label">TO REMEMBER</div><h2>Reminders</h2></div><button className="ledger-side-link" onClick={() => setModal({ kind: 'reminder' })}>+ Add</button></header>
+                  {activeReminders.slice(0, 3).length ? <div className="ledger-side-list">{activeReminders.slice(0, 3).map(rem => <button key={rem.id} onClick={() => toggleReminder(rem)}><span className="ledger-reminder-mark"><Bell size={14} /></span><span className="ledger-side-name">{rem.title}<small>{dateText(rem.dueDate, { day: 'numeric', month: 'short' })}</small></span><strong className="ledger-reminder-done">Done</strong></button>)}</div> : <p className="ledger-empty-copy">No reminders waiting.</p>}
+                </div>
+              </section>
+
+              <div className="ledger-privacy-note"><CheckCircle2 size={16} /><span><strong>Saved on this device</strong><small>No account or cloud storage. Keep a separate backup.</small></span></div>
+            </aside>
           </div>
-
-          <aside className="dashboard-aside">
-            <section className="surface aside-surface">
-              <div className="aside-heading"><span className="aside-heading-icon debt-heading-icon"><Users size={16} /></span><div><h2 className="surface-title">People who owe you</h2><p className="surface-subtitle">Customer balances to collect.</p></div></div>
-              {data.customers.filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 4).length ? <div className="simple-list">{data.customers.filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 4).map(c => <div key={c.id}><span>{c.name}</span><strong>{money(c.balance)}</strong></div>)}</div> : <p className="simple-empty">No one owes the shop at the moment.</p>}
-              <button className="text-action" onClick={() => navigate('debts')}>View all people <ChevronRight size={14} /></button>
-            </section>
-            <section className="surface aside-surface">
-              <div className="aside-heading"><span className="aside-heading-icon stock-heading-icon"><Package size={16} /></span><div><h2 className="surface-title">Stock to check</h2><p className="surface-subtitle">Items running low.</p></div></div>
-              {lowStock.length ? <div className="simple-list">{lowStock.slice(0, 4).map(item => <div key={item.id}><span>{item.name}<small>{item.quantity} {item.unit} left</small></span><strong className="stock-warning-text">Low</strong></div>)}</div> : <p className="simple-empty">No items need restocking.</p>}
-              <button className="text-action" onClick={() => navigate('stock')}>View stock <ChevronRight size={14} /></button>
-            </section>
-            <section className="surface aside-surface">
-              <div className="aside-heading"><span className="aside-heading-icon reminder-heading-icon"><Bell size={16} /></span><div><h2 className="surface-title">Reminders</h2><p className="surface-subtitle">Things to follow up.</p></div><button className="text-action aside-add" onClick={() => setModal({ kind: 'reminder' })}>+ Add</button></div>
-              {activeReminders.slice(0, 3).length ? <div className="simple-list">{activeReminders.slice(0, 3).map(rem => <div key={rem.id}><span>{rem.title}<small>{dateText(rem.dueDate, { day: 'numeric', month: 'short' })}</small></span><button className="text-action" onClick={() => toggleReminder(rem)}>Done</button></div>)}</div> : <p className="simple-empty">No reminders to show.</p>}
-            </section>
-            <div className="privacy-note"><span className="privacy-lock"><CheckCircle2 size={15} /></span><span><b>Your records stay on this device.</b><small>Download a backup regularly to keep a safe copy.</small></span></div>
-          </aside>
         </div>
       </>}
       {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const phone = normalizeKenyanWhatsAppNumber(customer.phone); if (!phone) { notify('Please add a valid Kenyan phone number for this customer.'); return; } const message = debtReminderMessage(customer.name, data.shopInfo.name, customer.balance, customer.dueDate); window.open(whatsAppUrl(message, phone), '_blank', 'noopener,noreferrer'); }} />}
