@@ -543,103 +543,100 @@ function App() {
 
     <main className="app-main">
       {section === 'home' && <>
-        <section className="welcome-row">
-          <div>
-            <div className="eyebrow">{fullDateText()}</div>
-            <h1 className="welcome-title">{data.shopInfo.name}</h1>
-            <p className="welcome-copy">{data.shopInfo.owner ? 'Today’s book, ' + data.shopInfo.owner : 'Today’s shop book'}</p>
-          </div>
-          <button className="today-pill" onClick={() => { setReportDate(today()); setReportPeriod('daily'); navigate('reports'); }}>Today’s report</button>
-        </section>
-
-        <section className="today-summary" aria-label="Today’s shop totals">
-          <div className="summary-card summary-received">
-            <div className="summary-card-head"><span>Money received</span><span className="summary-icon"><ArrowDownLeft size={17} strokeWidth={2} /></span></div>
-            <strong>{money(todaysIn)}</strong>
-            <small>Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0))} <span>·</span> M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0))}</small>
-          </div>
-          <div className="summary-card summary-spent">
-            <div className="summary-card-head"><span>Money spent</span><span className="summary-icon"><ArrowUpRight size={17} strokeWidth={2} /></span></div>
-            <strong>{money(todaysOut)}</strong>
-            <small>Expenses recorded today</small>
-          </div>
-          <div className="summary-card summary-owed">
-            <div className="summary-card-head"><span>Customers owe you</span><span className="summary-icon"><HandCoins size={17} strokeWidth={2} /></span></div>
-            <strong>{money(outstanding)}</strong>
-            <small>{data.customers.filter(c => c.balance > 0).length} people with a balance</small>
-          </div>
-        </section>
-
-        {(backupNeedsAttention || storageWriteFailed) && <section className="backup-notice" role="status">
-          <div><strong>{storageWriteFailed ? 'Your latest changes may not be saved' : backupAgeDays === null ? 'Make a backup of your shop book' : 'Your shop book needs a new backup'}</strong>
-          <p>{storageWriteFailed ? 'Hesabu could not save to this browser. Download a copy before closing the app.' : 'Your records are saved on this device. Download a copy and keep it somewhere safe.'}</p></div>
-          <Button size="sm" onClick={exportBackup}>Download backup</Button>
-        </section>}
-
-        <section id="transaction-entry" className="surface log-surface">
-          <div className="simple-section-heading">
-            <h2 className="surface-title">Add to today’s book</h2>
-            <p className="surface-subtitle">Choose what happened, then enter the details.</p>
-            <button type="button" className="speak-link" onClick={startVoice}>{voiceState === 'listening' ? 'Listening…' : 'Speak instead'}</button>
-          </div>
-
-          <div className="type-picker simple-type-picker" role="group" aria-label="What happened?">
-            {(['sale', 'credit', 'expense', 'payment'] as const).map(type => { const Icon = TYPE_META[type].icon; return <button key={type} onClick={() => { setTypeChoice(type); setPending(null); }} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
-              <Icon size={16} strokeWidth={1.9} /><span>{TYPE_META[type].label}</span>
-            </button>; })}
-          </div>
-
-          <form className="simple-entry-form" onSubmit={handleQuickSubmit}>
-            <Field label={typeChoice === 'credit' ? 'What did the customer take?' : typeChoice === 'expense' ? 'What did you pay for?' : typeChoice === 'payment' ? 'What was the payment for?' : 'What did you sell?'} value={quickText} onChange={setQuickText} placeholder={typeChoice === 'credit' ? 'e.g. 2 loaves of bread' : typeChoice === 'expense' ? 'e.g. Shop rent' : typeChoice === 'payment' ? 'e.g. Kamau’s debt' : 'e.g. Bread and milk'} required />
-            <Field label="Amount (KES)" value={quickAmount} onChange={setQuickAmount} placeholder="0" type="number" min={1} required inputMode="numeric" />
-            {(typeChoice === 'credit' || typeChoice === 'payment') && <Field label={typeChoice === 'credit' ? 'Customer name' : 'Who paid you?'} value={quickPerson} onChange={setQuickPerson} placeholder="Enter customer name" required />}
-            {typeChoice === 'credit' && <Field label="When should they pay? (optional)" value={quickDueDate} onChange={setQuickDueDate} type="date" />}
-            {(typeChoice === 'sale' || typeChoice === 'payment') && <div className="simple-payment-choice"><span>Received by</span><div><button type="button" onClick={() => setPaymentMethodChoice('cash')} className={paymentMethodChoice === 'cash' ? 'selected' : ''}>Cash</button><button type="button" onClick={() => setPaymentMethodChoice('mpesa')} className={paymentMethodChoice === 'mpesa' ? 'selected' : ''}>M-Pesa</button></div></div>}
-            <div className="simple-form-actions">
-              <Button type="submit" className="flex-1"><Check size={16} strokeWidth={2.2} />Review entry</Button>
-              <button type="button" className="clear-entry" onClick={() => { setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setPending(null); setTypeChoice('sale'); setPaymentMethodChoice('cash'); }}>Clear</button>
+        <div className="dashboard-top">
+          <section className="welcome-row">
+            <div>
+              <div className="eyebrow"><span className="live-dot" /> {fullDateText()}</div>
+              <h1 className="welcome-title">{data.shopInfo.name}</h1>
+              <p className="welcome-copy">{data.shopInfo.owner ? 'Your shop at a glance, ' + data.shopInfo.owner : 'Your shop at a glance'}</p>
             </div>
-          </form>
-
-          {pending && <div className="draft-review" aria-live="polite">
-            <div className="simple-review-heading">Check this entry</div>
-            <div className="simple-review-copy">{pending.summary}</div>
-            {pending.type === 'credit' && <p className="simple-review-note">Payment due {dateText(pending.dueDate ?? addDays(today(), 7), { day: 'numeric', month: 'short', year: 'numeric' })}. This amount has not been received yet.</p>}
-            {pending.stockQuantityDelta !== undefined && <p className="simple-review-note">Stock change: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</p>}
-            {pendingStockExceedsCount && pendingStockItem && <p className="simple-review-warning">Only {pendingStockItem.quantity} {pendingStockItem.unit} are in the stock record. Saving will bring the recorded quantity to zero.</p>}
-            <div className="simple-form-actions"><Button onClick={() => applyTransaction(pending)} className="flex-1">Save entry</Button><button type="button" className="clear-entry" onClick={() => setPending(null)}>Change entry</button></div>
-          </div>}
-          {voiceState === 'unsupported' && <p className="simple-review-note">Voice entry is not available in this browser. Type the entry above.</p>}
-        </section>
-
-        <div className="simple-lower-grid">
-          <section className="surface activity-surface">
-            <div className="section-heading-row"><div><h2 className="surface-title">Recent entries</h2><p className="surface-subtitle">Sales, payments and expenses recorded today.</p></div><button className="text-action" onClick={() => { setShowAllTransactions(v => !v); setFilterTransactions('all'); }}>{showAllTransactions ? 'Show recent' : 'See all'}</button></div>
-            {showAllTransactions && <div className="mb-3 flex gap-2"><label className="search-field flex-1"><input value={transactionSearch} onChange={e => setTransactionSearch(e.target.value)} placeholder="Search entries" /></label><select className="filter-select" value={filterTransactions} onChange={e => setFilterTransactions(e.target.value as 'all' | TransactionType)} aria-label="Filter entries"><option value="all">All entries</option>{Object.entries(TYPE_META).map(([type, meta]) => <option key={type} value={type}>{meta.label}</option>)}</select></div>}
-            {sortedTransactions.length === 0 ? <EmptyState title="No entries yet" detail="Your entries will appear here after you save the first one." /> : <div className="simple-transaction-list">{sortedTransactions.filter(t => !showAllTransactions || (filterTransactions === 'all' || t.type === filterTransactions)).filter(t => !showAllTransactions || `${t.description} ${t.customerName ?? ''}`.toLowerCase().includes(transactionSearch.toLowerCase())).slice(0, showAllTransactions ? 80 : 6).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact />)}</div>}
+            <button className="today-pill" onClick={() => { setReportDate(today()); setReportPeriod('daily'); navigate('reports'); }}><FileText size={15} /> Today’s report <ChevronRight size={14} /></button>
           </section>
 
-          <section className="surface aside-surface">
-            <h2 className="surface-title">People who owe you</h2>
-            <p className="surface-subtitle">Outstanding customer balances.</p>
-            {data.customers.filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 4).length ? <div className="simple-list">{data.customers.filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 4).map(c => <div key={c.id}><span>{c.name}</span><strong>{money(c.balance)}</strong></div>)}</div> : <p className="simple-empty">No one owes the shop at the moment.</p>}
-            <button className="text-action" onClick={() => navigate('debts')}>View people and balances</button>
+          <section className="today-summary" aria-label="Today’s shop totals">
+            <div className="summary-card summary-received">
+              <div className="summary-card-head"><span>Received today</span><span className="summary-icon"><ArrowDownLeft size={17} strokeWidth={2} /></span></div>
+              <strong>{money(todaysIn)}</strong>
+              <small>Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0))} <span>·</span> M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0))}</small>
+            </div>
+            <div className="summary-card summary-spent">
+              <div className="summary-card-head"><span>Spent today</span><span className="summary-icon"><ArrowUpRight size={17} strokeWidth={2} /></span></div>
+              <strong>{money(todaysOut)}</strong>
+              <small>Shop expenses recorded</small>
+            </div>
+            <div className="summary-card summary-owed">
+              <div className="summary-card-head"><span>Customers owe</span><span className="summary-icon"><HandCoins size={17} strokeWidth={2} /></span></div>
+              <strong>{money(outstanding)}</strong>
+              <small>{data.customers.filter(c => c.balance > 0).length} people with a balance</small>
+            </div>
           </section>
+          {(backupNeedsAttention || storageWriteFailed) && <section className="backup-notice" role="status">
+            <div><strong>{storageWriteFailed ? 'Your latest changes may not be saved' : backupAgeDays === null ? 'Make a backup of your shop book' : 'Your shop book needs a new backup'}</strong>
+            <p>{storageWriteFailed ? 'Hesabu could not save to this browser. Download a copy before closing the app.' : 'Your records are saved on this device. Download a copy and keep it somewhere safe.'}</p></div>
+            <Button size="sm" onClick={exportBackup}><Download size={14} /> Download backup</Button>
+          </section>}
+        </div>
 
-          <section className="surface aside-surface">
-            <h2 className="surface-title">Stock running low</h2>
-            <p className="surface-subtitle">Items to check before you run out.</p>
-            {lowStock.length ? <div className="simple-list">{lowStock.slice(0, 4).map(item => <div key={item.id}><span>{item.name} · {item.quantity} {item.unit} left</span><strong>Buy more</strong></div>)}</div> : <p className="simple-empty">No low-stock items.</p>}
-            <button className="text-action" onClick={() => navigate('stock')}>View stock</button>
-          </section>
+        <div className="dashboard-grid">
+          <div className="dashboard-main">
+            <section id="transaction-entry" className="surface log-surface">
+              <div className="simple-section-heading">
+                <div><span className="section-kicker">QUICK ENTRY</span><h2 className="surface-title">Record a transaction</h2><p className="surface-subtitle">Add a sale, expense or customer payment to your book.</p></div>
+                <button type="button" className="speak-link" onClick={startVoice}><span className="speak-icon"><ClipboardList size={15} /></span>{voiceState === 'listening' ? 'Listening…' : 'Use voice'}</button>
+              </div>
+              <div className="type-picker simple-type-picker" role="group" aria-label="What happened?">
+                {(['sale', 'credit', 'expense', 'payment'] as const).map(type => { const Icon = TYPE_META[type].icon; return <button key={type} onClick={() => { setTypeChoice(type); setPending(null); }} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
+                  <Icon size={16} strokeWidth={1.9} /><span>{TYPE_META[type].label}</span>
+                </button>; })}
+              </div>
+              <form className="simple-entry-form" onSubmit={handleQuickSubmit}>
+                <Field label={typeChoice === 'credit' ? 'What did the customer take?' : typeChoice === 'expense' ? 'What did you pay for?' : typeChoice === 'payment' ? 'What was the payment for?' : 'What did you sell?'} value={quickText} onChange={setQuickText} placeholder={typeChoice === 'credit' ? 'e.g. 2 loaves of bread' : typeChoice === 'expense' ? 'e.g. Shop rent' : typeChoice === 'payment' ? 'e.g. Kamau’s debt' : 'e.g. Bread and milk'} required />
+                <Field label="Amount (KES)" value={quickAmount} onChange={setQuickAmount} placeholder="0" type="number" min={1} required inputMode="numeric" />
+                {(typeChoice === 'credit' || typeChoice === 'payment') && <Field label={typeChoice === 'credit' ? 'Customer name' : 'Who paid you?'} value={quickPerson} onChange={setQuickPerson} placeholder="Enter customer name" required />}
+                {typeChoice === 'credit' && <Field label="When should they pay? (optional)" value={quickDueDate} onChange={setQuickDueDate} type="date" />}
+                {(typeChoice === 'sale' || typeChoice === 'payment') && <div className="simple-payment-choice"><span>Paid by</span><div><button type="button" onClick={() => setPaymentMethodChoice('cash')} className={paymentMethodChoice === 'cash' ? 'selected' : ''}>Cash</button><button type="button" onClick={() => setPaymentMethodChoice('mpesa')} className={paymentMethodChoice === 'mpesa' ? 'selected' : ''}>M-Pesa</button></div></div>}
+                <div className="simple-form-actions">
+                  <Button type="submit" className="flex-1"><Check size={16} strokeWidth={2.2} />Review transaction</Button>
+                  <button type="button" className="clear-entry" onClick={() => { setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setPending(null); setTypeChoice('sale'); setPaymentMethodChoice('cash'); }}>Clear</button>
+                </div>
+              </form>
+              {pending && <div className="draft-review" aria-live="polite">
+                <div className="simple-review-heading">Check this entry</div>
+                <div className="simple-review-copy">{pending.summary}</div>
+                {pending.type === 'credit' && <p className="simple-review-note">Payment due {dateText(pending.dueDate ?? addDays(today(), 7), { day: 'numeric', month: 'short', year: 'numeric' })}. This amount has not been received yet.</p>}
+                {pending.stockQuantityDelta !== undefined && <p className="simple-review-note">Stock change: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</p>}
+                {pendingStockExceedsCount && pendingStockItem && <p className="simple-review-warning">Only {pendingStockItem.quantity} {pendingStockItem.unit} are in the stock record. Saving will bring the recorded quantity to zero.</p>}
+                <div className="simple-form-actions"><Button onClick={() => applyTransaction(pending)} className="flex-1"><Check size={15} />Save transaction</Button><button type="button" className="clear-entry" onClick={() => setPending(null)}>Change details</button></div>
+              </div>}
+              {voiceState === 'unsupported' && <p className="simple-review-note">Voice entry is not available in this browser. Type the entry above.</p>}
+            </section>
 
-          <section className="surface aside-surface">
-            <div className="section-heading-row"><div><h2 className="surface-title">Reminders</h2><p className="surface-subtitle">Bills and people to follow up.</p></div><button className="text-action" onClick={() => setModal({ kind: 'reminder' })}>Add reminder</button></div>
-            {activeReminders.slice(0, 3).length ? <div className="simple-list">{activeReminders.slice(0, 3).map(rem => <div key={rem.id}><span>{rem.title}<small>{dateText(rem.dueDate, { day: 'numeric', month: 'short' })}</small></span><button className="text-action" onClick={() => toggleReminder(rem)}>Done</button></div>)}</div> : <p className="simple-empty">No reminders to show.</p>}
-          </section>
+            <section className="surface activity-surface">
+              <div className="section-heading-row"><div><span className="section-kicker">YOUR RECORDS</span><h2 className="surface-title">Recent transactions</h2><p className="surface-subtitle">The latest entries in your shop book.</p></div><button className="text-action" onClick={() => { setShowAllTransactions(v => !v); setFilterTransactions('all'); }}>{showAllTransactions ? 'Show recent' : 'View all'} <ChevronRight size={14} /></button></div>
+              {showAllTransactions && <div className="mb-3 flex gap-2"><label className="search-field flex-1"><input value={transactionSearch} onChange={e => setTransactionSearch(e.target.value)} placeholder="Search transactions" /></label><select className="filter-select" value={filterTransactions} onChange={e => setFilterTransactions(e.target.value as 'all' | TransactionType)} aria-label="Filter transactions"><option value="all">All entries</option>{Object.entries(TYPE_META).map(([type, meta]) => <option key={type} value={type}>{meta.label}</option>)}</select></div>}
+              {sortedTransactions.length === 0 ? <EmptyState title="No transactions yet" detail="Your saved sales, expenses and payments will appear here." /> : <div className="simple-transaction-list">{sortedTransactions.filter(t => !showAllTransactions || (filterTransactions === 'all' || t.type === filterTransactions)).filter(t => !showAllTransactions || `${t.description} ${t.customerName ?? ''}`.toLowerCase().includes(transactionSearch.toLowerCase())).slice(0, showAllTransactions ? 80 : 6).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact />)}</div>}
+            </section>
+          </div>
+
+          <aside className="dashboard-aside">
+            <section className="surface aside-surface">
+              <div className="aside-heading"><span className="aside-heading-icon debt-heading-icon"><Users size={16} /></span><div><h2 className="surface-title">People who owe you</h2><p className="surface-subtitle">Customer balances to collect.</p></div></div>
+              {data.customers.filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 4).length ? <div className="simple-list">{data.customers.filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 4).map(c => <div key={c.id}><span>{c.name}</span><strong>{money(c.balance)}</strong></div>)}</div> : <p className="simple-empty">No one owes the shop at the moment.</p>}
+              <button className="text-action" onClick={() => navigate('debts')}>View all people <ChevronRight size={14} /></button>
+            </section>
+            <section className="surface aside-surface">
+              <div className="aside-heading"><span className="aside-heading-icon stock-heading-icon"><Package size={16} /></span><div><h2 className="surface-title">Stock to check</h2><p className="surface-subtitle">Items running low.</p></div></div>
+              {lowStock.length ? <div className="simple-list">{lowStock.slice(0, 4).map(item => <div key={item.id}><span>{item.name}<small>{item.quantity} {item.unit} left</small></span><strong className="stock-warning-text">Low</strong></div>)}</div> : <p className="simple-empty">No items need restocking.</p>}
+              <button className="text-action" onClick={() => navigate('stock')}>View stock <ChevronRight size={14} /></button>
+            </section>
+            <section className="surface aside-surface">
+              <div className="aside-heading"><span className="aside-heading-icon reminder-heading-icon"><Bell size={16} /></span><div><h2 className="surface-title">Reminders</h2><p className="surface-subtitle">Things to follow up.</p></div><button className="text-action aside-add" onClick={() => setModal({ kind: 'reminder' })}>+ Add</button></div>
+              {activeReminders.slice(0, 3).length ? <div className="simple-list">{activeReminders.slice(0, 3).map(rem => <div key={rem.id}><span>{rem.title}<small>{dateText(rem.dueDate, { day: 'numeric', month: 'short' })}</small></span><button className="text-action" onClick={() => toggleReminder(rem)}>Done</button></div>)}</div> : <p className="simple-empty">No reminders to show.</p>}
+            </section>
+            <div className="privacy-note"><span className="privacy-lock"><CheckCircle2 size={15} /></span><span><b>Your records stay on this device.</b><small>Download a backup regularly to keep a safe copy.</small></span></div>
+          </aside>
         </div>
       </>}
-
       {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const phone = normalizeKenyanWhatsAppNumber(customer.phone); if (!phone) { notify('Please add a valid Kenyan phone number for this customer.'); return; } const message = debtReminderMessage(customer.name, data.shopInfo.name, customer.balance, customer.dueDate); window.open(whatsAppUrl(message, phone), '_blank', 'noopener,noreferrer'); }} />}
       {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} />}
       {section === 'reports' && <ReportsSection report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={shareReport} onCopy={copyReport} />}
