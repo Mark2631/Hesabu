@@ -67,6 +67,80 @@ export function makeDemoData(): AppData {
 
 export const STORAGE_KEY = 'hesabu:v1:shop-data';
 
+export const LAST_BACKUP_KEY = 'hesabu:v1:last-backup';
+
+type UnknownRecord = Record<string, unknown>;
+const isRecord = (value: unknown): value is UnknownRecord => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+const validDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+const validTime = (value: unknown) => typeof value === 'string' && /^\d{2}:\d{2}$/.test(value);
+const finiteAmount = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+export function readLastBackupAt(): string | null {
+  try {
+    const value = localStorage.getItem(LAST_BACKUP_KEY);
+    return value && Number.isFinite(Date.parse(value)) ? value : null;
+  } catch { return null; }
+}
+
+export function markBackupAt(value = new Date().toISOString()): boolean {
+  try { localStorage.setItem(LAST_BACKUP_KEY, value); return true; }
+  catch { return false; }
+}
+
+export function createBackupEnvelope(data: AppData, exportedAt = new Date().toISOString()) {
+  return { format: 'hesabu-backup' as const, version: 1 as const, exportedAt, data };
+}
+
+export function parseBackupPayload(value: unknown): AppData | null {
+  const candidate = isRecord(value) && value.format === 'hesabu-backup' && value.version === 1 ? value.data : value;
+  if (!isRecord(candidate) || !isRecord(candidate.shopInfo)) return null;
+  const shop = candidate.shopInfo;
+  if (typeof shop.name !== 'string' || !shop.name.trim()) return null;
+  if (!Array.isArray(candidate.transactions) || !Array.isArray(candidate.customers) || !Array.isArray(candidate.stock)) return null;
+  const transactions = candidate.transactions;
+  const customers = candidate.customers;
+  const stock = candidate.stock;
+  const reminders = candidate.reminders === undefined ? [] : candidate.reminders;
+  if (!Array.isArray(reminders)) return null;
+
+  const validTransactions = transactions.every(row => isRecord(row)
+    && typeof row.id === 'string'
+    && ['sale', 'credit', 'expense', 'payment'].includes(String(row.type))
+    && typeof row.description === 'string' && finiteAmount(row.amount)
+    && validDate(row.date) && validTime(row.time)
+    && (row.paymentMethod === undefined || row.paymentMethod === 'cash' || row.paymentMethod === 'mpesa'));
+  const validCustomers = customers.every(row => isRecord(row)
+    && typeof row.id === 'string' && typeof row.name === 'string' && typeof row.phone === 'string'
+    && typeof row.balance === 'number' && Number.isFinite(row.balance)
+    && (row.kind === undefined || row.kind === 'customer' || row.kind === 'supplier'));
+  const validStock = stock.every(row => isRecord(row)
+    && typeof row.id === 'string' && typeof row.name === 'string' && typeof row.unit === 'string'
+    && finiteAmount(row.quantity) && finiteAmount(row.lowStockAt) && validDate(row.lastRestocked));
+  const validReminders = reminders.every(row => isRecord(row)
+    && typeof row.id === 'string' && typeof row.title === 'string'
+    && validDate(row.dueDate) && typeof row.done === 'boolean'
+    && ['bill', 'supplier', 'customer', 'other'].includes(String(row.kind))
+    && (row.amount === undefined || finiteAmount(row.amount)));
+  if (!validTransactions || !validCustomers || !validStock || !validReminders) return null;
+
+  const fallback = makeDemoData();
+  return {
+    shopInfo: {
+      name: shop.name.trim(),
+      owner: typeof shop.owner === 'string' ? shop.owner : '',
+      phone: typeof shop.phone === 'string' ? shop.phone : '',
+      businessType: typeof shop.businessType === 'string' ? shop.businessType : fallback.shopInfo.businessType,
+    },
+    transactions: transactions as AppData['transactions'],
+    customers: customers.map(row => {
+      const customer = row as AppData['customers'][number];
+      return { ...customer, kind: customer.kind ?? (customer.balance < 0 ? 'supplier' as const : 'customer' as const) };
+    }),
+    stock: stock as AppData['stock'],
+    reminders: reminders as AppData['reminders'],
+  };
+}
+
 export function hasSavedData(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -95,10 +169,12 @@ export function readSavedData(): AppData {
   return makeDemoData();
 }
 
-export function saveData(data: AppData) {
+export function saveData(data: AppData): boolean {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    return true;
   } catch {
-    // The in-memory ledger still works for this session if storage is unavailable.
+    // The caller must show that changes may not survive a reload.
+    return false;
   }
 }
