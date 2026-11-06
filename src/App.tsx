@@ -275,6 +275,9 @@ function App() {
     if ((selectedType === 'credit' || selectedType === 'payment') && !parsed.customerName) {
       notify('Enter the customer’s name.'); return;
     }
+    if (selectedType === 'payment' && !data.customers.some(c => c.name.toLowerCase() === (parsed.customerName ?? '').toLowerCase() && c.balance > 0)) {
+      notify('No unpaid balance found for this person. Add their name and balance first.'); return;
+    }
     parsed.dueDate = selectedType === 'credit' ? (quickDueDate || addDays(today(), 7)) : undefined;
     if (selectedType === 'sale' || selectedType === 'payment') parsed.paymentMethod = paymentMethodChoice;
     else parsed.paymentMethod = undefined;
