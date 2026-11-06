@@ -129,14 +129,14 @@ function TransactionRow({ transaction, onClick, onDelete, compact = false }: { t
       <ToneDot type={transaction.type} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-bold leading-[1.35] text-hesabu-ink">{transaction.customerName && transaction.type === 'credit' ? `${transaction.customerName} · ${transaction.description}` : transaction.description}</span>
-        <span className="mt-1 block truncate text-[10px] font-medium text-hesabu-muted">{timeText(transaction.time)} <span className="mx-1 text-[#CAD0CA]">·</span> {transactionLabel[transaction.type]}{transaction.paymentMethod === 'mpesa' ? ' · M-Pesa' : ''}</span>
+        <span className="mt-1 block truncate text-[12px] text-hesabu-muted">{timeText(transaction.time)} · {transactionLabel[transaction.type]}{transaction.paymentMethod === 'mpesa' ? ' · M-Pesa' : ''}</span>
       </span>
       <span className="ml-2 shrink-0 text-right">
         <span className={cn('block text-[13px] font-bold tabular-nums', `amount-${transaction.type}`)}>{prefix}{money(transaction.amount)}</span>
         {transaction.type === 'credit' && <span className="mt-1 block text-[9px] font-semibold uppercase tracking-[.06em] text-[#A47731]">On credit</span>}
       </span>
     </button>
-    <button className="transaction-delete" onClick={onDelete} aria-label={`Delete ${transaction.description}`} title="Delete transaction"><Trash2 size={14} /></button>
+    <button className="transaction-delete" onClick={onDelete} aria-label={`Delete ${transaction.description}`}>Delete</button>
   </div>;
 }
 
@@ -162,11 +162,10 @@ function ActivityProgress({ transactions }: { transactions: Transaction[] }) {
 function ReminderLine({ reminder, onDone, onEdit }: { reminder: Reminder; onDone: () => void; onEdit: () => void }) {
   const days = daysUntil(reminder.dueDate);
   const due = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `Due ${shortDay(reminder.dueDate)}`;
-  const Icon = reminder.kind === 'bill' ? ReceiptText : reminder.kind === 'supplier' ? Store : reminder.kind === 'customer' ? Users : Bell;
   return <div className={cn('reminder-row', reminder.done && 'opacity-55')}>
-    <div className={cn('reminder-icon', days <= 1 && !reminder.done ? 'reminder-icon-due' : '')}><Icon size={16} /></div>
-    <div className="min-w-0 flex-1"><div className="truncate text-[12px] font-bold">{reminder.title}</div><div className="mt-1 text-[10px] text-hesabu-muted">{reminder.amount ? `${money(reminder.amount)} · ` : ''}{due}</div></div>
-    <button className="icon-button !h-7 !w-7" onClick={onEdit} title="Edit reminder" aria-label={`Edit reminder: ${reminder.title}`}><Settings2 size={13} /></button>{reminder.done ? <button className="tiny-done" onClick={onDone} title="Reopen reminder" aria-label={`Reopen reminder: ${reminder.title}`}><RotateCcw size={13} /></button> : <button className="tiny-done" onClick={onDone} title="Mark as done" aria-label={`Mark reminder as done: ${reminder.title}`}><Check size={14} /></button>}
+    <div className="min-w-0 flex-1"><div className="truncate text-[14px] font-semibold">{reminder.title}</div><div className="mt-1 text-[12px] text-hesabu-muted">{reminder.amount ? `${money(reminder.amount)} · ` : ''}{due}</div></div>
+    <button className="text-action" onClick={onEdit}>Edit</button>
+    <button className="text-action" onClick={onDone}>{reminder.done ? 'Reopen' : 'Done'}</button>
   </div>;
 }
 
@@ -562,7 +561,7 @@ function App() {
         </nav>
         <div className="header-tools">
           <div className="hidden text-right sm:block"><div className="text-[11px] font-bold text-hesabu-ink">{shortDay(today())}</div><div className="mt-0.5 text-[10px] text-hesabu-muted">Local ledger</div></div>
-          <button className="profile-chip" onClick={() => setProfileMenuOpen(v => !v)} aria-label="Shop settings"><span className="profile-avatar">{(data.shopInfo.owner || data.shopInfo.name || 'H').slice(0, 1).toUpperCase()}</span><ChevronDown size={14} className="text-hesabu-muted" /></button>
+          <button className="profile-chip" onClick={() => setProfileMenuOpen(v => !v)}>Settings</button>
           {profileMenuOpen && <div className="profile-menu"><div className="border-b border-hesabu-line px-3 pb-3 pt-1"><div className="text-xs font-bold">{data.shopInfo.name}</div><div className="mt-1 text-[10px] text-hesabu-muted">{data.shopInfo.businessType}</div></div><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'profile' }); }}><Settings2 size={15} /> Shop details</button><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'settings' }); }}><SlidersHorizontal size={15} /> Preferences</button></div>}
         </div>
       </div>
@@ -693,10 +692,10 @@ function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, o
   const customerList = data.customers.filter(c => direction === 'owed-to-us' ? c.balance > 0 : c.balance < 0).filter(c => `${c.name} ${c.phone}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
   const total = customerList.reduce((sum, c) => sum + Math.abs(c.balance), 0);
   return <>
-    <SectionTitle eyebrow="THE CREDIT BOOK" title="Customer & supplier balances" detail="Know who owes you, who you owe, and what needs following up." right={<Button onClick={onAdd}><Plus size={16} /> Add person</Button>} />
-    <div className="debt-overview"><div><div className="text-[10px] font-bold uppercase tracking-[.12em] text-[#B9D8C2]">{direction === 'owed-to-us' ? 'Owed to your shop' : 'Owed by your shop'}</div><div className="mt-2 font-display text-[28px] font-extrabold tracking-[-.06em] text-white">{money(total)}</div><div className="mt-1 text-[11px] text-[#C0D7C7]">{customerList.length} {customerList.length === 1 ? 'person' : 'people'} on this list</div></div><div className="debt-overview-mark"><HandCoins size={27} strokeWidth={1.6} /></div></div>
-    <div className="section-tabs mt-5" role="tablist"><button role="tab" aria-selected={direction === 'owed-to-us'} className={cn(direction === 'owed-to-us' && 'section-tab-active')} onClick={() => setDirection('owed-to-us')}>Wananidai <span>{data.customers.filter(c => c.balance > 0).length}</span></button><button role="tab" aria-selected={direction === 'we-owe'} className={cn(direction === 'we-owe' && 'section-tab-active')} onClick={() => setDirection('we-owe')}>Ninawadai <span>{data.customers.filter(c => c.balance < 0).length}</span></button></div>
-    <div className="debt-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search a name or phone number" /></label><div className="text-[11px] font-medium text-hesabu-muted">Sorted by amount</div></div>
+    <SectionTitle title="People and balances" detail="See who owes the shop and who the shop needs to pay." right={<Button onClick={onAdd}>Add person</Button>} />
+    <div className="debt-overview"><div><div className="text-[13px] font-medium">{direction === 'owed-to-us' ? 'Customers owe the shop' : 'The shop owes'}</div><div className="mt-2 font-display text-[28px] font-bold">{money(total)}</div><div className="mt-1 text-[12px]">{customerList.length} {customerList.length === 1 ? 'person' : 'people'}</div></div></div>
+    <div className="section-tabs mt-5" role="tablist"><button role="tab" aria-selected={direction === 'owed-to-us'} className={cn(direction === 'owed-to-us' && 'section-tab-active')} onClick={() => setDirection('owed-to-us')}>Owe me <span>{data.customers.filter(c => c.balance > 0).length}</span></button><button role="tab" aria-selected={direction === 'we-owe'} className={cn(direction === 'we-owe' && 'section-tab-active')} onClick={() => setDirection('we-owe')}>I owe <span>{data.customers.filter(c => c.balance < 0).length}</span></button></div>
+    <div className="debt-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search a name or phone number" /></label><div className="text-[11px] font-medium text-hesabu-muted">Sorted by amount owed</div></div>
     <section className="surface list-surface">
       {customerList.length === 0 ? <EmptyState title={query ? 'No matching person' : 'No outstanding balances'} detail={query ? 'Try another name or phone number.' : direction === 'owed-to-us' ? 'When someone takes goods on credit, they will appear here.' : 'Any unpaid supplier balances will show up here.'} action={!query ? <Button variant="secondary" onClick={onAdd}><Plus size={15} /> Add a person</Button> : undefined} /> : customerList.map(customer => {
         const overdue = customer.dueDate && daysUntil(customer.dueDate) < 0;
@@ -714,7 +713,7 @@ function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, o
         </div>;
       })}
     </section>
-    <p className="mx-auto mt-5 max-w-xl text-center text-[10px] leading-4 text-hesabu-muted">A credit adds to the amount owed. A repayment reduces it. Open a transaction to correct its description, amount or date; delete and re-enter it to change its type or linked person.</p>
+    <p className="mx-auto mt-5 max-w-xl text-center text-[12px] leading-5 text-hesabu-muted">When a customer takes goods and will pay later, add it under “On credit”. When they pay, record a “Debt repayment”.</p>
   </>;
 }
 
@@ -722,11 +721,11 @@ function StockSection({ data, query, setQuery, onAdd, onEdit, onUpdate }: { data
   const [filter, setFilter] = useState<'all' | 'low'>('all');
   const shown = data.stock.filter(s => s.name.toLowerCase().includes(query.toLowerCase())).filter(s => filter === 'all' || s.quantity <= s.lowStockAt).sort((a, b) => (a.quantity / Math.max(1, a.lowStockAt)) - (b.quantity / Math.max(1, b.lowStockAt)));
   return <>
-    <SectionTitle eyebrow="WHAT’S ON YOUR SHELVES" title="Bidhaa" detail={`${data.stock.length} items on your shelf. Keep an eye on the ones running low.`} right={<Button onClick={onAdd}><Plus size={16} /> Add item</Button>} />
-    <div className="stock-summary-row"><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Items tracked</span><b>{data.stock.length.toString().padStart(2, '0')}</b></div><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Running low</span><b className={lowStockCount(data.stock) ? 'text-[#B8782D]' : 'text-hesabu-green'}>{lowStockCount(data.stock).toString().padStart(2, '0')}</b></div><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Last updated</span><b className="!text-[13px]">Today</b></div></div>
+    <SectionTitle title="Stock" detail="See what is on the shelf and what needs buying." right={<Button onClick={onAdd}>Add item</Button>} />
+    <div className="stock-summary-row"><div className="stock-summary-cell"><span>Items tracked</span><b>{data.stock.length}</b></div><div className="stock-summary-cell"><span>Need buying</span><b>{lowStockCount(data.stock)}</b></div></div>
     <div className="stock-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search your stock" /></label><div className="segmented-control"><button className={cn(filter === 'all' && 'segment-active')} onClick={() => setFilter('all')}>All items</button><button className={cn(filter === 'low' && 'segment-active')} onClick={() => setFilter('low')}>Low stock <span className="count-badge">{lowStockCount(data.stock)}</span></button></div></div>
     {shown.length === 0 ? <section className="surface"><EmptyState title={filter === 'low' ? 'No stock alerts' : 'No matching item'} detail={filter === 'low' ? 'Your quantities are above their reorder levels.' : 'Try another product name or add the item to your shelf list.'} action={filter === 'all' ? <Button onClick={onAdd}><Plus size={15} /> Add item</Button> : undefined} /></section> : <div className="stock-grid">{shown.map(item => <StockCard key={item.id} item={item} onEdit={() => onEdit(item.id)} onRestock={() => onUpdate(item.id, 'restock')} onAdjust={() => onUpdate(item.id, 'adjust')} />)}</div>}
-    <div className="mt-5 flex items-start gap-2 rounded-xl bg-[#EEF4EF] px-4 py-3.5 text-[11px] leading-5 text-[#5F7465]"><CircleHelp size={15} className="mt-0.5 shrink-0" /><span>When a sale or credit includes a known item, Hesabu can adjust its quantity. You can always correct stock counts manually.</span></div>
+    <p className="mt-4 text-[12px] leading-5 text-hesabu-muted">When you record a sale, add the item name in the description to reduce its stock count automatically. You can also change the count yourself.</p>
   </>;
 }
 function lowStockCount(items: StockItem[]) { return items.filter(s => s.quantity <= s.lowStockAt).length; }
@@ -891,16 +890,16 @@ function ProfileModal({ data, onClose, onSave }: { data: AppData; onClose: () =>
 }
 
 function SettingsModal({ onClose, onReset, onProfile, onExportBackup, onExportCsv, onImportBackup, lastBackupAt, storageProtection, onProtectStorage }: { onClose: () => void; onReset: () => void; onProfile: () => void; onExportBackup: () => void; onExportCsv: () => void; onImportBackup: (file: File) => void; lastBackupAt: string | null; storageProtection: 'checking' | 'protected' | 'standard' | 'unsupported'; onProtectStorage: () => void }) {
-  return <Modal title="Preferences" detail="Keep your shop details current and protect the records on this device." onClose={onClose}>
+  return <Modal title="Settings" detail="Shop details and saved records." onClose={onClose}>
     <div className="settings-list">
       <button onClick={onProfile}><span className="settings-item-icon"><Store size={17} /></span><span><b>Shop profile</b><small>Name, phone number and business type</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
-      <div className="settings-info"><span className="settings-item-icon"><Settings2 size={17} /></span><span><b>Stored on this device</b><small>Hesabu uses this browser’s local storage. Clearing browser data removes this ledger.</small></span></div>
-      <div className="settings-info"><span className="settings-item-icon"><Bell size={17} /></span><span><b>Reminders</b><small>Shown inside the app. Automatic WhatsApp delivery is not connected in this prototype.</small></span></div>
+      <div className="settings-info"><span className="settings-item-icon"><Settings2 size={17} /></span><span><b>Your shop book stays on this device</b><small>It will not appear on another phone. Download a backup so you can restore it if needed.</small></span></div>
+      <div className="settings-info"><span className="settings-item-icon"><Bell size={17} /></span><span><b>Reminders</b><small>Hesabu shows reminders here. It does not send them automatically.</small></span></div>
       <div className="settings-info"><span className="settings-item-icon"><Download size={17} /></span><span><b>Last backup</b><small>{lastBackupAt ? 'Downloaded ' + dateText(lastBackupAt.slice(0, 10), { day: 'numeric', month: 'short', year: 'numeric' }) + '. Download a new copy at least every 7 days.' : 'No backup date recorded yet. Create your first backup now.'}</small></span></div>
-      <button onClick={onProtectStorage}><span className="settings-item-icon"><Settings2 size={17} /></span><span><b>Device storage protection</b><small>{storageProtection === 'protected' ? 'Persistent browser storage is enabled. Keep a separate backup too.' : storageProtection === 'standard' ? 'The browser has not granted persistent storage. Records may still be cleared by storage pressure or browser settings.' : storageProtection === 'checking' ? 'Checking this browser’s storage protection.' : 'Persistent storage protection is not available here. Download backups regularly.'}</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
-      <button onClick={onExportBackup}><span className="settings-item-icon"><Download size={17} /></span><span><b>Download a backup</b><small>Save your shop, transactions, people, stock and reminders as a JSON file.</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
-      <button onClick={onExportCsv}><span className="settings-item-icon"><FileSpreadsheet size={17} /></span><span><b>Export transactions (CSV)</b><small>Open your ledger in Excel, Google Sheets or another spreadsheet.</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
-      <label className="settings-info settings-upload"><span className="settings-item-icon"><Upload size={17} /></span><span><b>Restore from backup</b><small>Choose a Hesabu JSON backup. Your current browser data will be replaced after confirmation.</small><input className="settings-file-input" type="file" accept="application/json,.json" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) onImportBackup(file); e.currentTarget.value = ''; }} /></span></label>
+      <button onClick={onProtectStorage}><span className="settings-item-icon"><Settings2 size={17} /></span><span><b>Keep this device’s data</b><small>{storageProtection === 'protected' ? 'The browser has agreed to keep this data unless you clear it. Keep a separate backup too.' : storageProtection === 'standard' ? 'Ask the browser to keep Hesabu data. It may still clear data under some conditions.' : storageProtection === 'checking' ? 'Checking this browser.' : 'This browser cannot offer extra storage protection. Download backups regularly.'}</small></span><span className="settings-chevron">›</span></button>
+      <button onClick={onExportBackup}><span className="settings-item-icon"><Download size={17} /></span><span><b>Download backup</b><small>Save all your shop records to a file.</small></span><span className="settings-chevron">›</span></button>
+      <button onClick={onExportCsv}><span className="settings-item-icon"><FileSpreadsheet size={17} /></span><span><b>Download transactions for a spreadsheet</b><small>Use the file in Excel or another spreadsheet app.</small></span><span className="settings-chevron">›</span></button>
+      <label className="settings-info settings-upload"><span className="settings-item-icon"><Upload size={17} /></span><span><b>Restore from backup</b><small>Choose a saved Hesabu backup to put your records back.</small><input className="settings-file-input" type="file" accept="application/json,.json" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) onImportBackup(file); e.currentTarget.value = ''; }} /></span></label>
       <button className="settings-danger" onClick={onReset}><span className="settings-item-icon"><RotateCcw size={17} /></span><span><b>Reset demo shop</b><small>Replace saved changes with the original sample ledger.</small></span><ChevronRight size={17} className="ml-auto" /></button>
     </div><div className="modal-actions mt-5"><Button variant="secondary" onClick={onClose}>Close</Button></div>
   </Modal>;
@@ -963,27 +962,21 @@ function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUse
       <section className="welcome-story">
         <Logo />
         <div className="welcome-copy">
-          <div className="eyebrow">ACCOUNTING FOR EVERYDAY BUSINESS</div>
-          <h1>Know your numbers. Run your business.</h1>
-          <p>Keep sales, expenses, customer debts, stock and reminders together. No accounting lessons. No more hunting through yesterday’s pages.</p>
-        </div>
-        <div className="welcome-points">
-          <div className="welcome-point"><span className="welcome-point-icon"><Wallet size={18} /></span><div><b>Know what came in and went out</b><span>Keep cash sales separate from goods taken on credit.</span></div></div>
-          <div className="welcome-point"><span className="welcome-point-icon"><Users size={18} /></span><div><b>Remember who owes what</b><span>Record repayments and follow-ups without searching the book.</span></div></div>
-          <div className="welcome-point"><span className="welcome-point-icon"><Package size={18} /></span><div><b>See what is running low</b><span>Set reorder levels and keep the shelves in view.</span></div></div>
+          <h1>A simple book for your shop.</h1>
+          <p>Record sales, money spent, customer debts and stock in one place.</p>
         </div>
       </section>
       <section className="welcome-setup">
-        <div className="welcome-form-head"><div className="eyebrow">LET’S SET THINGS UP</div><h2>Set up your business.</h2><p>Use your own details to get started, or explore the sample shop first.</p></div>
+        <div className="welcome-form-head"><h2>Set up your shop</h2><p>Enter your shop name to get started.</p></div>
         <form className="welcome-form" onSubmit={event => { event.preventDefault(); onCreateShop({ name, owner, phone, businessType }); }}>
-          <Field label="Shop name" value={name} onChange={setName} placeholder="e.g. Mwende General Shop" required autoFocus />
-          <Field label="Your name (optional)" value={owner} onChange={setOwner} placeholder="What should Hesabu call you?" />
+          <Field label="Shop name" value={name} onChange={setName} placeholder="e.g. Mwende Shop" required autoFocus />
+          <Field label="Your name (optional)" value={owner} onChange={setOwner} placeholder="Your name" />
           <Field label="Phone number (optional)" value={phone} onChange={setPhone} placeholder="07… or 01…" type="tel" inputMode="tel" />
-          <SelectField label="Type of business" value={businessType} onChange={setBusinessType} options={[{value:'General shop',label:'General shop / duka'},{value:'Kiosk',label:'Kiosk'},{value:'Grocery',label:'Grocery / food shop'},{value:'Hardware',label:'Hardware'},{value:'Clothing',label:'Clothing / boutique'},{value:'Other',label:'Other small business'}]} />
-          <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Start my business ledger <ArrowRight size={16} /></Button>
+          <SelectField label="Type of shop" value={businessType} onChange={setBusinessType} options={[{value:'General shop',label:'General shop / duka'},{value:'Kiosk',label:'Kiosk'},{value:'Grocery',label:'Grocery / food shop'},{value:'Hardware',label:'Hardware'},{value:'Clothing',label:'Clothing / boutique'},{value:'Other',label:'Other'}]} />
+          <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Start</Button>
         </form>
-        <div className="welcome-device-note"><CheckCircle2 size={15} /><span>Your ledger stays on this device. Hesabu does not use cloud sync or online accounts. Download a backup regularly and keep it somewhere safe.</span></div>
-        <div className="welcome-demo-row"><span>Just looking around?</span><button type="button" onClick={onUseDemo}>Explore the sample ledger <ArrowRight size={14} /></button></div>
+        <div className="welcome-device-note"><span>Your records stay on this device. Download a backup regularly.</span></div>
+        <div className="welcome-demo-row"><span>Want to look around first?</span><button type="button" onClick={onUseDemo}>Open sample shop</button></div>
       </section>
     </div>
   </main>;
