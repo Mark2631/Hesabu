@@ -43,7 +43,10 @@ type ModalState =
 function cn(...classes: Array<string | undefined | null | false>) { return classes.filter(Boolean).join(' '); }
 
 function Logo() {
-  return <div className="hesabu-wordmark" aria-label="Hesabu">Hesabu</div>;
+  return <span className="brand-lockup" aria-label="Hesabu">
+    <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
+    <span className="hesabu-wordmark">Hesabu<span className="brand-period">.</span></span>
+  </span>;
 }
 
 function SectionTitle({ eyebrow, title, detail, right }: { eyebrow?: string; title: string; detail?: string; right?: ReactNode }) {
@@ -532,7 +535,7 @@ function App() {
         </nav>
         <div className="header-tools">
           <div className="hidden text-right sm:block"><div className="text-[11px] font-bold text-hesabu-ink">{shortDay(today())}</div><div className="mt-0.5 text-[10px] text-hesabu-muted">Local ledger</div></div>
-          <button className="profile-chip" onClick={() => setProfileMenuOpen(v => !v)}>Settings</button>
+          <button className="profile-chip" onClick={() => setProfileMenuOpen(v => !v)}><Settings2 size={16} strokeWidth={1.8} />Settings</button>
           {profileMenuOpen && <div className="profile-menu"><div className="border-b border-hesabu-line px-3 pb-3 pt-1"><div className="text-xs font-bold">{data.shopInfo.name}</div><div className="mt-1 text-[10px] text-hesabu-muted">{data.shopInfo.businessType}</div></div><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'profile' }); }}><Settings2 size={15} /> Shop details</button><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'settings' }); }}><SlidersHorizontal size={15} /> Preferences</button></div>}
         </div>
       </div>
@@ -550,9 +553,21 @@ function App() {
         </section>
 
         <section className="today-summary" aria-label="Today’s shop totals">
-          <div><span>Money received</span><strong>{money(todaysIn)}</strong><small>Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0))} · M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0))}</small></div>
-          <div><span>Money spent</span><strong>{money(todaysOut)}</strong><small>Expenses recorded today</small></div>
-          <div><span>Customers owe you</span><strong>{money(outstanding)}</strong><small>{data.customers.filter(c => c.balance > 0).length} people with a balance</small></div>
+          <div className="summary-card summary-received">
+            <div className="summary-card-head"><span>Money received</span><span className="summary-icon"><ArrowDownLeft size={17} strokeWidth={2} /></span></div>
+            <strong>{money(todaysIn)}</strong>
+            <small>Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0))} <span>·</span> M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0))}</small>
+          </div>
+          <div className="summary-card summary-spent">
+            <div className="summary-card-head"><span>Money spent</span><span className="summary-icon"><ArrowUpRight size={17} strokeWidth={2} /></span></div>
+            <strong>{money(todaysOut)}</strong>
+            <small>Expenses recorded today</small>
+          </div>
+          <div className="summary-card summary-owed">
+            <div className="summary-card-head"><span>Customers owe you</span><span className="summary-icon"><HandCoins size={17} strokeWidth={2} /></span></div>
+            <strong>{money(outstanding)}</strong>
+            <small>{data.customers.filter(c => c.balance > 0).length} people with a balance</small>
+          </div>
         </section>
 
         {(backupNeedsAttention || storageWriteFailed) && <section className="backup-notice" role="status">
@@ -569,9 +584,9 @@ function App() {
           </div>
 
           <div className="type-picker simple-type-picker" role="group" aria-label="What happened?">
-            {(['sale', 'credit', 'expense', 'payment'] as const).map(type => <button key={type} onClick={() => { setTypeChoice(type); setPending(null); }} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
-              <span>{TYPE_META[type].label}</span>
-            </button>)}
+            {(['sale', 'credit', 'expense', 'payment'] as const).map(type => { const Icon = TYPE_META[type].icon; return <button key={type} onClick={() => { setTypeChoice(type); setPending(null); }} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
+              <Icon size={16} strokeWidth={1.9} /><span>{TYPE_META[type].label}</span>
+            </button>; })}
           </div>
 
           <form className="simple-entry-form" onSubmit={handleQuickSubmit}>
@@ -581,7 +596,7 @@ function App() {
             {typeChoice === 'credit' && <Field label="When should they pay? (optional)" value={quickDueDate} onChange={setQuickDueDate} type="date" />}
             {(typeChoice === 'sale' || typeChoice === 'payment') && <div className="simple-payment-choice"><span>Received by</span><div><button type="button" onClick={() => setPaymentMethodChoice('cash')} className={paymentMethodChoice === 'cash' ? 'selected' : ''}>Cash</button><button type="button" onClick={() => setPaymentMethodChoice('mpesa')} className={paymentMethodChoice === 'mpesa' ? 'selected' : ''}>M-Pesa</button></div></div>}
             <div className="simple-form-actions">
-              <Button type="submit" className="flex-1">Check entry</Button>
+              <Button type="submit" className="flex-1"><Check size={16} strokeWidth={2.2} />Review entry</Button>
               <button type="button" className="clear-entry" onClick={() => { setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setPending(null); setTypeChoice('sale'); setPaymentMethodChoice('cash'); }}>Clear</button>
             </div>
           </form>
