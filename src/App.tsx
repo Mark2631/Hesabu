@@ -455,6 +455,15 @@ function App() {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  const shareReceipt = (transaction: Transaction, customer?: Customer) => {
+    const phone = customer?.phone ? normalizeKenyanWhatsAppNumber(customer.phone) : null;
+    if (customer?.phone && !phone) { notify('This customer phone number is not a valid Kenyan WhatsApp number. Correct it in the contact record.'); return; }
+    const message = receiptMessage(data.shopInfo.name, transaction, customer?.balance);
+    window.open(whatsAppUrl(message, phone), '_blank', 'noopener,noreferrer');
+    setModal(null);
+    notify('Receipt opened in WhatsApp. Review it before sending.');
+  };
+
   const copyReport = async () => {
     try {
       await navigator.clipboard.writeText(report.text);
@@ -475,30 +484,44 @@ function App() {
     const original = makeDemoData(); setData(original); saveData(original); setModal(null); setSection('home'); notify('Demo ledger reset.');
   };
 
-  const downloadFile = (filename: string, contents: string, mimeType: string) => {
-    const blob = new Blob([contents], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a'); link.href = url; link.download = filename;
-    document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+  const downloadFile = (filename: string, contents: string, mimeType: string): boolean => {
+    try {
+      const blob = new Blob([contents], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a'); link.href = url; link.download = filename;
+      document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+      return true;
+    } catch { return false; }
   };
   const exportBackup = () => {
-    downloadFile(`hesabu-backup-${today()}.json`, JSON.stringify(data, null, 2), 'application/json');
-    notify('Backup downloaded. Keep it somewhere safe.');
+    const envelope = createBackupEnvelope(data);
+    if (!downloadFile(`hesabu-backup-${today()}.json`, JSON.stringify(envelope, null, 2), 'application/json')) {
+      notify('Backup could not be downloaded. Try again or use another browser.');
+      return;
+    }
+    const timestamp = new Date().toISOString();
+    if (markBackupAt(timestamp)) {
+      setLastBackupAt(timestamp);
+      notify('Backup downloaded. Keep the file somewhere safe.');
+    } else notify('Backup downloaded, but Hesabu could not save its backup date. Keep the file somewhere safe.');
   };
   const exportCsv = () => {
     const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const rows = [['Date', 'Time', 'Type', 'Description', 'Amount KES', 'Person', 'Due date', 'Category'], ...data.transactions.map(t => [t.date, t.time, t.type, t.description, t.amount, t.customerName ?? '', t.dueDate ?? '', t.category ?? ''])];
+    const rows = [['Date', 'Time', 'Type', 'Description', 'Amount KES', 'Payment method', 'Person', 'Due date', 'Category'], ...data.transactions.map(t => [t.date, t.time, t.type, t.description, t.amount, t.paymentMethod ?? '', t.customerName ?? '', t.dueDate ?? '', t.category ?? ''])];
     downloadFile(`hesabu-transactions-${today()}.csv`, rows.map(row => row.map(escape).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
     notify('Transactions exported to CSV.');
   };
   const importBackup = async (file: File) => {
     try {
-      const parsed = JSON.parse(await file.text()) as Partial<AppData>;
-      if (!parsed.shopInfo || typeof parsed.shopInfo.name !== 'string' || !Array.isArray(parsed.transactions) || !Array.isArray(parsed.customers) || !Array.isArray(parsed.stock)) throw new Error('invalid backup');
-      if (!window.confirm('Restore this backup and replace the data in this browser?')) return;
-      const backup: AppData = { ...makeDemoData(), ...parsed, shopInfo: { ...makeDemoData().shopInfo, ...parsed.shopInfo }, customers: parsed.customers.map(c => ({ ...c, kind: c.kind ?? (c.balance < 0 ? 'supplier' as const : 'customer' as const) })), transactions: parsed.transactions, stock: parsed.stock, reminders: Array.isArray(parsed.reminders) ? parsed.reminders : [] };
-      setData(backup); saveData(backup); setModal(null); notify('Backup restored successfully.');
-    } catch { notify('That file does not look like a Hesabu backup. Nothing was changed.'); }
+      if (file.size > 10 * 1024 * 1024) { notify('This backup is larger than 10 MB. Nothing was changed.'); return; }
+      const parsed = parseBackupPayload(JSON.parse(await file.text()));
+      if (!parsed) { notify('That file is not a valid Hesabu backup. Nothing was changed.'); return; }
+      if (!window.confirm('Restore this backup and replace the data in this browser? Download your current backup first if you need to keep it.')) return;
+      setData(parsed);
+      setStorageWriteFailed(!saveData(parsed));
+      setModal(null);
+      notify('Backup restored. Check the storage warning before closing Hesabu.');
+    } catch { notify('That file could not be read as a Hesabu backup. Nothing was changed.'); }
   };
 
   const editDraft = (values: { type: TransactionType; description: string; amount: string; customerName: string; dueDate: string; stockItemName: string }) => {
