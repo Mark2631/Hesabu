@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  ArrowDownLeft, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, CalendarDays,
-  Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, ClipboardList,
-  FileSpreadsheet, FileText, HandCoins, Headphones, House, Mic, Mic2, MoreHorizontal, Package, Plus,
-  Download, ReceiptText, RotateCcw, Search, Settings2, Share2, SlidersHorizontal, Sparkles, Store, Upload,
-  Trash2, TrendingDown, TrendingUp, Users,
-  Wallet, X, type LucideIcon,
+  ArrowDownLeft, ArrowUpRight, Bell, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
+  FileSpreadsheet, FileText, HandCoins, House, Package, Plus, Download, RotateCcw, Search, Settings2,
+  Share2, SlidersHorizontal, Store, Upload, Trash2, Users, Wallet, type LucideIcon,
 } from 'lucide-react';
 import { createBackupEnvelope, hasSavedData, makeDemoData, markBackupAt, parseBackupPayload, readLastBackupAt, readSavedData, saveData } from './data';
 import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, debtReminderMessage, daysUntil, fullDateText, id, money, normalizeKenyanWhatsAppNumber, parseTransaction, receiptMessage, shortDay, timeText, today, transactionLabel, whatsAppUrl } from './utils';
+import { addDays, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, fullDateText, id, money, normalizeKenyanWhatsAppNumber, parseTransaction, receiptMessage, shortDay, timeText, today, transactionLabel, whatsAppUrl } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'home', label: 'Home', icon: House },
@@ -45,7 +42,7 @@ type ModalState =
 
 function cn(...classes: Array<string | undefined | null | false>) { return classes.filter(Boolean).join(' '); }
 
-function Logo({ compact = false }: { compact?: boolean }) {
+function Logo() {
   return <div className="hesabu-wordmark" aria-label="Hesabu">Hesabu</div>;
 }
 
@@ -137,35 +134,6 @@ function TransactionRow({ transaction, onClick, onDelete, compact = false }: { t
       </span>
     </button>
     <button className="transaction-delete" onClick={onDelete} aria-label={`Delete ${transaction.description}`}>Delete</button>
-  </div>;
-}
-
-function Metric({ label, value, hint, tone, icon: Icon }: { label: string; value: number; hint: string; tone: 'green' | 'red' | 'amber'; icon: LucideIcon }) {
-  return <div className="metric-card">
-    <div className="flex items-center justify-between gap-2"><span className="text-[11px] font-semibold text-[#69776D]">{label}</span><span className={cn('metric-icon', `metric-${tone}`)}><Icon size={15} /></span></div>
-    <div className={cn('mt-3 font-display text-[22px] font-extrabold leading-none tracking-[-.055em] tabular-nums sm:text-[24px]', tone === 'red' ? 'text-[#B94C46]' : tone === 'amber' ? 'text-[#A4762A]' : 'text-hesabu-green')}>{money(value)}</div>
-    <div className="mt-2 text-[10px] font-medium text-[#89948B]">{hint}</div>
-  </div>;
-}
-
-function ActivityProgress({ transactions }: { transactions: Transaction[] }) {
-  const sales = transactions.filter(t => t.type === 'sale').length;
-  const credits = transactions.filter(t => t.type === 'credit').length;
-  const expenses = transactions.filter(t => t.type === 'expense').length;
-  return <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-hesabu-line pt-3 text-[10px] font-semibold text-hesabu-muted">
-    <span className="inline-flex items-center gap-1.5"><span className="legend-dot bg-[#1A7A4A]" />{sales} sales</span>
-    <span className="inline-flex items-center gap-1.5"><span className="legend-dot bg-[#C89A43]" />{credits} credit</span>
-    <span className="inline-flex items-center gap-1.5"><span className="legend-dot bg-[#D56A63]" />{expenses} expenses</span>
-  </div>;
-}
-
-function ReminderLine({ reminder, onDone, onEdit }: { reminder: Reminder; onDone: () => void; onEdit: () => void }) {
-  const days = daysUntil(reminder.dueDate);
-  const due = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `Due ${shortDay(reminder.dueDate)}`;
-  return <div className={cn('reminder-row', reminder.done && 'opacity-55')}>
-    <div className="min-w-0 flex-1"><div className="truncate text-[14px] font-semibold">{reminder.title}</div><div className="mt-1 text-[12px] text-hesabu-muted">{reminder.amount ? `${money(reminder.amount)} · ` : ''}{due}</div></div>
-    <button className="text-action" onClick={onEdit}>Edit</button>
-    <button className="text-action" onClick={onDone}>{reminder.done ? 'Reopen' : 'Done'}</button>
   </div>;
 }
 
@@ -656,7 +624,7 @@ function App() {
 
       {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const phone = normalizeKenyanWhatsAppNumber(customer.phone); if (!phone) { notify('Please add a valid Kenyan phone number for this customer.'); return; } const message = debtReminderMessage(customer.name, data.shopInfo.name, customer.balance, customer.dueDate); window.open(whatsAppUrl(message, phone), '_blank', 'noopener,noreferrer'); }} />}
       {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} />}
-      {section === 'reports' && <ReportsSection data={data} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={shareReport} onCopy={copyReport} />}
+      {section === 'reports' && <ReportsSection report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={shareReport} onCopy={copyReport} />}
     </main>
 
     <nav className="mobile-nav" aria-label="Primary navigation">{NAV.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => navigate(item.id)} className={cn('mobile-nav-item', section === item.id && 'mobile-nav-active')}><span className="mobile-nav-icon"><Icon size={21} strokeWidth={section === item.id ? 2.2 : 1.8} /></span><span>{item.label}</span>{section === item.id && <span className="mobile-nav-dot" />}</button>; })}</nav>
@@ -743,8 +711,8 @@ function StockCard({ item, onEdit, onRestock, onAdjust }: { item: StockItem; onE
   </section>;
 }
 
-function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onCopy }: {
-  data: AppData; report: ReturnType<typeof buildReport>; reportPeriod: 'daily' | 'weekly' | 'monthly'; setReportPeriod: (v: 'daily' | 'weekly' | 'monthly') => void;
+function ReportsSection({ report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onCopy }: {
+  report: ReturnType<typeof buildReport>; reportPeriod: 'daily' | 'weekly' | 'monthly'; setReportPeriod: (v: 'daily' | 'weekly' | 'monthly') => void;
   reportDate: string; setReportDate: (v: string) => void; onShare: () => void; onCopy: () => void;
 }) {
   const periodLabel = reportPeriod === 'daily'
