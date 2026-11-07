@@ -62,7 +62,7 @@ export function drawerCashOut(tx: Transaction[]) {
 }
 export function expectedDrawerCash(data: AppData, date: string, openingCash: number) {
   const tx = data.transactions.filter(t => (t.tradingDay ?? t.date) === date);
-  return Math.round(openingCash) + drawerCashIn(tx) - drawerCashOut(tx);
+  return Math.max(0, Math.round(openingCash) + drawerCashIn(tx) - drawerCashOut(tx));
 }
 export function makeDailyClose(data: AppData, date: string, openingCash: number, countedCash: number, closedAt = new Date()): DailyClose {
   const opening = Math.max(0, Math.round(openingCash));
