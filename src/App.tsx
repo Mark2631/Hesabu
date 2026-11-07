@@ -130,7 +130,7 @@ function TransactionRow({ transaction, onClick, onDelete, compact = false }: { t
       <ToneDot type={transaction.type} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-bold leading-[1.35] text-hesabu-ink">{transaction.customerName && transaction.type === 'credit' ? `${transaction.customerName} · ${transaction.description}` : transaction.description}</span>
-        <span className="mt-1 block truncate text-[12px] text-hesabu-muted">{timeText(transaction.time)} · {transactionLabel[transaction.type]}{transaction.paymentMethod === 'mpesa' ? ' · M-Pesa' : ''}</span>
+        <span className="mt-1 block truncate text-[12px] text-hesabu-muted">{timeText(transaction.time)} · {transactionLabel[transaction.type]}{(transaction.type === 'sale' || transaction.type === 'payment') ? ` · ${transaction.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'}` : ''}</span>
       </span>
       <span className="ml-2 shrink-0 text-right">
         <span className={cn('block text-[13px] font-bold tabular-nums', `amount-${transaction.type}`)}>{prefix}{money(transaction.amount)}</span>
