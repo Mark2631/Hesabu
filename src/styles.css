@@ -1415,3 +1415,9 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:3px soli
   .app-main { width:100% !important; margin:0 !important; padding:0 !important; max-width:none !important; }
   .surface { break-inside:avoid; box-shadow:none !important; border-color:#ddd !important; }
 }
+
+
+/* Align currency values and preserve a clear five-item phone navigation */
+.transaction-row .tabular-nums,.stock-row-quantity strong,.ledger-overview-strip strong,.repayment-preview strong { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric:tabular-nums; letter-spacing:-.025em; }
+@media (min-width:721px) { .app-main { width:min(1240px,calc(100vw - 253px)); margin-right:auto; } }
+@media (max-width:720px) { .mobile-nav { grid-template-columns:repeat(5,minmax(0,1fr)); } .mobile-nav-item { min-width:0; padding:0 1px; } .mobile-nav-item > span:last-of-type:not(.mobile-nav-dot) { font-size:9px; } }
