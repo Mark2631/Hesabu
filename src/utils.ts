@@ -124,20 +124,22 @@ export function normalizeSpokenNumbers(input: string) {
   return input.replace(pattern, phrase => {
     const tokens = phrase.toLowerCase().split(/[\s-]+/).filter(token => token !== 'and' && token !== 'na');
     if (!tokens.length || tokens.every(token => token === 'hundred' || token === 'thousand' || token === 'mia' || token === 'elfu')) return phrase;
-    let total = 0, group = 0, pendingMultiplier = 0;
+    let total = 0, group = 0, prefixScale = 0;
     for (const token of tokens) {
-      if (units[token] !== undefined) {
-        group += units[token] * (pendingMultiplier || 1);
-        pendingMultiplier = 0;
-      } else if (tens[token] !== undefined) {
-        group += tens[token] * (pendingMultiplier || 1);
-        pendingMultiplier = 0;
-      } else if (token === 'hundred' || token === 'mia') {
-        if (group) group *= 100;
-        else pendingMultiplier = 100;
-      } else if (token === 'thousand' || token === 'elfu') {
-        if (group) { total += group * 1000; group = 0; }
-        else pendingMultiplier = 1000;
+      if (units[token] !== undefined || tens[token] !== undefined) {
+        const number = units[token] ?? tens[token];
+        if (prefixScale) {
+          total += number * prefixScale;
+          prefixScale = 0;
+        } else {
+          group += number;
+        }
+      } else if (token === 'hundred' || token === 'thousand') {
+        const scale = token === 'hundred' ? 100 : 1000;
+        total += (group || 1) * scale;
+        group = 0;
+      } else if (token === 'mia' || token === 'elfu') {
+        prefixScale = token === 'mia' ? 100 : 1000;
       }
     }
     return String(total + group);
