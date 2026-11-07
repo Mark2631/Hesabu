@@ -170,7 +170,6 @@ function App() {
   const [debtDirection, setDebtDirection] = useState<'owed-to-us' | 'we-owe'>('owed-to-us');
   const [reportPeriod, setReportPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [reportDate, setReportDate] = useState(today());
-  const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [filterTransactions, setFilterTransactions] = useState<'all' | 'cash' | 'mpesa' | 'credit' | 'expense'>('all');
   const [transactionSearch, setTransactionSearch] = useState('');
