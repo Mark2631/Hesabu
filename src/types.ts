@@ -1,6 +1,6 @@
 export type TransactionType = 'sale' | 'credit' | 'expense' | 'payment';
 export type PaymentMethod = 'cash' | 'mpesa';
-export type Section = 'home' | 'debts' | 'stock' | 'reports';
+export type Section = 'home' | 'ledger' | 'debts' | 'stock' | 'more';
 export type DebtDirection = 'they-owe' | 'we-owe';
 
 export interface ShopInfo {
