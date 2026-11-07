@@ -54,6 +54,8 @@ export interface Reminder {
   amount?: number;
   dueDate: string;
   kind: 'bill' | 'supplier' | 'customer' | 'other';
+  customerId?: string;
+  stockItemId?: string;
   done: boolean;
 }
 
