@@ -72,7 +72,7 @@ export const LAST_BACKUP_KEY = 'hesabu:v1:last-backup';
 type UnknownRecord = Record<string, unknown>;
 const isRecord = (value: unknown): value is UnknownRecord => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 const validDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
-const validTime = (value: unknown) => typeof value === 'string' && /^\d{2}:\d{2}$/.test(value);
+const validTime = (value: unknown): value is string => typeof value === 'string' && /^\d{2}:\d{2}$/.test(value);
 const finiteAmount = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 export function readLastBackupAt(): string | null {
