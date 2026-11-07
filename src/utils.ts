@@ -97,7 +97,8 @@ export function normalizeSpokenNumbers(input: string) {
     ishirini:20, thelathini:30, arobaini:40, hamsini:50, sitini:60, sabini:70, themanini:80, tisini:90,
   };
   return input.replace(pattern, phrase => {
-    const tokens = phrase.toLowerCase().split(/[\\s-]+/).filter(token => token !== 'and' && token !== 'na');
+    const tokens = phrase.toLowerCase().split(/[\s-]+/).filter(token => token !== 'and' && token !== 'na');
+    if (!tokens.length || tokens.every(token => token === 'hundred' || token === 'thousand' || token === 'mia' || token === 'elfu')) return phrase;
     let total = 0, group = 0, pendingMultiplier = 0;
     for (const token of tokens) {
       if (units[token] !== undefined) {
@@ -165,7 +166,7 @@ const nameFromText = (text: string, data: AppData) => {
   const known = data.customers.find(c => lower.includes(c.name.toLowerCase()));
   if (known) return known.name;
   const match = text.match(/\b(?:customer\s+)?([A-Z][a-z]{2,})\b/i);
-  if (match && !/^(I|we|my|our|Kamau|Njeri|Otieno|Wanjiku|Hassan|Supplier|Bought|Paid|Cash|Sale|Today|Tomorrow|Two|One|Three|Four|Five)$/i.test(match[1])) return match[1];
+  if (match && !/^(I|we|my|our|Supplier|Bought|Paid|Cash|Sale|Today|Tomorrow|Two|One|Three|Four|Five|Six|Seven|Eight|Nine|Ten)$/i.test(match[1])) return match[1];
   if (/kamau/i.test(text)) return 'Kamau';
   return undefined;
 };
