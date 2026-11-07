@@ -264,7 +264,11 @@ function App() {
     const current = data;
     let nextCustomers = [...current.customers];
     let customer = createdName ? nextCustomers.find(c => c.name.toLowerCase() === createdName?.toLowerCase()) : undefined;
-    if ((draft.type === 'credit' || draft.type === 'payment') && createdName && !customer) {
+    if (draft.type === 'payment' && (!customer || customer.balance <= 0)) {
+      notify(createdName ? `No unpaid balance is recorded for ${createdName}. Add the debt to the book first.` : 'Choose a customer with an unpaid balance before recording a repayment.');
+      return;
+    }
+    if (draft.type === 'credit' && createdName && !customer) {
       customer = { id: id('person'), name: createdName, phone: '', balance: 0, dueDate: draft.dueDate, kind: 'customer' };
       nextCustomers = [customer, ...nextCustomers];
     }
@@ -347,6 +351,15 @@ function App() {
         recognitionRef.current = null;
         const parsed = parseTransaction(spoken, data);
         if (parsed) {
+          if (parsed.type === 'payment' && !data.customers.some(customer => customer.name.toLowerCase() === (parsed.customerName ?? '').toLowerCase() && customer.balance > 0)) {
+            setQuickText(parsed.description);
+            setQuickAmount(String(parsed.amount));
+            setQuickPerson(parsed.customerName ?? '');
+            setTypeChoice('payment');
+            setPending(null);
+            notify(parsed.customerName ? `I heard a repayment for ${parsed.customerName}, but no unpaid balance is in the book. Add the debt first.` : 'I heard a repayment, but need the customer with an unpaid balance.');
+            return;
+          }
           setQuickText(parsed.description);
           setQuickAmount(String(parsed.amount));
           setQuickPerson(parsed.customerName ?? '');
