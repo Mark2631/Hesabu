@@ -1,4 +1,4 @@
-import type { AppData, Transaction, TransactionDraft, TransactionType } from './types';
+import type { AppData, DailyClose, Transaction, TransactionDraft, TransactionType } from './types';
 
 export const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 export const id = (prefix = 'id') => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -48,6 +48,32 @@ export function mpesaReceived(tx: Transaction[]) {
 }
 export function cashReceived(tx: Transaction[]) {
   return tx.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0);
+}
+
+export function drawerCashIn(tx: Transaction[]) {
+  return tx.filter(t => (t.type === 'sale' || t.type === 'payment')
+    && t.paymentMethod !== 'mpesa'
+    && t.paymentStatus !== 'pending' && t.paymentStatus !== 'failed')
+    .reduce((sum, t) => sum + t.amount, 0);
+}
+export function drawerCashOut(tx: Transaction[]) {
+  return tx.filter(t => t.type === 'expense' && t.paymentMethod !== 'mpesa')
+    .reduce((sum, t) => sum + t.amount, 0);
+}
+export function expectedDrawerCash(data: AppData, date: string, openingCash: number) {
+  const tx = data.transactions.filter(t => (t.tradingDay ?? t.date) === date);
+  return Math.round(openingCash) + drawerCashIn(tx) - drawerCashOut(tx);
+}
+export function makeDailyClose(data: AppData, date: string, openingCash: number, countedCash: number, closedAt = new Date()): DailyClose {
+  const opening = Math.max(0, Math.round(openingCash));
+  const counted = Math.max(0, Math.round(countedCash));
+  const expected = expectedDrawerCash(data, date, opening);
+  return { id: 'close-' + date, date, openingCash: opening, expectedCash: expected, countedCash: counted, difference: counted - expected, closedAt: closedAt.toISOString() };
+}
+export function suggestedOpeningCash(closes: DailyClose[], date: string) {
+  const previous = [...closes].filter(close => close.date < date)
+    .sort((a, b) => (b.date + b.closedAt).localeCompare(a.date + a.closedAt))[0];
+  return previous?.countedCash ?? 0;
 }
 
 function localDateString(date: Date) {
@@ -259,6 +285,9 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
   const mpesaReceivedTotal = mpesaReceived(tx);
   const due = data.reminders.filter(r => !r.done && r.dueDate >= from && r.dueDate <= addDays(reportDate, 3));
   const lowStock = data.stock.filter(s => s.quantity <= s.lowStockAt);
+  const dailyClose = period === 'daily'
+    ? [...(data.dailyCloses ?? [])].filter(close => close.date === reportDate).sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0]
+    : undefined;
   const label = period === 'daily' ? 'Daily' : period === 'weekly' ? 'Weekly' : 'Monthly';
   const lines = [
     `Hesabu yako · ${label} report`,
@@ -269,6 +298,11 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
     `M-Pesa received: ${money(mpesaReceivedTotal)}`,
     `Matumizi: ${money(outTotal)}`,
     `Net cash: ${money(inTotal - outTotal)}`,
+    ...(dailyClose ? [
+      `Till expected: ${money(dailyClose.expectedCash)}`,
+      `Till counted: ${money(dailyClose.countedCash)}`,
+      `Till difference: ${dailyClose.difference >= 0 ? '+' : '−'}${money(Math.abs(dailyClose.difference))}`,
+    ] : []),
     `Madeni mapya: ${money(credit)}`,
     '',
     'Wateja waliochukua kwa deni:',
@@ -280,5 +314,5 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
     '',
     'Keep your records close. Hesabu.',
   ];
-  return { transactions: tx, cashIn: inTotal, cashOut: outTotal, net: inTotal - outTotal, cashReceived: cashReceivedTotal, mpesaReceived: mpesaReceivedTotal, credit, lowStock, due, text: lines.join('\n') };
+  return { transactions: tx, cashIn: inTotal, cashOut: outTotal, net: inTotal - outTotal, cashReceived: cashReceivedTotal, mpesaReceived: mpesaReceivedTotal, credit, lowStock, due, dailyClose, text: lines.join('\n') };
 }
