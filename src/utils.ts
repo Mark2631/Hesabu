@@ -52,8 +52,7 @@ export function cashReceived(tx: Transaction[]) {
 
 export function drawerCashIn(tx: Transaction[]) {
   return tx.filter(t => (t.type === 'sale' || t.type === 'payment')
-    && t.paymentMethod !== 'mpesa'
-    && t.paymentStatus !== 'pending' && t.paymentStatus !== 'failed')
+    && t.paymentMethod !== 'mpesa')
     .reduce((sum, t) => sum + t.amount, 0);
 }
 export function drawerCashOut(tx: Transaction[]) {
