@@ -57,7 +57,7 @@ export function makeDemoData(): AppData {
   ];
 
   return {
-    shopInfo: { name: 'Mama Grace General Shop', owner: 'Grace', phone: '0712 000 123', businessType: 'General shop' },
+    shopInfo: { name: 'Mama Grace General Shop', owner: 'Grace', phone: '0712 000 123', businessType: 'General shop', tradingDayStart: '06:00', tradingDayEnd: '21:00' },
     transactions,
     customers,
     stock,
@@ -108,6 +108,7 @@ export function parseBackupPayload(value: unknown): AppData | null {
     && ['sale', 'credit', 'expense', 'payment'].includes(String(row.type))
     && typeof row.description === 'string' && finiteAmount(row.amount)
     && validDate(row.date) && validTime(row.time)
+    && (row.tradingDay === undefined || validDate(row.tradingDay))
     && (row.paymentMethod === undefined || row.paymentMethod === 'cash' || row.paymentMethod === 'mpesa'));
   const validCustomers = customers.every(row => isRecord(row)
     && typeof row.id === 'string' && typeof row.name === 'string' && typeof row.phone === 'string'
@@ -132,6 +133,8 @@ export function parseBackupPayload(value: unknown): AppData | null {
       owner: typeof shop.owner === 'string' ? shop.owner : '',
       phone: typeof shop.phone === 'string' ? shop.phone : '',
       businessType: typeof shop.businessType === 'string' ? shop.businessType : fallback.shopInfo.businessType,
+      tradingDayStart: validTime(shop.tradingDayStart) ? shop.tradingDayStart : '06:00',
+      tradingDayEnd: validTime(shop.tradingDayEnd) ? shop.tradingDayEnd : '21:00',
     },
     transactions: transactions as AppData['transactions'],
     customers: customers.map(row => {
@@ -162,7 +165,8 @@ export function readSavedData(): AppData {
       if (parsed?.shopInfo && Array.isArray(parsed.transactions) && Array.isArray(parsed.customers) && Array.isArray(parsed.stock)) {
         const fallback = makeDemoData();
         const customers = parsed.customers.map(c => ({ ...c, kind: c.kind ?? (c.balance < 0 ? 'supplier' as const : 'customer' as const) }));
-        return { ...fallback, ...parsed, customers, reminders: parsed.reminders ?? fallback.reminders };
+        const shopInfo = { ...fallback.shopInfo, ...parsed.shopInfo, tradingDayStart: validTime(parsed.shopInfo.tradingDayStart ?? '') ? parsed.shopInfo.tradingDayStart : '06:00', tradingDayEnd: validTime(parsed.shopInfo.tradingDayEnd ?? '') ? parsed.shopInfo.tradingDayEnd : '21:00' };
+        return { ...fallback, ...parsed, shopInfo, customers, reminders: parsed.reminders ?? fallback.reminders };
       }
     }
   } catch {
