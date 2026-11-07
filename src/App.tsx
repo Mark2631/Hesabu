@@ -161,7 +161,9 @@ function App() {
   const [quickDueDate, setQuickDueDate] = useState('');
   const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'unsupported'>('idle');
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const voiceLanguage = 'en-KE';
+  const [voiceLanguage, setVoiceLanguage] = useState<'en-KE' | 'sw-KE'>(() => {
+    try { return localStorage.getItem('hesabu:v1:voice-language') === 'sw-KE' ? 'sw-KE' : 'en-KE'; } catch { return 'en-KE'; }
+  });
   const [typeChoice, setTypeChoice] = useState<TransactionType | 'auto'>('sale');
   const [paymentMethodChoice, setPaymentMethodChoice] = useState<'cash' | 'mpesa'>('cash');
   const [storageWriteFailed, setStorageWriteFailed] = useState(false);
@@ -193,6 +195,9 @@ function App() {
   useEffect(() => {
     try { if (queuedReportDate) localStorage.setItem('hesabu:v1:queued-report', queuedReportDate); else localStorage.removeItem('hesabu:v1:queued-report'); } catch { /* The report remains available in this session. */ }
   }, [queuedReportDate]);
+  useEffect(() => {
+    try { localStorage.setItem('hesabu:v1:voice-language', voiceLanguage); } catch { /* Keep the selected language for this session. */ }
+  }, [voiceLanguage]);
   useEffect(() => {
     if (online && queuedReportDate) { setReportDate(queuedReportDate); setReportPeriod('daily'); }
   }, [online, queuedReportDate]);
@@ -643,7 +648,7 @@ function App() {
             <div className="simple-form-actions"><Button type="submit" className="flex-1"><Check size={16} />Review entry</Button><button type="button" className="clear-entry" onClick={() => { setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setPending(null); setTypeChoice('sale'); setPaymentMethodChoice('cash'); }}>Clear</button></div>
           </form>
           {pending && <div className="draft-review" aria-live="polite"><div className="simple-review-heading">Review before saving</div><div className="draft-review-grid"><div><span>Type</span><strong>{TYPE_META[pending.type].label}</strong></div><div><span>Amount</span><strong>{money(pending.amount)}</strong></div><div><span>Description</span><strong>{pending.description}</strong></div>{pending.customerName && <div><span>Customer</span><strong>{pending.customerName}</strong></div>}{pending.paymentMethod && <div><span>Payment method</span><strong>{pending.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'}</strong></div>}{pending.dueDate && <div><span>Due date</span><strong>{dateText(pending.dueDate, { day: 'numeric', month: 'short', year: 'numeric' })}</strong></div>}</div>{pending.type === 'credit' && <p className="simple-review-note">This amount has not been received yet. It will be added to the customer’s balance.</p>}{pendingStockExceedsCount && pendingStockItem && <p className="simple-review-warning">Only {pendingStockItem.quantity} {pendingStockItem.unit} are in the stock record. Saving will bring the recorded quantity to zero.</p>}<div className="simple-form-actions"><Button onClick={() => applyTransaction(pending)} className="flex-1"><Check size={15} />Confirm and save</Button><Button variant="outline" onClick={() => setModal({ kind: 'edit-draft' })}>Edit fields</Button><button type="button" className="clear-entry" onClick={() => setPending(null)}>Cancel</button></div></div>}
-          <div className="ledger-entry-footer"><button type="button" className="speak-link" onClick={startVoice}><span className="speak-icon"><Mic size={15} /></span>{voiceState === 'listening' ? 'Listening…' : 'Use voice instead'}</button>{voiceState === 'unsupported' && <p className="simple-review-note">Voice entry is not available in this browser. Type the entry above.</p>}</div>
+          <div className="ledger-entry-footer"><button type="button" className="speak-link" onClick={() => voiceState === 'listening' ? recognitionRef.current?.stop() : startVoice()}><span className="speak-icon"><Mic size={15} /></span>{voiceState === 'listening' ? 'Stop listening' : 'Speak this entry'}</button><div className="voice-language-row"><span>Speak in</span><div><button type="button" aria-pressed={voiceLanguage === 'en-KE'} className={voiceLanguage === 'en-KE' ? 'voice-language-active' : ''} onClick={() => setVoiceLanguage('en-KE')}>English</button><button type="button" aria-pressed={voiceLanguage === 'sw-KE'} className={voiceLanguage === 'sw-KE' ? 'voice-language-active' : ''} onClick={() => setVoiceLanguage('sw-KE')}>Kiswahili</button></div></div>{voiceState === 'unsupported' && <p className="simple-review-note">In-app voice may need data and microphone permission. Offline, use the microphone on your phone keyboard if available.</p>}</div>
         </section>}
         {(data.customers.some(c => c.balance > 0 && c.dueDate && daysUntil(c.dueDate) < 0) || lowStock.length > 0) && <section className="home-alert-strip">
           {data.customers.some(c => c.balance > 0 && c.dueDate && daysUntil(c.dueDate) < 0) && <button onClick={() => navigate('debts')}><span className="alert-count">{data.customers.filter(c => c.balance > 0 && c.dueDate && daysUntil(c.dueDate) < 0).length}</span><span>overdue customers</span><ChevronRight size={14} /></button>}
