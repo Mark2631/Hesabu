@@ -119,3 +119,25 @@ test('linked customer and stock reminders survive backup export and restore', ()
   malformed.reminders[0].stockItemId = 42;
   assert.equal(parseBackupPayload(malformed), null);
 });
+
+test('daily till closes survive backup export and are validated on restore', () => {
+  const withClose = {
+    ...data,
+    dailyCloses: [{
+      id: 'close-2026-11-06',
+      date: '2026-11-06',
+      openingCash: 500,
+      expectedCash: 2400,
+      countedCash: 2350,
+      difference: -50,
+      closedAt: '2026-11-06T21:00:00.000Z',
+    }],
+  };
+  const restored = parseBackupPayload(createBackupEnvelope(withClose, '2026-11-07T19:00:00.000Z'));
+  assert.equal(restored?.dailyCloses?.[0]?.countedCash, 2350);
+  assert.equal(restored?.dailyCloses?.[0]?.difference, -50);
+  assert.deepEqual(parseBackupPayload(data)?.dailyCloses, []);
+  const malformed = structuredClone(withClose);
+  malformed.dailyCloses[0].closedAt = 'not-a-date';
+  assert.equal(parseBackupPayload(malformed), null);
+});
