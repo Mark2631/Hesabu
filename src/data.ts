@@ -120,7 +120,9 @@ export function parseBackupPayload(value: unknown): AppData | null {
     && typeof row.id === 'string' && typeof row.title === 'string'
     && validDate(row.dueDate) && typeof row.done === 'boolean'
     && ['bill', 'supplier', 'customer', 'other'].includes(String(row.kind))
-    && (row.amount === undefined || finiteAmount(row.amount)));
+    && (row.amount === undefined || finiteAmount(row.amount))
+    && (row.customerId === undefined || typeof row.customerId === 'string')
+    && (row.stockItemId === undefined || typeof row.stockItemId === 'string'));
   if (!validTransactions || !validCustomers || !validStock || !validReminders) return null;
 
   const fallback = makeDemoData();
