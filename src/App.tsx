@@ -1060,21 +1060,21 @@ function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUse
       <section className="welcome-story">
         <Logo />
         <div className="welcome-copy">
-          <h1>A simple book for your shop.</h1>
-          <p>Record sales, money spent, customer debts and stock in one place.</p>
+          <h1>Your shop book, without the paperwork.</h1>
+          <p>Write down each sale, expense or debt. Hesabu keeps the totals for you.</p>
         </div>
       </section>
       <section className="welcome-setup">
-        <div className="welcome-form-head"><h2>Set up your shop</h2><p>Enter your shop name to get started.</p></div>
+        <div className="welcome-form-head"><h2>Start your shop book</h2><p>Add your shop name. You can change the other details later.</p></div>
         <form className="welcome-form" onSubmit={event => { event.preventDefault(); onCreateShop({ name, owner, phone, businessType }); }}>
           <Field label="Shop name" value={name} onChange={setName} placeholder="e.g. Mwende Shop" required autoFocus />
           <Field label="Your name (optional)" value={owner} onChange={setOwner} placeholder="Your name" />
           <Field label="Phone number (optional)" value={phone} onChange={setPhone} placeholder="07… or 01…" type="tel" inputMode="tel" />
           <SelectField label="Type of shop" value={businessType} onChange={setBusinessType} options={[{value:'General shop',label:'General shop / duka'},{value:'Kiosk',label:'Kiosk'},{value:'Grocery',label:'Grocery / food shop'},{value:'Hardware',label:'Hardware'},{value:'Clothing',label:'Clothing / boutique'},{value:'Other',label:'Other'}]} />
-          <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Start</Button>
+          <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Open my shop</Button>
         </form>
-        <div className="welcome-device-note"><span>Your records stay on this device. Download a backup regularly.</span></div>
-        <div className="welcome-demo-row"><span>Want to look around first?</span><button type="button" onClick={onUseDemo}>Open sample shop</button></div>
+        <div className="welcome-device-note"><span>Your book stays on this phone and works offline after its first load. Download a backup every week.</span></div>
+        <div className="welcome-demo-row"><span>Want to see an example first?</span><button type="button" onClick={onUseDemo}>View sample shop</button></div>
       </section>
     </div>
   </main>;
