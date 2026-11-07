@@ -1430,3 +1430,34 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:3px soli
 @media (max-width:720px) { .stock-row-actions { gap:4px; } .stock-row-actions button { font-size:9px; padding:0 5px; } }
 
 .reminder-modal-link { padding:9px 11px; border:1px solid #DCE3F2; border-radius:7px; background:#F7F9FD; color:#285BC5; font-size:11px; font-weight:650; }
+
+/* Shopkeeper-first controls: status, trading-day close and clear settings. */
+.network-status { display:inline-flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid #E1E4E9;border-radius:999px;background:#fff;color:#657083;font-size:10px;font-weight:700;white-space:nowrap; }
+.network-status > span { width:7px;height:7px;border-radius:50%;background:#26945C; }
+.network-offline { color:#8A5C24;background:#FFF9EF;border-color:#F1E2C9; }
+.network-offline > span { background:#D58A2B; }
+.day-close-banner { display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 18px;padding:14px 16px;border:1px solid #E9DCC5;border-radius:9px;background:#FFF9EF; }
+.day-close-banner strong,.day-close-banner span { display:block; }
+.day-close-banner strong { color:#4A3B2B;font-size:13px;font-weight:800; }
+.day-close-banner span { margin-top:3px;color:#81705E;font-size:11px;line-height:1.45; }
+.day-close-banner button { display:inline-flex;align-items:center;gap:5px;min-height:36px;padding:0 11px;border:1px solid #E6D2B5;border-radius:7px;background:#fff;color:#75552B;font-size:11px;font-weight:750;white-space:nowrap; }
+.report-connect-note { margin:14px 0 0;padding:10px 11px;border:1px solid #E5E8EF;border-radius:7px;background:#F7F8FB;color:#657083;font-size:11px;line-height:1.55; }
+.settings-hours-card { margin:0 0 15px;padding:15px;border:1px solid #E0E5EF;border-radius:9px;background:#F8FAFD; }
+.settings-hours-card > div > strong { color:#27354C;font-size:14px;font-weight:800; }
+.settings-hours-card p { margin:4px 0 0;color:#6F7888;font-size:11px;line-height:1.5; }
+.settings-hours-card form { display:grid;grid-template-columns:1fr 1fr auto;align-items:end;gap:9px;margin-top:13px; }
+.settings-hours-card label span { display:block;color:#586579;font-size:10px;font-weight:750; }
+.settings-hours-card input { width:100%;height:40px;margin-top:5px;padding:0 9px;border:1px solid #DCE2EC;border-radius:7px;background:#fff;color:#28364A;font-size:13px; }
+.settings-hours-card > small { display:block;margin-top:11px;color:#858E9D;font-size:10px;line-height:1.5; }
+.ledger-action-list { grid-template-columns:repeat(3,minmax(0,1fr)); }
+@media (max-width: 620px) {
+  .network-status { padding:6px 8px;font-size:9px; }
+  .day-close-banner { align-items:flex-start;flex-direction:column;gap:10px;padding:12px; }
+  .day-close-banner button { width:100%;justify-content:center; }
+  .settings-hours-card form { grid-template-columns:1fr 1fr; }
+  .settings-hours-card form > button { grid-column:1 / -1;width:100%; }
+}
+@media (max-width: 360px) {
+  .network-status { padding:5px 6px;font-size:8px;gap:5px; }
+  .ledger-action-list { gap:5px; }
+}
