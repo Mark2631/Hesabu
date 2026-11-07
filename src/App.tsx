@@ -217,12 +217,7 @@ function App() {
   const outstanding = useMemo(() => data.customers.filter(c => c.balance > 0).reduce((sum, c) => sum + c.balance, 0), [data.customers]);
   const lowStock = useMemo(() => data.stock.filter(s => s.quantity <= s.lowStockAt), [data.stock]);
   const allReminders = useMemo(() => [...data.reminders].sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [data.reminders]);
-  const activeReminders = useMemo(() => allReminders.filter(r => !r.done), [allReminders]);
   const report = useMemo(() => buildReport(data, reportPeriod, reportDate), [data, reportPeriod, reportDate]);
-  const backupAgeDays = lastBackupAt && Number.isFinite(Date.parse(lastBackupAt))
-    ? Math.max(0, Math.floor((Date.now() - Date.parse(lastBackupAt)) / 86_400_000))
-    : null;
-  const backupNeedsAttention = backupAgeDays === null || backupAgeDays >= 7;
 
   const navigate = (next: Section) => {
     setSection(next); setQuery(''); setPending(null); setQuickEntryOpen(false); setProfileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
