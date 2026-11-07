@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildReport,
+  expectedDrawerCash,
+  makeDailyClose,
+  suggestedOpeningCash,
   isWithinTradingHours,
   normalizeSpokenNumbers,
   parseTransaction,
@@ -69,4 +72,29 @@ test('daily report includes transactions by trading date, not only calendar date
   const report = buildReport(data, 'daily', '2026-11-06');
   assert.equal(report.transactions.length, 2);
   assert.equal(report.cashIn, 500);
+});
+
+test('till close separates physical cash from M-Pesa', () => {
+  const data = {
+    ...emptyShop,
+    transactions: [
+      { id: 'cash-sale', type: 'sale', description: 'Shop sale', amount: 1000, paymentMethod: 'cash', date: '2026-11-07', tradingDay: '2026-11-07', time: '12:00' },
+      { id: 'mpesa-sale', type: 'sale', description: 'M-Pesa sale', amount: 500, paymentMethod: 'mpesa', date: '2026-11-07', tradingDay: '2026-11-07', time: '13:00' },
+      { id: 'cash-expense', type: 'expense', description: 'Transport', amount: 200, paymentMethod: 'cash', date: '2026-11-07', tradingDay: '2026-11-07', time: '14:00' },
+      { id: 'mpesa-expense', type: 'expense', description: 'Electricity', amount: 100, paymentMethod: 'mpesa', date: '2026-11-07', tradingDay: '2026-11-07', time: '15:00' },
+    ],
+  };
+  assert.equal(expectedDrawerCash(data, '2026-11-07', 300), 1100);
+  const close = makeDailyClose(data, '2026-11-07', 300, 1050, new Date('2026-11-07T21:00:00'));
+  assert.equal(close.expectedCash, 1100);
+  assert.equal(close.countedCash, 1050);
+  assert.equal(close.difference, -50);
+});
+
+test('next opening float defaults to the last physical closing count', () => {
+  const closes = [
+    { id: 'older', date: '2026-11-05', openingCash: 100, expectedCash: 400, countedCash: 380, difference: -20, closedAt: '2026-11-05T21:00:00.000Z' },
+    { id: 'latest', date: '2026-11-06', openingCash: 380, expectedCash: 600, countedCash: 550, difference: -50, closedAt: '2026-11-06T21:00:00.000Z' },
+  ];
+  assert.equal(suggestedOpeningCash(closes, '2026-11-07'), 550);
 });
