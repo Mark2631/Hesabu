@@ -50,6 +50,16 @@ export interface StockItem {
   costPerUnit?: number;
 }
 
+export interface DailyClose {
+  id: string;
+  date: string;
+  openingCash: number;
+  expectedCash: number;
+  countedCash: number;
+  difference: number;
+  closedAt: string;
+}
+
 export interface Reminder {
   id: string;
   title: string;
@@ -68,6 +78,7 @@ export interface AppData {
   customers: Customer[];
   stock: StockItem[];
   reminders: Reminder[];
+  dailyCloses?: DailyClose[];
 }
 
 export interface TransactionDraft {
