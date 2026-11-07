@@ -33,7 +33,7 @@ type ModalState =
   | { kind: 'stock'; item?: StockItem }
   | { kind: 'stock-update'; itemId: string; mode: 'restock' | 'adjust' }
   | { kind: 'stock-edit'; itemId: string }
-  | { kind: 'reminder'; reminder?: Reminder }
+  | { kind: 'reminder'; reminder?: Reminder; link?: { customerId?: string; stockItemId?: string; label: string; kind: Reminder['kind'] } }
   | { kind: 'profile' }
   | { kind: 'edit-draft' }
   | { kind: 'transaction'; transactionId: string }
@@ -413,8 +413,8 @@ function App() {
     setModal(null); notify(mode === 'restock' ? `${item.name} stock updated.` : `${item.name} quantity adjusted.`);
   };
 
-  const saveReminder = (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }, existing?: Reminder) => {
-    const reminder: Reminder = { id: existing?.id ?? id('rem'), title: values.title.trim(), detail: values.detail.trim(), amount: values.amount.trim() ? Math.max(0, Number(values.amount) || 0) : undefined, dueDate: values.dueDate || today(), kind: values.kind, done: existing?.done ?? false };
+  const saveReminder = (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind']; customerId?: string; stockItemId?: string }, existing?: Reminder) => {
+    const reminder: Reminder = { id: existing?.id ?? id('rem'), title: values.title.trim(), detail: values.detail.trim(), amount: values.amount.trim() ? Math.max(0, Number(values.amount) || 0) : undefined, dueDate: values.dueDate || today(), kind: values.kind, customerId: values.customerId ?? existing?.customerId, stockItemId: values.stockItemId ?? existing?.stockItemId, done: existing?.done ?? false };
     updateData(current => ({ ...current, reminders: existing ? current.reminders.map(r => r.id === existing.id ? reminder : r) : [reminder, ...current.reminders] }));
     setModal(null); notify(existing ? 'Reminder updated.' : 'Reminder added.');
   };
@@ -428,6 +428,17 @@ function App() {
   const toggleReminder = (reminder: Reminder) => {
     updateData(current => ({ ...current, reminders: current.reminders.map(r => r.id === reminder.id ? { ...r, done: !r.done } : r) }));
     notify(reminder.done ? 'Reminder reopened.' : 'Marked as done.');
+  };
+  const openReminderRecord = (reminder: Reminder) => {
+    if (reminder.customerId) {
+      const customer = data.customers.find(item => item.id === reminder.customerId);
+      if (customer) { navigate('debts'); setQuery(customer.name); return; }
+    }
+    if (reminder.stockItemId) {
+      const item = data.stock.find(stock => stock.id === reminder.stockItemId);
+      if (item) { navigate('stock'); setQuery(item.name); return; }
+    }
+    notify('This reminder is not linked to a shop record.');
   };
 
   const shareReport = async () => {
@@ -580,9 +591,9 @@ function App() {
         <div className="ledger-privacy-note"><CheckCircle2 size={16} /><span><strong>Saved on this device</strong><small>Your records stay on this device. Keep a separate backup in More.</small></span></div>
       </div>}
       {section === 'ledger' && <LedgerSection transactions={sortedTransactions} filter={filterTransactions} setFilter={setFilterTransactions} search={transactionSearch} setSearch={setTransactionSearch} dateFilter={ledgerDateFilter} setDateFilter={setLedgerDateFilter} onTransaction={transaction => setModal({ kind: 'transaction', transactionId: transaction.id })} onDelete={deleteTransaction} />}
-      {section === 'more' && <MoreSection report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShareReport={shareReport} onCopyReport={copyReport} onPrintReport={() => window.print()} reminders={allReminders} onToggleReminder={toggleReminder} onEditReminder={reminder => setModal({ kind: 'reminder', reminder })} onAddReminder={() => setModal({ kind: 'reminder' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} onSettings={() => setModal({ kind: 'settings' })} lastBackupAt={lastBackupAt} storageWriteFailed={storageWriteFailed} storageProtection={storageProtection} />}
-      {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const phone = normalizeKenyanWhatsAppNumber(customer.phone); if (!phone) { notify('Please add a valid Kenyan phone number for this customer.'); return; } const message = debtReminderMessage(customer.name, data.shopInfo.name, customer.balance, customer.dueDate); window.open(whatsAppUrl(message, phone), '_blank', 'noopener,noreferrer'); }} />}
-      {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} />}
+      {section === 'more' && <MoreSection report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShareReport={shareReport} onCopyReport={copyReport} onPrintReport={() => window.print()} reminders={allReminders} onToggleReminder={toggleReminder} onEditReminder={reminder => setModal({ kind: 'reminder', reminder })} onAddReminder={() => setModal({ kind: 'reminder' })} onOpenRecord={openReminderRecord} customers={data.customers} stock={data.stock} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} onSettings={() => setModal({ kind: 'settings' })} lastBackupAt={lastBackupAt} storageWriteFailed={storageWriteFailed} storageProtection={storageProtection} />}
+      {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const phone = normalizeKenyanWhatsAppNumber(customer.phone); if (!phone) { notify('Please add a valid Kenyan phone number for this customer.'); return; } const message = debtReminderMessage(customer.name, data.shopInfo.name, customer.balance, customer.dueDate); window.open(whatsAppUrl(message, phone), '_blank', 'noopener,noreferrer'); }} onCreateFollowUp={customer => setModal({ kind: 'reminder', link: { customerId: customer.id, label: customer.name, kind: 'customer' } })} />}
+      {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} onReminder={item => setModal({ kind: 'reminder', link: { stockItemId: item.id, label: item.name, kind: 'other' } })} />}
     </main>
 
     <nav className="mobile-nav" aria-label="Primary navigation">{NAV.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => navigate(item.id)} className={cn('mobile-nav-item', section === item.id && 'mobile-nav-active')}><span className="mobile-nav-icon"><Icon size={21} strokeWidth={section === item.id ? 2.2 : 1.8} /></span><span>{item.label}</span>{section === item.id && <span className="mobile-nav-dot" />}</button>; })}</nav>
@@ -592,7 +603,7 @@ function App() {
     {modal?.kind === 'stock' && <StockModal onClose={closeModal} onSave={saveStock} />}
     {modal?.kind === 'stock-update' && data.stock.find(s => s.id === modal.itemId) && <StockUpdateModal item={data.stock.find(s => s.id === modal.itemId)!} mode={modal.mode} onClose={closeModal} onSave={updateStock} />}
     {modal?.kind === 'stock-edit' && data.stock.find(s => s.id === modal.itemId) && <StockEditModal item={data.stock.find(s => s.id === modal.itemId)!} onClose={closeModal} onSave={saveStockDetails} />}
-    {modal?.kind === 'reminder' && <ReminderModal reminder={modal.reminder} onClose={closeModal} onSave={values => saveReminder(values, modal.reminder)} onDelete={deleteReminder} />}
+    {modal?.kind === 'reminder' && <ReminderModal reminder={modal.reminder} link={modal.link} onClose={closeModal} onSave={values => saveReminder(values, modal.reminder)} onDelete={deleteReminder} />}
     {modal?.kind === 'profile' && <ProfileModal data={data} onClose={closeModal} onSave={updateProfile} />}
     {modal?.kind === 'settings' && <SettingsModal onClose={closeModal} onReset={resetDemo} onProfile={() => setModal({ kind: 'profile' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} lastBackupAt={lastBackupAt} storageProtection={storageProtection} onProtectStorage={protectDeviceStorage} />}
     {modal?.kind === 'edit-draft' && pending && <EditDraftModal draft={pending} items={data.stock} onClose={closeModal} onSave={editDraft} />}
@@ -633,7 +644,7 @@ function LedgerSection({ transactions, filter, setFilter, search, setSearch, dat
   </>;
 }
 
-function MoreSection({ report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShareReport, onCopyReport, onPrintReport, reminders, onToggleReminder, onEditReminder, onAddReminder, onExportBackup, onExportCsv, onImportBackup, onSettings, lastBackupAt, storageWriteFailed, storageProtection }: {
+function MoreSection({ report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShareReport, onCopyReport, onPrintReport, reminders, onToggleReminder, onEditReminder, onAddReminder, onOpenRecord, customers, stock, onExportBackup, onExportCsv, onImportBackup, onSettings, lastBackupAt, storageWriteFailed, storageProtection }: {
   report: ReturnType<typeof buildReport>; reportPeriod: 'daily'|'weekly'|'monthly'; setReportPeriod: (value:'daily'|'weekly'|'monthly')=>void;
   reportDate:string; setReportDate:(value:string)=>void; onShareReport:()=>void; onCopyReport:()=>void; onPrintReport:()=>void;
   reminders:Reminder[]; onToggleReminder:(reminder:Reminder)=>void; onEditReminder:(reminder:Reminder)=>void; onAddReminder:()=>void;
@@ -645,7 +656,7 @@ function MoreSection({ report, reportPeriod, setReportPeriod, reportDate, setRep
     <ReportsSection report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={onShareReport} onCopy={onCopyReport} onPrint={onPrintReport} />
     <div className="more-tools-grid">
       <section className="surface more-tool-panel"><header className="more-tool-heading"><div><span className="ledger-section-label">FOLLOW THROUGH</span><h2>Reminders</h2><p>Tasks you can tick off when they are done.</p></div><Button size="sm" onClick={onAddReminder}><Plus size={14} /> Add</Button></header>
-        {open.length ? <div className="reminder-task-list">{open.map(reminder=><div key={reminder.id} className="reminder-task"><button className="reminder-task-check" onClick={()=>onToggleReminder(reminder)} aria-label={`Mark ${reminder.title} as done`}><span /></button><button className="reminder-task-copy" onClick={()=>onEditReminder(reminder)}><strong>{reminder.title}</strong><small>{reminder.kind==='customer'?'Customer follow-up':reminder.kind==='supplier'?'Supplier':reminder.kind==='bill'?'Bill / expense':'Task'} · {daysUntil(reminder.dueDate)<0?'Overdue':daysUntil(reminder.dueDate)===0?'Today':daysUntil(reminder.dueDate)===1?'Tomorrow':dateText(reminder.dueDate,{day:'numeric',month:'short'})}</small>{reminder.detail&&<small>{reminder.detail}</small>}</button>{reminder.amount!==undefined&&<strong className="reminder-task-amount">{money(reminder.amount)}</strong>}</div>)}</div> : <EmptyState title="No reminders waiting" detail="Add a follow-up or bill so it is easy to find later." />}
+        {open.length ? <div className="reminder-task-list">{open.map(reminder=>{const customer=reminder.customerId?customers.find(item=>item.id===reminder.customerId):undefined;const item=reminder.stockItemId?stock.find(stockItem=>stockItem.id===reminder.stockItemId):undefined;return <div key={reminder.id} className="reminder-task"><button className="reminder-task-check" onClick={()=>onToggleReminder(reminder)} aria-label={`Mark ${reminder.title} as done`}><span /></button><button className="reminder-task-copy" onClick={()=>onEditReminder(reminder)}><strong>{reminder.title}</strong><small>{reminder.kind==='customer'?'Customer follow-up':reminder.kind==='supplier'?'Supplier':reminder.kind==='bill'?'Bill / expense':'Task'} · {daysUntil(reminder.dueDate)<0?'Overdue':daysUntil(reminder.dueDate)===0?'Today':daysUntil(reminder.dueDate)===1?'Tomorrow':dateText(reminder.dueDate,{day:'numeric',month:'short'})}</small>{customer&&<small className="reminder-linked-label">Debt · {customer.name}</small>}{item&&<small className="reminder-linked-label">Stock · {item.name}</small>}{reminder.detail&&<small>{reminder.detail}</small>}</button>{(customer||item)&&<button className="reminder-open-record" onClick={()=>onOpenRecord(reminder)}>Open</button>}{reminder.amount!==undefined&&<strong className="reminder-task-amount">{money(reminder.amount)}</strong>}</div>})}</div> : <EmptyState title="No reminders waiting" detail="Add a follow-up or bill so it is easy to find later." />}
         {done.length>0&&<details className="completed-reminders"><summary>{done.length} completed</summary>{done.map(reminder=><div key={reminder.id} className="completed-reminder"><button onClick={()=>onToggleReminder(reminder)} aria-label={`Reopen ${reminder.title}`}>↶</button><span>{reminder.title}</span><button onClick={()=>onEditReminder(reminder)}>Edit</button></div>)}</details>}
       </section>
       <section className="surface more-tool-panel backup-panel"><header className="more-tool-heading"><div><span className="ledger-section-label">DATA SAFETY</span><h2>Backup & restore</h2><p>Your book is stored on this device only.</p></div><span className="backup-shield"><CheckCircle2 size={18} /></span></header>
@@ -659,9 +670,9 @@ function MoreSection({ report, reportPeriod, setReportPeriod, reportDate, setRep
   </div>;
 }
 
-function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, onPayment, onReminder }: {
+function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, onPayment, onReminder, onCreateFollowUp }: {
   data: AppData; query: string; setQuery: (v: string) => void; direction: 'owed-to-us' | 'we-owe'; setDirection: (v: 'owed-to-us' | 'we-owe') => void;
-  onAdd: () => void; onPayment: (id: string) => void; onReminder: (customer: Customer) => void;
+  onAdd: () => void; onPayment: (id: string) => void; onReminder: (customer: Customer) => void; onCreateFollowUp: (customer: Customer) => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const customerList = data.customers.filter(c => direction === 'owed-to-us' ? c.balance > 0 : c.balance < 0).filter(c => `${c.name} ${c.phone}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
@@ -684,7 +695,7 @@ function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, o
             <span className="ml-2 shrink-0 text-right"><span className={cn('block text-[14px] font-bold tabular-nums', customer.balance < 0 ? 'text-[#597B9A]' : 'text-[#B94C46]')}>{money(Math.abs(customer.balance))}</span><span className="mt-1 block text-[10px] text-hesabu-muted">{customer.balance < 0 ? (customer.kind === 'customer' ? 'Customer credit' : 'You owe') : 'Owes you'}</span></span><span className="ml-2 shrink-0 text-action">{expandedNow ? 'Hide' : 'View'}</span>
           </button>
           {expandedNow && <div className="person-expanded"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[11px] font-semibold text-hesabu-muted">Recent history</span><span className="text-[10px] text-hesabu-muted">{history.length} entries</span></div>{history.length ? <div className="mt-2">{history.map(t => <div key={t.id} className="history-line"><span className="truncate">{t.description}</span><span className={cn(t.type === 'expense' ? 'text-[#B94C46]' : t.type === 'credit' ? 'text-[#A4762A]' : 'text-hesabu-green')}>{money(t.amount)}</span></div>)}</div> : <p className="mt-2 text-xs text-hesabu-muted">No linked transactions yet. This balance was entered manually.</p>}
-            <div className="mt-4 flex flex-wrap gap-2">{customer.balance !== 0 && <Button size="sm" onClick={() => onPayment(customer.id)}><Wallet size={14} /> {customer.balance < 0 ? (customer.kind === 'customer' ? 'Return customer credit' : 'Record payment made') : 'Record payment received'}</Button>}{customer.balance > 0 && customer.phone && <Button size="sm" variant="secondary" onClick={() => onReminder(customer)}><Share2 size={14} /> WhatsApp reminder</Button>}</div>
+            <div className="mt-4 flex flex-wrap gap-2">{customer.balance !== 0 && <Button size="sm" onClick={() => onPayment(customer.id)}><Wallet size={14} /> {customer.balance < 0 ? (customer.kind === 'customer' ? 'Return customer credit' : 'Record payment made') : 'Record payment received'}</Button>}{customer.balance > 0 && <Button size="sm" variant="outline" onClick={() => onCreateFollowUp(customer)}><Bell size={14} /> Remind me</Button>}{customer.balance > 0 && customer.phone && <Button size="sm" variant="secondary" onClick={() => onReminder(customer)}><Share2 size={14} /> WhatsApp reminder</Button>}</div>
           </div>}
         </div>;
       })}
@@ -693,21 +704,21 @@ function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, o
   </>;
 }
 
-function StockSection({ data, query, setQuery, onAdd, onEdit, onUpdate }: { data: AppData; query: string; setQuery: (v: string) => void; onAdd: () => void; onEdit: (id: string) => void; onUpdate: (id: string, mode: 'restock' | 'adjust') => void }) {
+function StockSection({ data, query, setQuery, onAdd, onEdit, onUpdate, onReminder }: { data: AppData; query: string; setQuery: (v: string) => void; onAdd: () => void; onEdit: (id: string) => void; onUpdate: (id: string, mode: 'restock' | 'adjust') => void; onReminder: (item: StockItem) => void }) {
   const [filter, setFilter] = useState<'all' | 'low' | 'out'>('all');
   const shown = data.stock.filter(s => s.name.toLowerCase().includes(query.toLowerCase())).filter(s => filter === 'all' || (filter === 'low' && s.quantity > 0 && s.quantity <= s.lowStockAt) || (filter === 'out' && s.quantity === 0)).sort((a,b)=>Number(a.quantity>a.lowStockAt)-Number(b.quantity>b.lowStockAt)||(a.quantity/Math.max(1,a.lowStockAt))-(b.quantity/Math.max(1,b.lowStockAt)));
   return <>
     <SectionTitle title="Stock" detail="See what is on the shelf and what needs buying." right={<Button onClick={onAdd}>Add item</Button>} />
     <div className="stock-summary-row"><div className="stock-summary-cell"><span>Items tracked</span><b>{data.stock.length}</b></div><div className="stock-summary-cell"><span>Need buying</span><b>{lowStockCount(data.stock)}</b></div></div>
     <div className="stock-toolbar stock-toolbar-flat"><label className="search-field"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Find an item" /></label><div className="segmented-control"><button className={cn(filter === 'all' && 'segment-active')} onClick={() => setFilter('all')}>All items</button><button className={cn(filter === 'low' && 'segment-active')} onClick={() => setFilter('low')}>Running low <span className="count-badge">{data.stock.filter(s=>s.quantity>0&&s.quantity<=s.lowStockAt).length}</span></button><button className={cn(filter === 'out' && 'segment-active')} onClick={() => setFilter('out')}>Out of stock <span className="count-badge">{data.stock.filter(s=>s.quantity===0).length}</span></button></div></div>
-    {shown.length===0 ? <section className="surface"><EmptyState title={filter==='low'?'No low-stock items':filter==='out'?'No items are out of stock':'No matching item'} detail="There is nothing to show for this stock filter." action={filter==='all'?<Button onClick={onAdd}><Plus size={15}/> Add item</Button>:undefined}/></section> : <section className="surface stock-table">{shown.map(item=><StockRow key={item.id} item={item} onEdit={()=>onEdit(item.id)} onRestock={()=>onUpdate(item.id,'restock')} onAdjust={()=>onUpdate(item.id,'adjust')}/>)}</section>}
+    {shown.length===0 ? <section className="surface"><EmptyState title={filter==='low'?'No low-stock items':filter==='out'?'No items are out of stock':'No matching item'} detail="There is nothing to show for this stock filter." action={filter==='all'?<Button onClick={onAdd}><Plus size={15}/> Add item</Button>:undefined}/></section> : <section className="surface stock-table">{shown.map(item=><StockRow key={item.id} item={item} onEdit={()=>onEdit(item.id)} onRestock={()=>onUpdate(item.id,'restock')} onAdjust={()=>onUpdate(item.id,'adjust')} onReminder={()=>onReminder(item)}/>)}</section>}
     <p className="mt-4 text-[12px] leading-5 text-hesabu-muted">When you record a sale, add the item name in the description to reduce its stock count automatically. You can also change the count yourself.</p>
   </>;
 }
 function lowStockCount(items: StockItem[]) { return items.filter(s => s.quantity <= s.lowStockAt).length; }
 
-function StockRow({ item, onEdit, onRestock, onAdjust }: { item: StockItem; onEdit: () => void; onRestock: () => void; onAdjust: () => void }) {
-  return <div className="stock-table-row"><div className="stock-row-name"><span className="stock-row-icon"><Package size={17}/></span><span><strong>{item.name}</strong><small>Reorder at {item.lowStockAt} {item.unit}</small></span></div><div className="stock-row-quantity"><strong>{item.quantity}</strong><small>{item.unit}</small></div><StockStatus item={item}/><div className="stock-row-actions"><button onClick={onRestock}><Plus size={14}/> Restock</button><button onClick={onAdjust}>Adjust</button><button onClick={onEdit}>Edit</button></div></div>;
+function StockRow({ item, onEdit, onRestock, onAdjust, onReminder }: { item: StockItem; onEdit: () => void; onRestock: () => void; onAdjust: () => void; onReminder: () => void }) {
+  return <div className="stock-table-row"><div className="stock-row-name"><span className="stock-row-icon"><Package size={17}/></span><span><strong>{item.name}</strong><small>Reorder at {item.lowStockAt} {item.unit}</small></span></div><div className="stock-row-quantity"><strong>{item.quantity}</strong><small>{item.unit}</small></div><StockStatus item={item}/><div className="stock-row-actions"><button onClick={onRestock}><Plus size={14}/> Restock</button><button onClick={onAdjust}>Adjust</button><button onClick={onReminder}>Remind</button><button onClick={onEdit}>Edit</button></div></div>;
 }
 
 function ReportsSection({ report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onCopy, onPrint }: {
@@ -833,10 +844,10 @@ function StockUpdateModal({ item, mode, onClose, onSave }: { item: StockItem; mo
   </Modal>;
 }
 
-function ReminderModal({ reminder, onClose, onSave, onDelete }: { reminder?: Reminder; onClose: () => void; onSave: (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }) => void; onDelete: (reminder: Reminder) => void }) {
-  const [title, setTitle] = useState(reminder?.title ?? ''); const [detail, setDetail] = useState(reminder?.detail ?? ''); const [amount, setAmount] = useState(reminder?.amount === undefined ? '' : String(reminder.amount)); const [dueDate, setDueDate] = useState(reminder?.dueDate ?? today()); const [kind, setKind] = useState<Reminder['kind']>(reminder?.kind ?? 'bill');
+function ReminderModal({ reminder, link, onClose, onSave, onDelete }: { reminder?: Reminder; link?: { customerId?: string; stockItemId?: string; label: string; kind: Reminder['kind'] }; onClose: () => void; onSave: (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind']; customerId?: string; stockItemId?: string }) => void; onDelete: (reminder: Reminder) => void }) {
+  const [title, setTitle] = useState(reminder?.title ?? (link?.customerId ? `Follow up with ${link.label}` : link?.stockItemId ? `Reorder ${link.label}` : '')); const [detail, setDetail] = useState(reminder?.detail ?? ''); const [amount, setAmount] = useState(reminder?.amount === undefined ? '' : String(reminder.amount)); const [dueDate, setDueDate] = useState(reminder?.dueDate ?? today()); const [kind, setKind] = useState<Reminder['kind']>(reminder?.kind ?? link?.kind ?? 'bill');
   return <Modal title={reminder ? 'Edit reminder' : 'Add a reminder'} detail="Add a bill to pay or someone to call." onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ title, detail, amount, dueDate, kind }); }}>
+    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ title, detail, amount, dueDate, kind, customerId: reminder?.customerId ?? link?.customerId, stockItemId: reminder?.stockItemId ?? link?.stockItemId }); }}>
       <Field label="Reminder" value={title} onChange={setTitle} placeholder="e.g. Pay electricity tokens" required autoFocus />
       <SelectField label="Type" value={kind} onChange={v => setKind(v as Reminder['kind'])} options={[{ value: 'bill', label: 'Bill / expense' }, { value: 'supplier', label: 'Supplier' }, { value: 'customer', label: 'Customer follow-up' }, { value: 'other', label: 'Other' }]} />
       <div className="grid grid-cols-2 gap-3"><Field label="Amount (optional)" value={amount} onChange={setAmount} type="number" min={0} placeholder="KES" /><Field label="Due date" value={dueDate} onChange={setDueDate} type="date" required /></div>
