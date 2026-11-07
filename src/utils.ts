@@ -49,6 +49,74 @@ export function mpesaReceived(tx: Transaction[]) {
 export function cashReceived(tx: Transaction[]) {
   return tx.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0);
 }
+
+function localDateString(date: Date) {
+  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+}
+function clockMinutes(value: string, fallback: number) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return fallback;
+  const hours = Number(match[1]), minutes = Number(match[2]);
+  return hours <= 23 && minutes <= 59 ? hours * 60 + minutes : fallback;
+}
+
+/** Resolve the business date for a shop's trading session, including overnight shifts. */
+export function tradingDayFor(now = new Date(), start = '06:00', end = '21:00') {
+  const date = localDateString(now);
+  const minute = now.getHours() * 60 + now.getMinutes();
+  const startMinute = clockMinutes(start, 360);
+  const endMinute = clockMinutes(end, 1260);
+  if (startMinute === endMinute) return date;
+  if (startMinute < endMinute) return minute < startMinute ? addDays(date, -1) : date;
+  return minute >= startMinute ? date : addDays(date, -1);
+}
+
+/** Whether the shop is currently inside its configured trading window. */
+export function isWithinTradingHours(now = new Date(), start = '06:00', end = '21:00') {
+  const minute = now.getHours() * 60 + now.getMinutes();
+  const startMinute = clockMinutes(start, 360);
+  const endMinute = clockMinutes(end, 1260);
+  if (startMinute === endMinute) return true;
+  return startMinute < endMinute
+    ? minute >= startMinute && minute < endMinute
+    : minute >= startMinute || minute < endMinute;
+}
+
+/** Convert common dictated English/Kiswahili number words to digits before parsing entries. */
+export function normalizeSpokenNumbers(input: string) {
+  const words = 'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|and|moja|mbili|tatu|nne|tano|sita|saba|nane|tisa|kumi|ishirini|thelathini|arobaini|hamsini|sitini|sabini|themanini|tisini|mia|elfu|na';
+  const pattern = new RegExp('\\b(?:' + words + ')(?:[\\s-]+(?:' + words + '))*\\b', 'gi');
+  const units: Record<string, number> = {
+    zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9,
+    ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16,
+    seventeen:17, eighteen:18, nineteen:19, moja:1, mbili:2, tatu:3, nne:4, tano:5,
+    sita:6, saba:7, nane:8, tisa:9, kumi:10,
+  };
+  const tens: Record<string, number> = {
+    twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90,
+    ishirini:20, thelathini:30, arobaini:40, hamsini:50, sitini:60, sabini:70, themanini:80, tisini:90,
+  };
+  return input.replace(pattern, phrase => {
+    const tokens = phrase.toLowerCase().split(/[\\s-]+/).filter(token => token !== 'and' && token !== 'na');
+    let total = 0, group = 0, pendingMultiplier = 0;
+    for (const token of tokens) {
+      if (units[token] !== undefined) {
+        group += units[token] * (pendingMultiplier || 1);
+        pendingMultiplier = 0;
+      } else if (tens[token] !== undefined) {
+        group += tens[token] * (pendingMultiplier || 1);
+        pendingMultiplier = 0;
+      } else if (token === 'hundred' || token === 'mia') {
+        if (group) group *= 100;
+        else pendingMultiplier = 100;
+      } else if (token === 'thousand' || token === 'elfu') {
+        if (group) { total += group * 1000; group = 0; }
+        else pendingMultiplier = 1000;
+      }
+    }
+    return String(total + group);
+  });
+}
 export function normalizeKenyanWhatsAppNumber(raw: string): string | null {
   const digits = raw.replace(/\D/g, '');
   if (/^0[17]\d{8}$/.test(digits)) return '254' + digits.slice(1);
@@ -96,8 +164,8 @@ const nameFromText = (text: string, data: AppData) => {
   const lower = text.toLowerCase();
   const known = data.customers.find(c => lower.includes(c.name.toLowerCase()));
   if (known) return known.name;
-  const match = text.match(/\b(?:customer\s+)?([A-Z][a-z]{2,})\b/);
-  if (match && !/^(I|Kamau|Njeri|Otieno|Wanjiku|Hassan|Supplier|Bought|Paid|Cash|Sale|Today|Tomorrow)$/i.test(match[1])) return match[1];
+  const match = text.match(/\b(?:customer\s+)?([A-Z][a-z]{2,})\b/i);
+  if (match && !/^(I|we|my|our|Kamau|Njeri|Otieno|Wanjiku|Hassan|Supplier|Bought|Paid|Cash|Sale|Today|Tomorrow|Two|One|Three|Four|Five)$/i.test(match[1])) return match[1];
   if (/kamau/i.test(text)) return 'Kamau';
   return undefined;
 };
@@ -106,7 +174,7 @@ function findAmount(text: string): { amount: number; quantity?: number } {
   const amountPattern = /(?:kes|ksh|kshs|bob|shillings?|ya|kwa|for|worth|of)\s*(\d[\d,]*(?:\.\d{1,2})?)/gi;
   const explicit: number[] = [];
   for (const match of text.matchAll(amountPattern)) explicit.push(Number(match[1].replaceAll(',', '')));
-  const quantityMatch = text.match(/\b(\d+)\s*(kg|kilos?|packets?|pieces?|pcs|litres?|liters?|bars?|bottles?|loaf|loaves|sachets?|trays?|crates?|cartons?|dozen|rolls?|tins?|cups?|bags?|bundles?|units?)\b/i);
+  const quantityMatch = text.match(/\b(\d+)\s*(kg|kgs|kilograms?|kilos?|packets?|pieces?|pcs|litres?|liters?|bars?|bottles?|loaf|loaves|sachets?|trays?|crates?|cartons?|dozen|rolls?|tins?|cups?|bags?|bundles?|units?)\b/i);
   const all = [...text.matchAll(/\b\d[\d,]*(?:\.\d{1,2})?\b/g)].map(m => ({ raw: m[0], value: Number(m[0].replaceAll(',', '')), index: m.index ?? 0 }));
   let amount = explicit.find(v => v > 0) ?? 0;
   if (!amount && all.length) {
@@ -134,13 +202,14 @@ function dueDateFromText(text: string) {
 }
 
 export function parseTransaction(input: string, data: AppData): TransactionDraft | null {
-  const text = input.trim().replace(/\s+/g, ' ');
+  const text = normalizeSpokenNumbers(input).trim().replace(/\s+/g, ' ');
   if (text.length < 2) return null;
   const lower = text.toLowerCase();
   const { amount, quantity } = findAmount(text);
   if (!amount) return null;
 
-  const payment = /paid.*debt|paid.*back|alilipa.*deni|amelipa.*deni|deni yake|payment received|received.*payment|paid the balance|lipa deni/.test(lower);
+  const namedPayment = /^([a-z][a-z'-]{2,})\s+(?:has\s+)?(?:paid|payed|amelipa|alilipa)\b/i.test(text) && !/^(i|we|my|the shop)\b/i.test(text);
+  const payment = /paid.*debt|paid.*back|alilipa.*deni|amelipa.*deni|deni yake|payment received|received.*payment|paid the balance|lipa deni/.test(lower) || namedPayment;
   const credit = !payment && /on credit|credit|alichukua|amechukua|took\b|pay later|ata.?lipa|kwa deni|deni|will pay/.test(lower);
   const expense = !payment && !credit && /supplier|nilinunua|nimenunua|bought|purchase|nililipa|paid supplier|umeme|electricity|rent|fuel|transport|expense|matumizi|bill|bill ilikuwa/.test(lower);
   const type: TransactionType = payment ? 'payment' : credit ? 'credit' : expense ? 'expense' : 'sale';
@@ -181,7 +250,7 @@ export function parseTransaction(input: string, data: AppData): TransactionDraft
 
 export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly', reportDate: string) {
   const from = period === 'daily' ? reportDate : period === 'weekly' ? addDays(reportDate, -6) : `${reportDate.slice(0, 7)}-01`;
-  const tx = data.transactions.filter(t => t.date >= from && t.date <= reportDate);
+  const tx = data.transactions.filter(t => (t.tradingDay ?? t.date) >= from && (t.tradingDay ?? t.date) <= reportDate);
   const inTotal = cashIn(tx);
   const outTotal = cashOut(tx);
   const credit = creditGiven(tx);
