@@ -101,3 +101,21 @@ test('versioned backups and legacy local data are accepted, malformed rows are r
   assert.equal(parseBackupPayload(malformed), null);
   assert.equal(parseBackupPayload({ format: 'hesabu-backup', version: 99, data }), null);
 });
+
+
+test('linked customer and stock reminders survive backup export and restore', () => {
+  const linked = structuredClone(data);
+  const customerId = linked.customers[0].id;
+  const stockItemId = linked.stock[0].id;
+  linked.reminders = [
+    ...linked.reminders,
+    { id: 'rem-debt-link', title: 'Follow up with customer', dueDate: '2026-11-08', kind: 'customer', customerId, done: false },
+    { id: 'rem-stock-link', title: 'Reorder flour', dueDate: '2026-11-08', kind: 'other', stockItemId, done: false },
+  ];
+  const restored = parseBackupPayload(createBackupEnvelope(linked, '2026-11-07T19:00:00.000Z'));
+  assert.equal(restored?.reminders.find(reminder => reminder.id === 'rem-debt-link')?.customerId, customerId);
+  assert.equal(restored?.reminders.find(reminder => reminder.id === 'rem-stock-link')?.stockItemId, stockItemId);
+  const malformed = structuredClone(linked);
+  malformed.reminders[0].stockItemId = 42;
+  assert.equal(parseBackupPayload(malformed), null);
+});
