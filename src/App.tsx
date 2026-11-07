@@ -629,7 +629,7 @@ function App() {
           <button className="ledger-action ledger-action-credit" onClick={() => { setTypeChoice('credit'); setPending(null); setQuickEntryOpen(true); }}><span className="ledger-action-icon"><HandCoins size={18} /></span><span>On credit</span></button>
         </div></section>
         <button className="voice-entry-launch" onClick={() => { setQuickEntryOpen(true); if (voiceState === 'listening') recognitionRef.current?.stop(); else startVoice(); }}><span className="voice-entry-icon"><Mic size={19} /></span><span className="voice-entry-copy"><strong>Speak a sale or expense</strong><small>Try “two kilos of sugar, two hundred, cash”</small></span><span className="voice-entry-action">{voiceState === 'listening' ? 'Stop' : 'Speak'} <ChevronRight size={16} /></span></button>
-        {!shopIsOpen && todayTransactions.length > 0 && <section className="day-close-banner"><div><strong>Trading day closed</strong><span>{todayTransactions.length} {todayTransactions.length === 1 ? 'entry is' : 'entries are'} ready for your end-of-day report.</span></div><button onClick={() => { setReportDate(tradingDate); setReportPeriod('daily'); navigate('more'); }}>Review report <ChevronRight size={15} /></button></section>}
+        {!shopIsOpen && todayTransactions.length > 0 && <section className="day-close-banner"><div><strong>{currentDailyClose ? 'Till count saved' : 'Trading day closed'}</strong><span>{currentDailyClose ? `Expected ${money(currentDailyClose.expectedCash)} · Counted ${money(currentDailyClose.countedCash)}` : `${todayTransactions.length} ${todayTransactions.length === 1 ? 'entry is' : 'entries are'} ready for closing count.`}</span></div><button onClick={() => setModal({ kind: 'daily-close', date: tradingDate })}>{currentDailyClose ? 'Review count' : 'Count till & close'} <ChevronRight size={15} /></button></section>}
         {storageWriteFailed && <div className="storage-error-inline" role="status">Some changes may not be saved on this device. Open More and download a backup.</div>}
         {quickEntryOpen && <section id="transaction-entry" className="surface ledger-entry-panel">
           <div className="ledger-entry-heading"><div><div className="ledger-section-label">NEW RECORD</div><h2>{pending ? 'Review this entry' : 'Record a transaction'}</h2><p>Check the details before the entry is added to your book.</p></div><button className="ledger-close-entry" onClick={() => { setQuickEntryOpen(false); setPending(null); }} aria-label="Close transaction form">×</button></div>
@@ -639,7 +639,7 @@ function App() {
             <Field label="Amount (KES)" value={quickAmount} onChange={setQuickAmount} placeholder="0" type="number" min={1} required inputMode="numeric" />
             {(typeChoice === 'credit' || typeChoice === 'payment') && <Field label={typeChoice === 'credit' ? 'Customer name' : 'Who paid you?'} value={quickPerson} onChange={setQuickPerson} placeholder="Enter customer name" required />}
             {typeChoice === 'credit' && <Field label="When should they pay? (optional)" value={quickDueDate} onChange={setQuickDueDate} type="date" />}
-            {(typeChoice === 'sale' || typeChoice === 'payment') && <div className="simple-payment-choice"><span>Paid by</span><div><button type="button" onClick={() => setPaymentMethodChoice('cash')} className={paymentMethodChoice === 'cash' ? 'selected' : ''}>Cash</button><button type="button" onClick={() => setPaymentMethodChoice('mpesa')} className={paymentMethodChoice === 'mpesa' ? 'selected' : ''}>M-Pesa</button></div></div>}
+            {(typeChoice === 'sale' || typeChoice === 'payment' || typeChoice === 'expense') && <div className="simple-payment-choice"><span>{typeChoice === 'expense' ? 'Paid using' : 'Paid by'}</span><div><button type="button" onClick={() => setPaymentMethodChoice('cash')} className={paymentMethodChoice === 'cash' ? 'selected' : ''}>Cash</button><button type="button" onClick={() => setPaymentMethodChoice('mpesa')} className={paymentMethodChoice === 'mpesa' ? 'selected' : ''}>M-Pesa</button></div></div>}
             <div className="simple-form-actions"><Button type="submit" className="flex-1"><Check size={16} />Review entry</Button><button type="button" className="clear-entry" onClick={() => { setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setPending(null); setTypeChoice('sale'); setPaymentMethodChoice('cash'); }}>Clear</button></div>
           </form>
           {pending && <div className="draft-review" aria-live="polite"><div className="simple-review-heading">Review before saving</div><div className="draft-review-grid"><div><span>Type</span><strong>{TYPE_META[pending.type].label}</strong></div><div><span>Amount</span><strong>{money(pending.amount)}</strong></div><div><span>Description</span><strong>{pending.description}</strong></div>{pending.customerName && <div><span>Customer</span><strong>{pending.customerName}</strong></div>}{pending.paymentMethod && <div><span>Payment method</span><strong>{pending.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'}</strong></div>}{pending.dueDate && <div><span>Due date</span><strong>{dateText(pending.dueDate, { day: 'numeric', month: 'short', year: 'numeric' })}</strong></div>}</div>{pending.type === 'credit' && <p className="simple-review-note">This amount has not been received yet. It will be added to the customer’s balance.</p>}{pendingStockExceedsCount && pendingStockItem && <p className="simple-review-warning">Only {pendingStockItem.quantity} {pendingStockItem.unit} are in the stock record. Saving will bring the recorded quantity to zero.</p>}<div className="simple-form-actions"><Button onClick={() => applyTransaction(pending)} className="flex-1"><Check size={15} />Confirm and save</Button><Button variant="outline" onClick={() => setModal({ kind: 'edit-draft' })}>Edit fields</Button><button type="button" className="clear-entry" onClick={() => setPending(null)}>Cancel</button></div></div>}
@@ -670,6 +670,7 @@ function App() {
     {modal?.kind === 'reminder' && <ReminderModal reminder={modal.reminder} link={modal.link ?? (modal.reminder?.customerId ? { customerId: modal.reminder.customerId, label: data.customers.find(customer => customer.id === modal.reminder?.customerId)?.name ?? 'Customer', kind: 'customer' as const } : modal.reminder?.stockItemId ? { stockItemId: modal.reminder.stockItemId, label: data.stock.find(item => item.id === modal.reminder?.stockItemId)?.name ?? 'Stock item', kind: 'other' as const } : undefined)} onClose={closeModal} onSave={values => saveReminder(values, modal.reminder)} onDelete={deleteReminder} />}
     {modal?.kind === 'profile' && <ProfileModal data={data} onClose={closeModal} onSave={updateProfile} />}
     {modal?.kind === 'settings' && <SettingsModal shopInfo={data.shopInfo} onSaveTradingHours={(start, end) => { updateData(current => ({ ...current, shopInfo: { ...current.shopInfo, tradingDayStart: start, tradingDayEnd: end } })); notify('Trading hours saved. New entries will use this business day.'); }} onClose={closeModal} onReset={resetDemo} onProfile={() => setModal({ kind: 'profile' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} lastBackupAt={lastBackupAt} storageProtection={storageProtection} onProtectStorage={protectDeviceStorage} />}
+    {modal?.kind === 'daily-close' && <DailyCloseModal data={data} date={modal.date} existing={data.dailyCloses?.find(close => close.date === modal.date)} onClose={closeModal} onSave={saveDailyClose} />}
     {modal?.kind === 'edit-draft' && pending && <EditDraftModal draft={pending} items={data.stock} onClose={closeModal} onSave={editDraft} />}
     {modal?.kind === 'transaction' && data.transactions.find(t => t.id === modal.transactionId) && <TransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} customer={data.customers.find(c => c.id === data.transactions.find(t => t.id === modal.transactionId)?.customerId)} onClose={closeModal} onEdit={transaction => setModal({ kind: 'edit-transaction', transactionId: transaction.id })} onDelete={deleteTransaction} onShareReceipt={transaction => shareReceipt(transaction, data.customers.find(c => c.id === transaction.customerId))} />}
     {modal?.kind === 'edit-transaction' && data.transactions.find(t => t.id === modal.transactionId) && <EditTransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} onClose={closeModal} onSave={saveTransactionEdit} />}
@@ -1010,6 +1011,37 @@ function TransactionModal({ transaction, customer, onClose, onEdit, onDelete, on
   </Modal>;
 }
 
+
+
+function DailyCloseModal({ data, date, existing, onClose, onSave }: {
+  data: AppData; date: string; existing?: DailyClose; onClose: () => void; onSave: (date: string, openingCash: number, countedCash: number) => void;
+}) {
+  const transactions = data.transactions.filter(tx => (tx.tradingDay ?? tx.date) === date);
+  const [openingCash, setOpeningCash] = useState(String(existing?.openingCash ?? suggestedOpeningCash(data.dailyCloses ?? [], date)));
+  const [countedCash, setCountedCash] = useState(existing ? String(existing.countedCash) : '');
+  const expected = expectedDrawerCash(data, date, Math.max(0, Number(openingCash) || 0));
+  const drawerIn = drawerCashIn(transactions);
+  const drawerOut = drawerCashOut(transactions);
+  const difference = countedCash.trim() ? Number(countedCash) - expected : null;
+  return <Modal title="Close the till" detail={dateText(date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' · Check the physical cash before saving.'} onClose={onClose}>
+    <div className="till-close-breakdown">
+      <div><span>Opening cash / float</span><strong>{money(Math.max(0, Number(openingCash) || 0))}</strong></div>
+      <div><span>Cash sales and repayments</span><strong className="till-positive">+{money(drawerIn)}</strong></div>
+      <div><span>Cash expenses</span><strong className="till-negative">−{money(drawerOut)}</strong></div>
+      <div className="till-expected"><span>Expected cash in drawer</span><strong>{money(expected)}</strong></div>
+    </div>
+    <form className="space-y-4" onSubmit={event => { event.preventDefault(); if (countedCash.trim() && Number.isFinite(Number(countedCash)) && Number(countedCash) >= 0) onSave(date, Number(openingCash) || 0, Number(countedCash)); }}>
+      <Field label="Opening cash / float (KES)" value={openingCash} onChange={setOpeningCash} type="number" min={0} inputMode="numeric" help="The cash already in the till when this trading day began. You can change the suggested amount." />
+      <Field label="Cash you counted in the drawer (KES)" value={countedCash} onChange={setCountedCash} type="number" min={0} inputMode="numeric" placeholder="Count the notes and coins" required />
+      {difference !== null && Number.isFinite(difference) && <div className={cn('till-difference', difference === 0 ? 'till-balanced' : 'till-unbalanced')}>
+        <span>{difference === 0 ? 'The till balances' : difference > 0 ? 'More cash than expected' : 'Cash is short'}</span>
+        <strong>{difference > 0 ? '+' : difference < 0 ? '−' : ''}{money(Math.abs(difference))}</strong>
+      </div>}
+      <p className="simple-review-note">M-Pesa is not counted as cash in the drawer. This is a cash check, not a profit calculation.</p>
+      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!countedCash.trim() || !Number.isFinite(Number(countedCash)) || Number(countedCash) < 0}><Check size={15} /> Save closing count</Button></div>
+    </form>
+  </Modal>;
+}
 
 function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUseDemo: () => void; onCreateShop: (values: { name: string; owner: string; phone: string; businessType: string }) => void }) {
   const [name, setName] = useState('');
