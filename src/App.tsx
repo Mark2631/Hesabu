@@ -648,6 +648,7 @@ function MoreSection({ report, reportPeriod, setReportPeriod, reportDate, setRep
   report: ReturnType<typeof buildReport>; reportPeriod: 'daily'|'weekly'|'monthly'; setReportPeriod: (value:'daily'|'weekly'|'monthly')=>void;
   reportDate:string; setReportDate:(value:string)=>void; onShareReport:()=>void; onCopyReport:()=>void; onPrintReport:()=>void;
   reminders:Reminder[]; onToggleReminder:(reminder:Reminder)=>void; onEditReminder:(reminder:Reminder)=>void; onAddReminder:()=>void;
+  onOpenRecord:(reminder:Reminder)=>void; customers:Customer[]; stock:StockItem[];
   onExportBackup:()=>void; onExportCsv:()=>void; onImportBackup:(file:File)=>void; onSettings:()=>void;
   lastBackupAt:string|null; storageWriteFailed:boolean; storageProtection:'checking'|'protected'|'standard'|'unsupported';
 }) {
