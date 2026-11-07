@@ -8,6 +8,8 @@ export interface ShopInfo {
   owner: string;
   phone: string;
   businessType: string;
+  tradingDayStart?: string;
+  tradingDayEnd?: string;
 }
 
 export interface Transaction {
@@ -16,6 +18,7 @@ export interface Transaction {
   description: string;
   amount: number;
   date: string;
+  tradingDay?: string;
   time: string;
   paymentMethod?: PaymentMethod;
   customerId?: string;
