@@ -1489,3 +1489,6 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:3px soli
 .voice-language-row > div { display:inline-flex;align-items:center;gap:4px;padding:3px;border:1px solid #E2E6EC;border-radius:7px;background:#F8F9FB; }
 .voice-language-row button { min-height:29px;padding:0 9px;border:0;border-radius:5px;background:transparent;color:#788191;font-size:10px;font-weight:700; }
 .voice-language-row button.voice-language-active { background:#fff;color:#285BC5;box-shadow:0 1px 3px rgba(35,52,82,.12); }
+
+.voice-home-control { display:flex;flex-direction:column;align-items:stretch;gap:7px; }
+.voice-language-home { justify-content:flex-end;margin:0 2px 0 auto; }
