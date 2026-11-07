@@ -130,7 +130,7 @@ function TransactionRow({ transaction, onClick, onDelete, compact = false }: { t
       <ToneDot type={transaction.type} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-bold leading-[1.35] text-hesabu-ink">{transaction.customerName && transaction.type === 'credit' ? `${transaction.customerName} · ${transaction.description}` : transaction.description}</span>
-        <span className="mt-1 block truncate text-[12px] text-hesabu-muted">{timeText(transaction.time)} · {transactionLabel[transaction.type]}{(transaction.type === 'sale' || transaction.type === 'payment') ? ` · ${transaction.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'}` : ''}</span>
+        <span className="mt-1 block truncate text-[12px] text-hesabu-muted">{timeText(transaction.time)} · {transactionLabel[transaction.type]}{(transaction.type === 'sale' || transaction.type === 'payment' || transaction.type === 'expense') ? ` · ${transaction.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'}` : ''}</span>
       </span>
       <span className="ml-2 shrink-0 text-right">
         <span className={cn('block text-[13px] font-bold tabular-nums', `amount-${transaction.type}`)}>{prefix}{money(transaction.amount)}</span>
@@ -816,6 +816,7 @@ function ReportsSection({ online, queuedReportDate, report, reportPeriod, setRep
           <div><span>New credit</span><b>{money(report.credit)}</b></div>
           <div><span>Money left after expenses</span><b>{money(report.net)}</b></div>
         </div>
+        {report.dailyClose && <section className="report-till-summary"><div><span className="ledger-section-label">TILL RECONCILIATION</span><strong>{report.dailyClose.difference === 0 ? 'Till balanced' : report.dailyClose.difference > 0 ? 'Cash over' : 'Cash short'}</strong></div><div><span>Expected</span><b>{money(report.dailyClose.expectedCash)}</b></div><div><span>Counted</span><b>{money(report.dailyClose.countedCash)}</b></div><div><span>Difference</span><b className={report.dailyClose.difference === 0 ? 'till-positive' : 'till-negative'}>{report.dailyClose.difference > 0 ? '+' : report.dailyClose.difference < 0 ? '−' : ''}{money(Math.abs(report.dailyClose.difference))}</b></div></section>}
         <p className="simple-review-note">Money left is not the same as profit. This report does not calculate the cost of every item sold.</p>
         <p className="report-connect-note">{!online ? 'You are offline. This report is saved on this phone; connect to the internet before sharing.' : queuedReportDate ? 'Your saved report is ready. Review it, then share it on WhatsApp.' : 'Your records stay on this phone. WhatsApp opens only when you choose to share.'}</p><div className="report-share-actions"><Button onClick={onShare}>{online ? 'Share on WhatsApp' : 'Save to share later'}</Button><Button variant="outline" onClick={onCopy}>Copy report</Button><Button variant="secondary" onClick={onPrint}><FileText size={14}/> Print / save PDF</Button></div>
       </section>
@@ -823,7 +824,7 @@ function ReportsSection({ online, queuedReportDate, report, reportPeriod, setRep
       <section className="surface report-entry-list">
         <h2 className="surface-title">Entries in this report</h2>
         <p className="surface-subtitle">{report.transactions.length} entries recorded.</p>
-        {report.transactions.length ? <div className="simple-list">{report.transactions.map(tx => <div key={tx.id}><span>{tx.description}<small>{dateText(tx.date)} · {TYPE_META[tx.type].label}{tx.customerName ? ' · ' + tx.customerName : ''}</small></span><strong>{money(tx.amount)}</strong></div>)}</div> : <p className="simple-empty">No entries for this period.</p>}
+        {report.transactions.length ? <div className="simple-list">{report.transactions.map(tx => <div key={tx.id}><span>{tx.description}<small>{dateText(tx.date)} · {TYPE_META[tx.type].label}{tx.customerName ? ' · ' + tx.customerName : ''}{(tx.type === 'sale' || tx.type === 'payment' || tx.type === 'expense') ? ' · ' + (tx.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash') : ''}</small></span><strong>{money(tx.amount)}</strong></div>)}</div> : <p className="simple-empty">No entries for this period.</p>}
       </section>
 
       <section className="surface report-entry-list">
