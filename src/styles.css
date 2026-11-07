@@ -585,8 +585,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .transaction-icon { width: 32px; height: 32px; display: inline-flex; flex: none; align-items: center; justify-content: center; border-radius: 8px; }
 .transaction-icon svg { display: block; }
 .tone-green { color: #28704b; background: #eaf3ec; }.tone-amber { color: #9a7436; background: #f7f1e5; }.tone-red { color: #a9584e; background: #f9eeeb; }.tone-blue { color: #52708a; background: #edf3f7; }
-.transaction-row .block.text-\\[13px\\] { color: #2b3b30; font-size: 12px; font-weight: 680; }
-.transaction-row .text-\\[12px\\] { color: #929d95; font-size: 10px; }
 .amount-sale, .amount-payment { color: #286b49; }.amount-credit { color: #9a7436; }.amount-expense { color: #a9584e; }
 .transaction-delete { min-width: 40px; padding: 5px; border: 0; border-radius: 6px; color: #9aa49c; background: transparent; font-size: 9px; opacity: .45; }
 .transaction-delete:hover { color: #a34e46; background: #faefed; opacity: 1; }
@@ -1215,7 +1213,7 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:3px soli
 .profile-menu button:hover { color:#285BC5; }
 .brand-mark { background:#285BC5; border-radius:8px; }
 .brand-mark::before { background:#BDD0F7; }
-.mobile-nav { border-top:1px solid #E2E1DC; background:rgba(250,249,246,.98); box-shadow:0 -5px 18px rgba(35,44,58,.035); }
+.mobile-nav { grid-template-columns:repeat(5,minmax(0,1fr)); border-top:1px solid #E2E1DC; background:rgba(250,249,246,.98); box-shadow:0 -5px 18px rgba(35,44,58,.035); }
 .mobile-nav-item { color:#828995; }
 .mobile-nav-active { color:#244FA7; }
 .mobile-nav-active .mobile-nav-icon { background:#EAF0FC; }
