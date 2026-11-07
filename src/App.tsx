@@ -621,7 +621,8 @@ function App() {
           <button className="ledger-action ledger-action-credit" onClick={() => { setTypeChoice('credit'); setPending(null); setQuickEntryOpen(true); }}><span className="ledger-action-icon"><HandCoins size={18} /></span><span>On credit</span></button>
         </div></section>
         <button className="voice-entry-launch" onClick={() => { setQuickEntryOpen(true); if (voiceState === 'listening') recognitionRef.current?.stop(); else startVoice(); }}><span className="voice-entry-icon"><Mic size={19} /></span><span className="voice-entry-copy"><strong>Speak a sale or expense</strong><small>Try “two kilos of sugar, two hundred, cash”</small></span><span className="voice-entry-action">{voiceState === 'listening' ? 'Stop' : 'Speak'} <ChevronRight size={16} /></span></button>
-        {!shopIsOpen && todayTransactions.length > 0 && <section className="day-close-banner"><div><strong>Trading day closed</strong><span>{todayTransactions.length} {todayTransactions.length === 1 ? 'entry is' : 'entries are'} ready for your end-of-day report.</span></div><button onClick={() => { setReportDate(tradingDate); setReportPeriod('daily'); navigate('more'); }}>Review report <ChevronRight size={15} /></button></section>}\n        {storageWriteFailed && <div className="storage-error-inline" role="status">Some changes may not be saved on this device. Open More and download a backup.</div>}
+        {!shopIsOpen && todayTransactions.length > 0 && <section className="day-close-banner"><div><strong>Trading day closed</strong><span>{todayTransactions.length} {todayTransactions.length === 1 ? 'entry is' : 'entries are'} ready for your end-of-day report.</span></div><button onClick={() => { setReportDate(tradingDate); setReportPeriod('daily'); navigate('more'); }}>Review report <ChevronRight size={15} /></button></section>}
+        {storageWriteFailed && <div className="storage-error-inline" role="status">Some changes may not be saved on this device. Open More and download a backup.</div>}
         {quickEntryOpen && <section id="transaction-entry" className="surface ledger-entry-panel">
           <div className="ledger-entry-heading"><div><div className="ledger-section-label">NEW RECORD</div><h2>{pending ? 'Review this entry' : 'Record a transaction'}</h2><p>Check the details before the entry is added to your book.</p></div><button className="ledger-close-entry" onClick={() => { setQuickEntryOpen(false); setPending(null); }} aria-label="Close transaction form">×</button></div>
           <div className="type-picker simple-type-picker" role="group" aria-label="What happened?">{(['sale', 'credit', 'expense', 'payment'] as const).map(type => { const Icon = TYPE_META[type].icon; return <button key={type} onClick={() => { setTypeChoice(type); setPending(null); }} className={cn('type-pick', typeChoice === type && 'type-pick-active')}><Icon size={16} strokeWidth={1.9} /><span>{TYPE_META[type].label}</span></button>; })}</div>
@@ -701,7 +702,8 @@ function LedgerSection({ transactions, filter, setFilter, search, setSearch, dat
   </>;
 }
 
-function MoreSection({ report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShareReport, onCopyReport, onPrintReport, reminders, onToggleReminder, onEditReminder, onAddReminder, onOpenRecord, customers, stock, onExportBackup, onExportCsv, onImportBackup, onSettings, lastBackupAt, storageWriteFailed, storageProtection }: {
+function MoreSection({ onStock, online, queuedReportDate, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShareReport, onCopyReport, onPrintReport, reminders, onToggleReminder, onEditReminder, onAddReminder, onOpenRecord, customers, stock, onExportBackup, onExportCsv, onImportBackup, onSettings, lastBackupAt, storageWriteFailed, storageProtection }: {
+  onStock: () => void; online: boolean; queuedReportDate: string | null;
   report: ReturnType<typeof buildReport>; reportPeriod: 'daily'|'weekly'|'monthly'; setReportPeriod: (value:'daily'|'weekly'|'monthly')=>void;
   reportDate:string; setReportDate:(value:string)=>void; onShareReport:()=>void; onCopyReport:()=>void; onPrintReport:()=>void;
   reminders:Reminder[]; onToggleReminder:(reminder:Reminder)=>void; onEditReminder:(reminder:Reminder)=>void; onAddReminder:()=>void;
@@ -710,8 +712,8 @@ function MoreSection({ report, reportPeriod, setReportPeriod, reportDate, setRep
   lastBackupAt:string|null; storageWriteFailed:boolean; storageProtection:'checking'|'protected'|'standard'|'unsupported';
 }) {
   const open=reminders.filter(r=>!r.done), done=reminders.filter(r=>r.done);
-  return <div className="more-page"><SectionTitle eyebrow="SHOP TOOLS" title="More" detail="Reports, reminders and copies of your shop records." />
-    <ReportsSection report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={onShareReport} onCopy={onCopyReport} onPrint={onPrintReport} />
+  return <div className="more-page"><SectionTitle eyebrow="SHOP TOOLS" title="More" detail="Reports, reminders, stock and copies of your shop records." right={<Button size="sm" variant="secondary" onClick={onStock}><Package size={14} /> Stock</Button>} />
+    <ReportsSection online={online} queuedReportDate={queuedReportDate} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={onShareReport} onCopy={onCopyReport} onPrint={onPrintReport} />
     <div className="more-tools-grid">
       <section className="surface more-tool-panel"><header className="more-tool-heading"><div><span className="ledger-section-label">FOLLOW THROUGH</span><h2>Reminders</h2><p>Tasks you can tick off when they are done.</p></div><Button size="sm" onClick={onAddReminder}><Plus size={14} /> Add</Button></header>
         {open.length ? <div className="reminder-task-list">{open.map(reminder=>{const customer=reminder.customerId?customers.find(item=>item.id===reminder.customerId):undefined;const item=reminder.stockItemId?stock.find(stockItem=>stockItem.id===reminder.stockItemId):undefined;return <div key={reminder.id} className="reminder-task"><button className="reminder-task-check" onClick={()=>onToggleReminder(reminder)} aria-label={`Mark ${reminder.title} as done`}><span /></button><button className="reminder-task-copy" onClick={()=>onEditReminder(reminder)}><strong>{reminder.title}</strong><small>{reminder.kind==='customer'?'Customer follow-up':reminder.kind==='supplier'?'Supplier':reminder.kind==='bill'?'Bill / expense':'Task'} · {daysUntil(reminder.dueDate)<0?'Overdue':daysUntil(reminder.dueDate)===0?'Today':daysUntil(reminder.dueDate)===1?'Tomorrow':dateText(reminder.dueDate,{day:'numeric',month:'short'})}</small>{customer&&<small className="reminder-linked-label">Debt · {customer.name}</small>}{item&&<small className="reminder-linked-label">Stock · {item.name}</small>}{reminder.detail&&<small>{reminder.detail}</small>}</button>{(customer||item)&&<button className="reminder-open-record" onClick={()=>onOpenRecord(reminder)}>Open</button>}{reminder.amount!==undefined&&<strong className="reminder-task-amount">{money(reminder.amount)}</strong>}</div>})}</div> : <EmptyState title="No reminders waiting" detail="Add a follow-up or bill so it is easy to find later." />}
@@ -779,7 +781,8 @@ function StockRow({ item, onEdit, onRestock, onAdjust, onReminder }: { item: Sto
   return <div className="stock-table-row"><div className="stock-row-name"><span className="stock-row-icon"><Package size={17}/></span><span><strong>{item.name}</strong><small>Reorder at {item.lowStockAt} {item.unit}</small></span></div><div className="stock-row-quantity"><strong>{item.quantity}</strong><small>{item.unit}</small></div><StockStatus item={item}/><div className="stock-row-actions"><button onClick={onRestock}><Plus size={14}/> Restock</button><button onClick={onAdjust}>Adjust</button><button onClick={onReminder}>Remind</button><button onClick={onEdit}>Edit</button></div></div>;
 }
 
-function ReportsSection({ report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onCopy, onPrint }: {
+function ReportsSection({ online, queuedReportDate, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onCopy, onPrint }: {
+  online: boolean; queuedReportDate: string | null;
   report: ReturnType<typeof buildReport>; reportPeriod: 'daily' | 'weekly' | 'monthly'; setReportPeriod: (v: 'daily' | 'weekly' | 'monthly') => void;
   reportDate: string; setReportDate: (v: string) => void; onShare: () => void; onCopy: () => void; onPrint: () => void;
 }) {
@@ -805,7 +808,7 @@ function ReportsSection({ report, reportPeriod, setReportPeriod, reportDate, set
           <div><span>Money left after expenses</span><b>{money(report.net)}</b></div>
         </div>
         <p className="simple-review-note">Money left is not the same as profit. This report does not calculate the cost of every item sold.</p>
-        <div className="report-share-actions"><Button onClick={onShare}>Share on WhatsApp</Button><Button variant="outline" onClick={onCopy}>Copy report</Button><Button variant="secondary" onClick={onPrint}><FileText size={14}/> Print / save PDF</Button></div>
+        <p className="report-connect-note">{!online ? 'You are offline. This report is saved on this phone; connect to the internet before sharing.' : queuedReportDate ? 'Your saved report is ready. Review it, then share it on WhatsApp.' : 'Your records stay on this phone. WhatsApp opens only when you choose to share.'}</p><div className="report-share-actions"><Button onClick={onShare}>{online ? 'Share on WhatsApp' : 'Save to share later'}</Button><Button variant="outline" onClick={onCopy}>Copy report</Button><Button variant="secondary" onClick={onPrint}><FileText size={14}/> Print / save PDF</Button></div>
       </section>
 
       <section className="surface report-entry-list">
@@ -927,8 +930,19 @@ function ProfileModal({ data, onClose, onSave }: { data: AppData; onClose: () =>
   </Modal>;
 }
 
-function SettingsModal({ onClose, onReset, onProfile, onExportBackup, onExportCsv, onImportBackup, lastBackupAt, storageProtection, onProtectStorage }: { onClose: () => void; onReset: () => void; onProfile: () => void; onExportBackup: () => void; onExportCsv: () => void; onImportBackup: (file: File) => void; lastBackupAt: string | null; storageProtection: 'checking' | 'protected' | 'standard' | 'unsupported'; onProtectStorage: () => void }) {
-  return <Modal title="Settings" detail="Shop details and saved records." onClose={onClose}>
+function SettingsModal({ shopInfo, onSaveTradingHours, onClose, onReset, onProfile, onExportBackup, onExportCsv, onImportBackup, lastBackupAt, storageProtection, onProtectStorage }: { shopInfo: AppData['shopInfo']; onSaveTradingHours: (start: string, end: string) => void; onClose: () => void; onReset: () => void; onProfile: () => void; onExportBackup: () => void; onExportCsv: () => void; onImportBackup: (file: File) => void; lastBackupAt: string | null; storageProtection: 'checking' | 'protected' | 'standard' | 'unsupported'; onProtectStorage: () => void }) {
+  const [start, setStart] = useState(shopInfo.tradingDayStart ?? '06:00');
+  const [end, setEnd] = useState(shopInfo.tradingDayEnd ?? '21:00');
+  return <Modal title="Settings" detail="Shop hours, shop details and saved records." onClose={onClose}>
+    <section className="settings-hours-card">
+      <div><strong>Trading hours</strong><p>Choose when one shop day starts and ends. Overnight hours are supported.</p></div>
+      <form onSubmit={event => { event.preventDefault(); onSaveTradingHours(start, end); }}>
+        <label><span>Opens at</span><input type="time" value={start} onChange={event => setStart(event.target.value)} required /></label>
+        <label><span>Closes at</span><input type="time" value={end} onChange={event => setEnd(event.target.value)} required /></label>
+        <Button type="submit" size="sm"><Check size={14} /> Save hours</Button>
+      </form>
+      <small>For example: 6:00 a.m. to 9:00 p.m., or 9:00 p.m. to 6:00 a.m. The day-end report follows these hours.</small>
+    </section>
     <div className="settings-list">
       <button onClick={onProfile}><span className="settings-item-icon"><Store size={17} /></span><span><b>Shop profile</b><small>Name, phone number and business type</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
       <div className="settings-info"><span className="settings-item-icon"><Settings2 size={17} /></span><span><b>Your shop book stays on this device</b><small>It will not appear on another phone. Download a backup so you can restore it if needed.</small></span></div>
