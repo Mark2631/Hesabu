@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   ArrowDownLeft, ArrowUpRight, Bell, BookOpen, Check, CheckCircle2, ChevronRight, ClipboardList,
   FileSpreadsheet, FileText, HandCoins, House, Mic, MoreHorizontal, Package, Plus, Download, RotateCcw, Settings2,
@@ -6,13 +6,12 @@ import {
 } from 'lucide-react';
 import { createBackupEnvelope, hasSavedData, makeDemoData, markBackupAt, parseBackupPayload, readLastBackupAt, readSavedData, saveData } from './data';
 import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, fullDateText, id, money, normalizeKenyanWhatsAppNumber, parseTransaction, receiptMessage, shortDay, timeText, today, transactionLabel, whatsAppUrl } from './utils';
+import { addDays, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, fullDateText, id, isWithinTradingHours, money, normalizeKenyanWhatsAppNumber, normalizeSpokenNumbers, parseTransaction, receiptMessage, shortDay, timeText, today, tradingDayFor, transactionLabel, whatsAppUrl } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
-  { id: 'home', label: 'Home', icon: House },
-  { id: 'ledger', label: 'Ledger', icon: BookOpen },
-  { id: 'debts', label: 'Debts', icon: Users },
-  { id: 'stock', label: 'Stock', icon: Package },
+  { id: 'home', label: 'Today', icon: House },
+  { id: 'ledger', label: 'Book', icon: BookOpen },
+  { id: 'debts', label: 'People', icon: Users },
   { id: 'more', label: 'More', icon: MoreHorizontal },
 ];
 
@@ -160,6 +159,7 @@ function App() {
   const [quickPerson, setQuickPerson] = useState('');
   const [quickDueDate, setQuickDueDate] = useState('');
   const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'unsupported'>('idle');
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceLanguage = 'en-KE';
   const [typeChoice, setTypeChoice] = useState<TransactionType | 'auto'>('sale');
   const [paymentMethodChoice, setPaymentMethodChoice] = useState<'cash' | 'mpesa'>('cash');
@@ -169,14 +169,33 @@ function App() {
   const [query, setQuery] = useState('');
   const [debtDirection, setDebtDirection] = useState<'owed-to-us' | 'we-owe'>('owed-to-us');
   const [reportPeriod, setReportPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [reportDate, setReportDate] = useState(today());
+  const [reportDate, setReportDate] = useState(() => tradingDayFor(new Date(), data.shopInfo.tradingDayStart ?? '06:00', data.shopInfo.tradingDayEnd ?? '21:00'));
   const [toastMessage, setToastMessage] = useState('');
   const [filterTransactions, setFilterTransactions] = useState<'all' | 'cash' | 'mpesa' | 'credit' | 'expense'>('all');
   const [transactionSearch, setTransactionSearch] = useState('');
   const [ledgerDateFilter, setLedgerDateFilter] = useState('');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [clock, setClock] = useState(() => new Date());
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [queuedReportDate, setQueuedReportDate] = useState<string | null>(() => { try { return localStorage.getItem('hesabu:v1:queued-report') || null; } catch { return null; } });
 
   useEffect(() => { if (!showWelcome) setStorageWriteFailed(!saveData(data)); }, [data, showWelcome]);
+  useEffect(() => {
+    const refresh = () => setClock(new Date());
+    const network = () => setOnline(navigator.onLine);
+    const timer = window.setInterval(refresh, 15000);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', network);
+    window.addEventListener('offline', network);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('online', network); window.removeEventListener('offline', network); };
+  }, []);
+  useEffect(() => {
+    try { if (queuedReportDate) localStorage.setItem('hesabu:v1:queued-report', queuedReportDate); else localStorage.removeItem('hesabu:v1:queued-report'); } catch { /* The report remains available in this session. */ }
+  }, [queuedReportDate]);
+  useEffect(() => {
+    if (online && queuedReportDate) { setReportDate(queuedReportDate); setReportPeriod('daily'); }
+  }, [online, queuedReportDate]);
+  useEffect(() => () => { recognitionRef.current?.abort(); }, []);
   useEffect(() => {
     let active = true;
     if (!navigator.storage?.persisted) { setStorageProtection('unsupported'); return () => { active = false; }; }
@@ -205,13 +224,17 @@ function App() {
   };
   const createLocalShop = (values: { name: string; owner: string; phone: string; businessType: string }) => {
     const fresh: AppData = {
-      shopInfo: { name: values.name.trim(), owner: values.owner.trim(), phone: values.phone.trim(), businessType: values.businessType },
+      shopInfo: { name: values.name.trim(), owner: values.owner.trim(), phone: values.phone.trim(), businessType: values.businessType, tradingDayStart: '06:00', tradingDayEnd: '21:00' },
       transactions: [], customers: [], stock: [], reminders: [],
     };
     setData(fresh); saveData(fresh); setShowWelcome(false); setSection('home');
   };
 
-  const todayTransactions = useMemo(() => data.transactions.filter(t => t.date === today()), [data.transactions]);
+  const tradingStart = data.shopInfo.tradingDayStart ?? '06:00';
+  const tradingEnd = data.shopInfo.tradingDayEnd ?? '21:00';
+  const tradingDate = tradingDayFor(clock, tradingStart, tradingEnd);
+  const shopIsOpen = isWithinTradingHours(clock, tradingStart, tradingEnd);
+  const todayTransactions = useMemo(() => data.transactions.filter(t => (t.tradingDay ?? t.date) === tradingDate), [data.transactions, tradingDate]);
   const todaysIn = useMemo(() => cashIn(todayTransactions), [todayTransactions]);
   const todaysOut = useMemo(() => cashOut(todayTransactions), [todayTransactions]);
   const outstanding = useMemo(() => data.customers.filter(c => c.balance > 0).reduce((sum, c) => sum + c.balance, 0), [data.customers]);
@@ -240,7 +263,7 @@ function App() {
     const matchedStock = draft.stockItemName ? current.stock.find(s => s.name.toLowerCase() === draft.stockItemName?.toLowerCase()) : undefined;
     const txn: Transaction = {
       id: id('txn'), type: draft.type, description: draft.description.trim() || draft.summary,
-      amount: Math.max(0, Math.round(draft.amount)), date: today(), time: currentTime(),
+      amount: Math.max(0, Math.round(draft.amount)), date: today(), tradingDay: tradingDayFor(new Date(), current.shopInfo.tradingDayStart ?? '06:00', current.shopInfo.tradingDayEnd ?? '21:00'), time: currentTime(),
       customerId: customer?.id, customerName: createdName, dueDate: draft.dueDate,
       stockItemId: matchedStock?.id, stockQuantityDelta: draft.stockQuantityDelta,
       category: draft.category,
