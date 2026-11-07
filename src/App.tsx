@@ -5,8 +5,8 @@ import {
   Share2, SlidersHorizontal, Store, Upload, Trash2, Users, Wallet, type LucideIcon,
 } from 'lucide-react';
 import { createBackupEnvelope, hasSavedData, makeDemoData, markBackupAt, parseBackupPayload, readLastBackupAt, readSavedData, saveData } from './data';
-import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, fullDateText, id, isWithinTradingHours, money, normalizeKenyanWhatsAppNumber, normalizeSpokenNumbers, parseTransaction, receiptMessage, shortDay, timeText, today, tradingDayFor, transactionLabel, whatsAppUrl } from './utils';
+import type { AppData, Customer, DailyClose, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
+import { addDays, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, drawerCashIn, drawerCashOut, expectedDrawerCash, fullDateText, id, isWithinTradingHours, makeDailyClose, money, normalizeKenyanWhatsAppNumber, normalizeSpokenNumbers, parseTransaction, receiptMessage, shortDay, suggestedOpeningCash, timeText, today, tradingDayFor, transactionLabel, whatsAppUrl } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'home', label: 'Today', icon: House },
@@ -38,6 +38,7 @@ type ModalState =
   | { kind: 'transaction'; transactionId: string }
   | { kind: 'edit-transaction'; transactionId: string }
   | { kind: 'settings' }
+  | { kind: 'daily-close'; date: string }
   | null;
 
 function cn(...classes: Array<string | undefined | null | false>) { return classes.filter(Boolean).join(' '); }
@@ -217,6 +218,12 @@ function App() {
   const closeToast = () => setToastMessage('');
   const closeModal = () => setModal(null);
   const updateData = (updater: (current: AppData) => AppData) => setData(current => updater(current));
+  const saveDailyClose = (date: string, openingCash: number, countedCash: number) => {
+    const close = makeDailyClose(data, date, openingCash, countedCash);
+    updateData(current => ({ ...current, dailyCloses: [...(current.dailyCloses ?? []).filter(item => item.date !== date), close] }));
+    setModal(null);
+    notify(close.difference === 0 ? 'Till balanced. Closing count saved.' : 'Closing count saved. Check the difference before you finish.');
+  };
 
   const chooseDemo = () => {
     const demo = makeDemoData();
@@ -234,6 +241,7 @@ function App() {
   const tradingEnd = data.shopInfo.tradingDayEnd ?? '21:00';
   const tradingDate = tradingDayFor(clock, tradingStart, tradingEnd);
   const shopIsOpen = isWithinTradingHours(clock, tradingStart, tradingEnd);
+  const currentDailyClose = data.dailyCloses?.find(close => close.date === tradingDate);
   const todayTransactions = useMemo(() => data.transactions.filter(t => (t.tradingDay ?? t.date) === tradingDate), [data.transactions, tradingDate]);
   const todaysIn = useMemo(() => cashIn(todayTransactions), [todayTransactions]);
   const todaysOut = useMemo(() => cashOut(todayTransactions), [todayTransactions]);
@@ -267,7 +275,7 @@ function App() {
       customerId: customer?.id, customerName: createdName, dueDate: draft.dueDate,
       stockItemId: matchedStock?.id, stockQuantityDelta: draft.stockQuantityDelta,
       category: draft.category,
-      paymentMethod: draft.type === 'sale' || draft.type === 'payment' ? (draft.paymentMethod ?? 'cash') : undefined,
+      paymentMethod: draft.type === 'sale' || draft.type === 'payment' || draft.type === 'expense' ? (draft.paymentMethod ?? 'cash') : undefined,
     };
     const effectiveStockDelta = matchedStock && draft.stockQuantityDelta !== undefined && draft.stockQuantityDelta < 0
       ? -Math.min(matchedStock.quantity, Math.abs(draft.stockQuantityDelta))
@@ -302,7 +310,7 @@ function App() {
       notify('No unpaid balance found for this person. Add their name and balance first.'); return;
     }
     parsed.dueDate = selectedType === 'credit' ? (quickDueDate || addDays(today(), 7)) : undefined;
-    if (selectedType === 'sale' || selectedType === 'payment') parsed.paymentMethod = paymentMethodChoice;
+    if (selectedType === 'sale' || selectedType === 'payment' || selectedType === 'expense') parsed.paymentMethod = paymentMethodChoice;
     else parsed.paymentMethod = undefined;
     if (selectedType === 'payment') parsed.stockQuantityDelta = undefined;
     if (selectedType === 'expense' && parsed.stockQuantityDelta !== undefined && parsed.stockQuantityDelta < 0) parsed.stockQuantityDelta = undefined;
