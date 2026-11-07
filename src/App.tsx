@@ -312,17 +312,27 @@ function App() {
   };
 
   const startVoice = () => {
+    if (!navigator.onLine) {
+      setVoiceState('unsupported');
+      notify('Voice recognition needs an internet connection in this browser. Offline, tap the description field and use your phone keyboard microphone if available.');
+      return;
+    }
     const Recognition = (window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition
       ?? (window as Window & { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
-    if (!Recognition) { setVoiceState('unsupported'); notify('Voice typing is not available in this browser. Type the transaction instead.'); return; }
+    if (!Recognition) { setVoiceState('unsupported'); notify('This browser does not support in-app voice recognition. Use the microphone on your phone keyboard in the description field.'); return; }
     try {
+      recognitionRef.current?.abort();
       const recognition = new Recognition();
-      recognition.lang = voiceLanguage; recognition.interimResults = false; recognition.maxAlternatives = 1;
-      setVoiceState('listening');
+      recognitionRef.current = recognition;
+      recognition.lang = voiceLanguage;
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onstart = () => setVoiceState('listening');
       recognition.onresult = event => {
-        const text = event.results?.[0]?.[0]?.transcript ?? '';
+        const spoken = event.results?.[0]?.[0]?.transcript ?? '';
         setVoiceState('idle');
-        const parsed = parseTransaction(text, data);
+        recognitionRef.current = null;
+        const parsed = parseTransaction(spoken, data);
         if (parsed) {
           setQuickText(parsed.description);
           setQuickAmount(String(parsed.amount));
@@ -331,14 +341,30 @@ function App() {
           setPaymentMethodChoice(parsed.paymentMethod ?? 'cash');
           setPending(parsed);
         } else {
-          setQuickText(text);
-          notify('I heard you, but could not identify the amount. Check the entry before saving.');
+          setQuickText(normalizeSpokenNumbers(spoken));
+          notify('I heard you, but could not identify the amount. Check the details before saving.');
         }
       };
-      recognition.onerror = () => { setVoiceState('idle'); notify('Could not hear that clearly. Try again or type it.'); };
-      recognition.onend = () => setVoiceState(s => s === 'listening' ? 'idle' : s);
+      recognition.onerror = event => {
+        setVoiceState('idle');
+        recognitionRef.current = null;
+        const reason = event.error === 'not-allowed' || event.error === 'service-not-allowed'
+          ? 'Allow microphone access for Hesabu in your browser settings, then try again.'
+          : event.error === 'network'
+            ? 'The voice service could not connect. Check your data connection and try again.'
+            : 'Could not hear that clearly. Move closer to the phone microphone and try again.';
+        notify(reason);
+      };
+      recognition.onend = () => {
+        recognitionRef.current = null;
+        setVoiceState(current => current === 'listening' ? 'idle' : current);
+      };
       recognition.start();
-    } catch { setVoiceState('idle'); notify('Microphone is unavailable. Type the transaction instead.'); }
+    } catch {
+      recognitionRef.current = null;
+      setVoiceState('idle');
+      notify('Microphone could not start. Check browser permission or use the phone keyboard microphone.');
+    }
   };
 
   const deleteTransaction = (transaction: Transaction) => {
@@ -402,7 +428,7 @@ function App() {
     const refundingCustomerCredit = customer.kind === 'customer' && customer.balance < 0;
     const amount = supplierPayment || refundingCustomerCredit ? Math.min(Math.abs(customer.balance), entered) : entered;
     if (!amount) return;
-    const txn: Transaction = { id: id('txn'), type: supplierPayment || refundingCustomerCredit ? 'expense' : 'payment', description: note.trim() || (supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer credit refund' : 'Debt payment received'), amount, date: today(), time: currentTime(), customerId: customer.id, customerName: customer.name, category: supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer refund' : undefined, paymentMethod: supplierPayment || refundingCustomerCredit ? undefined : paymentMethod };
+    const txn: Transaction = { id: id('txn'), type: supplierPayment || refundingCustomerCredit ? 'expense' : 'payment', description: note.trim() || (supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer credit refund' : 'Debt payment received'), amount, date: today(), tradingDay: tradingDayFor(new Date(), data.shopInfo.tradingDayStart ?? '06:00', data.shopInfo.tradingDayEnd ?? '21:00'), time: currentTime(), customerId: customer.id, customerName: customer.name, category: supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer refund' : undefined, paymentMethod: supplierPayment || refundingCustomerCredit ? undefined : paymentMethod };
     updateData(current => ({ ...current, customers: current.customers.map(c => c.id === customer.id ? { ...c, balance: supplierPayment || refundingCustomerCredit ? Math.min(0, c.balance + amount) : c.balance - amount } : c), transactions: [txn, ...current.transactions] }));
     setModal(null); setSection('debts'); notify(`${money(amount)} ${supplierPayment ? 'paid to' : refundingCustomerCredit ? 'returned to' : 'received from'} ${customer.name}.`);
   };
@@ -464,9 +490,16 @@ function App() {
     notify('This reminder is not linked to a shop record.');
   };
 
-  const shareReport = async () => {
-    const url = `https://wa.me/?text=${encodeURIComponent(report.text)}`;
+  const shareReport = () => {
+    if (!navigator.onLine) {
+      setQueuedReportDate(reportDate);
+      notify('Report saved on this phone. Connect to the internet, then tap Share on WhatsApp.');
+      return;
+    }
+    const url = 'https://wa.me/?text=' + encodeURIComponent(report.text);
     window.open(url, '_blank', 'noopener,noreferrer');
+    setQueuedReportDate(null);
+    notify('WhatsApp opened. Review the report and tap Send.');
   };
 
   const shareReceipt = (transaction: Transaction, customer?: Customer) => {
@@ -489,7 +522,7 @@ function App() {
   };
 
   const updateProfile = (name: string, owner: string, phone: string, businessType: string) => {
-    updateData(current => ({ ...current, shopInfo: { name: name.trim(), owner: owner.trim(), phone: phone.trim(), businessType } }));
+    updateData(current => ({ ...current, shopInfo: { ...current.shopInfo, name: name.trim(), owner: owner.trim(), phone: phone.trim(), businessType } }));
     setModal(null); notify('Shop details saved.');
   };
 
@@ -639,9 +672,11 @@ function App() {
 
 interface SpeechRecognitionLike {
   lang: string; interimResults: boolean; maxAlternatives: number;
+  onstart: (() => void) | null;
   onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: (() => void) | null; onend: (() => void) | null;
-  start: () => void;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void; stop: () => void; abort: () => void;
 }
 
 function LedgerSection({ transactions, filter, setFilter, search, setSearch, dateFilter, setDateFilter, onTransaction, onDelete }: {
