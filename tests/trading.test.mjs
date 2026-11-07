@@ -36,6 +36,7 @@ test('overnight trading hours group the early morning with the prior evening', (
 test('spoken English and Kiswahili amounts normalize without losing unrelated words', () => {
   assert.equal(normalizeSpokenNumbers('two kilos of sugar, two hundred and fifty, cash'), '2 kilos of sugar, 250, cash');
   assert.equal(normalizeSpokenNumbers('mia mbili na hamsini'), '250');
+  assert.equal(normalizeSpokenNumbers('elfu mbili na mia tano'), '2500');
   assert.equal(normalizeSpokenNumbers('two hundred and fifty shillings'), '250 shillings');
 });
 
@@ -72,6 +73,10 @@ test('daily report includes transactions by trading date, not only calendar date
   const report = buildReport(data, 'daily', '2026-11-06');
   assert.equal(report.transactions.length, 2);
   assert.equal(report.cashIn, 500);
+  data.dailyCloses = [{ id: 'close-2026-11-06', date: '2026-11-06', openingCash: 100, expectedCash: 600, countedCash: 550, difference: -50, closedAt: '2026-11-07T06:00:00.000Z' }];
+  const closedReport = buildReport(data, 'daily', '2026-11-06');
+  assert.equal(closedReport.dailyClose?.difference, -50);
+  assert.match(closedReport.text, /Till difference: −/);
 });
 
 test('till close separates physical cash from M-Pesa', () => {
