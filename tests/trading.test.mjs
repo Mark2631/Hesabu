@@ -9,6 +9,7 @@ import {
   invalidateDailyClose,
   normalizeSpokenNumbers,
   parseTransaction,
+  pendingCloseTradingDate,
   tradingDayFor,
 } from '../src/utils.ts';
 
@@ -131,4 +132,39 @@ test('Kiswahili stock quantity spoken as unit then number is understood', () => 
   assert.equal(draft.amount, 200);
   assert.equal(draft.stockItemName, 'Sukari');
   assert.equal(draft.stockQuantityDelta, -2);
+});
+
+test('the app can find yesterday after it was left unclosed overnight', () => {
+  const data = {
+    ...emptyShop,
+    transactions: [
+      { id: 'yesterday', type: 'sale', description: 'Yesterday sale', amount: 300, date: '2026-11-07', tradingDay: '2026-11-07', time: '18:30' },
+    ],
+    dailyCloses: [],
+  };
+  assert.equal(pendingCloseTradingDate(data, '2026-11-08', true), '2026-11-07');
+});
+
+test('the app asks for the current trading day close after closing time', () => {
+  const data = {
+    ...emptyShop,
+    transactions: [
+      { id: 'today', type: 'sale', description: 'Today sale', amount: 300, date: '2026-11-07', tradingDay: '2026-11-07', time: '20:00' },
+    ],
+    dailyCloses: [],
+  };
+  assert.equal(pendingCloseTradingDate(data, '2026-11-07', false), '2026-11-07');
+  assert.equal(pendingCloseTradingDate(data, '2026-11-07', true), null);
+});
+
+test('already closed and legacy records do not trigger a close reminder', () => {
+  const data = {
+    ...emptyShop,
+    transactions: [
+      { id: 'legacy', type: 'sale', description: 'Old sample sale', amount: 100, date: '2026-11-06', time: '13:00' },
+      { id: 'closed', type: 'sale', description: 'Closed day sale', amount: 300, date: '2026-11-07', tradingDay: '2026-11-07', time: '20:00' },
+    ],
+    dailyCloses: [{ id: 'close-2026-11-07', date: '2026-11-07', openingCash: 100, expectedCash: 400, countedCash: 400, difference: 0, closedAt: '2026-11-07T21:00:00.000Z' }],
+  };
+  assert.equal(pendingCloseTradingDate(data, '2026-11-08', true), null);
 });
