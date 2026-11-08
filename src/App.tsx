@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { createBackupEnvelope, hasSavedData, makeDemoData, markBackupAt, parseBackupPayload, readLastBackupAt, readSavedData, saveData } from './data';
 import type { AppData, Customer, DailyClose, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, drawerCashIn, drawerCashOut, expectedDrawerCash, fullDateText, id, invalidateDailyClose, isWithinTradingHours, makeDailyClose, money, normalizeKenyanWhatsAppNumber, normalizeSpokenNumbers, parseTransaction, receiptMessage, shortDay, suggestedOpeningCash, timeText, today, tradingDayFor, transactionLabel, whatsAppUrl } from './utils';
+import { addDays, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, drawerCashIn, drawerCashOut, expectedDrawerCash, fullDateText, id, invalidateDailyClose, isWithinTradingHours, makeDailyClose, money, normalizeKenyanWhatsAppNumber, normalizeSpokenNumbers, parseTransaction, pendingCloseTradingDate, receiptMessage, shortDay, suggestedOpeningCash, timeText, today, tradingDayFor, transactionLabel, whatsAppUrl } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'home', label: 'Today', icon: House },
@@ -248,13 +248,7 @@ function App() {
   const tradingDate = tradingDayFor(clock, tradingStart, tradingEnd);
   const shopIsOpen = isWithinTradingHours(clock, tradingStart, tradingEnd);
   const todayTransactions = useMemo(() => data.transactions.filter(t => (t.tradingDay ?? t.date) === tradingDate), [data.transactions, tradingDate]);
-  const pendingCloseDate = useMemo(() => {
-    const closedDates = new Set((data.dailyCloses ?? []).map(close => close.date));
-    const businessDates = [...new Set(data.transactions.filter(tx => tx.tradingDay).map(tx => tx.tradingDay!))];
-    return businessDates
-      .filter(date => !closedDates.has(date) && (date < tradingDate || (!shopIsOpen && date === tradingDate)))
-      .sort((a, b) => b.localeCompare(a))[0] ?? null;
-  }, [data.transactions, data.dailyCloses, tradingDate, shopIsOpen]);
+  const pendingCloseDate = useMemo(() => pendingCloseTradingDate(data, tradingDate, shopIsOpen), [data, tradingDate, shopIsOpen]);
   const pendingCloseCount = pendingCloseDate
     ? data.transactions.filter(tx => (tx.tradingDay ?? tx.date) === pendingCloseDate).length
     : 0;
