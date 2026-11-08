@@ -6,6 +6,7 @@ import {
   makeDailyClose,
   suggestedOpeningCash,
   isWithinTradingHours,
+  invalidateDailyClose,
   normalizeSpokenNumbers,
   parseTransaction,
   tradingDayFor,
@@ -102,4 +103,19 @@ test('next opening float defaults to the last physical closing count', () => {
     { id: 'latest', date: '2026-11-06', openingCash: 380, expectedCash: 600, countedCash: 550, difference: -50, closedAt: '2026-11-06T21:00:00.000Z' },
   ];
   assert.equal(suggestedOpeningCash(closes, '2026-11-07'), 550);
+});
+
+test('a transaction correction invalidates the old and new till-close dates', () => {
+  const closed = {
+    ...emptyShop,
+    dailyCloses: [
+      { id: 'close-a', date: '2026-11-06', openingCash: 100, expectedCash: 200, countedCash: 200, difference: 0, closedAt: '2026-11-06T21:00:00.000Z' },
+      { id: 'close-b', date: '2026-11-07', openingCash: 200, expectedCash: 300, countedCash: 300, difference: 0, closedAt: '2026-11-07T21:00:00.000Z' },
+    ],
+  };
+  const reopened = invalidateDailyClose(closed, '2026-11-06');
+  assert.deepEqual(reopened.dailyCloses?.map(close => close.date), ['2026-11-07']);
+  const moved = invalidateDailyClose(closed, '2026-11-06', '2026-11-07');
+  assert.equal(moved.dailyCloses?.length, 0);
+  assert.equal(closed.dailyCloses?.length, 2);
 });
