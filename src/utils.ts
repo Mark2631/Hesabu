@@ -82,6 +82,15 @@ export function invalidateDailyClose(data: AppData, ...dates: string[]): AppData
   return { ...data, dailyCloses: data.dailyCloses.filter(close => !invalidDates.has(close.date)) };
 }
 
+/** Find a recorded trading day that still needs its physical till count. */
+export function pendingCloseTradingDate(data: AppData, currentTradingDate: string, shopIsOpen: boolean) {
+  const closedDates = new Set((data.dailyCloses ?? []).map(close => close.date));
+  const businessDates = [...new Set(data.transactions.filter(tx => tx.tradingDay).map(tx => tx.tradingDay!))];
+  return businessDates
+    .filter(date => !closedDates.has(date) && (date < currentTradingDate || (!shopIsOpen && date === currentTradingDate)))
+    .sort((a, b) => b.localeCompare(a))[0] ?? null;
+}
+
 function localDateString(date: Date) {
   return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
 }
