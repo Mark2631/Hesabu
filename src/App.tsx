@@ -539,6 +539,12 @@ function App() {
       notify('Report saved on this phone. Connect to the internet, then tap Share on WhatsApp.');
       return;
     }
+    if (queuedReportDate && queuedReportDate !== reportDate) {
+      setReportDate(queuedReportDate);
+      setReportPeriod('daily');
+      notify('I selected the report you saved earlier. Check it, then tap Share on WhatsApp.');
+      return;
+    }
     const url = 'https://wa.me/?text=' + encodeURIComponent(report.text);
     window.open(url, '_blank', 'noopener,noreferrer');
     setQueuedReportDate(null);
@@ -649,6 +655,7 @@ function App() {
     </header>
 
     <main className="app-main">
+      {!shopIsOpen && todayTransactions.length > 0 && section !== 'home' && <section className="day-close-banner"><div><strong>{currentDailyClose ? 'Cash count saved' : 'Shop day finished'}</strong><span>{currentDailyClose ? `Expected ${money(currentDailyClose.expectedCash)} · Counted ${money(currentDailyClose.countedCash)}` : `${todayTransactions.length} ${todayTransactions.length === 1 ? 'entry is' : 'entries are'} ready for closing count.`}</span></div><button onClick={() => setModal({ kind: 'daily-close', date: tradingDate })}>{currentDailyClose ? 'Review cash count' : 'Count the cash'} <ChevronRight size={15} /></button></section>}
       {section === 'home' && <div className="ledger-home">
         <header className="ledger-page-head"><div className="ledger-head-copy"><div className="ledger-date-line">{fullDateText(tradingDate)} <span>·</span> TODAY'S SHOP BOOK</div><h1>{data.shopInfo.name}</h1><p>{data.shopInfo.owner ? `Shop records for ${data.shopInfo.owner}` : 'Your shop’s daily record'}</p></div><button className="ledger-report-button" onClick={() => { setReportDate(tradingDate); setReportPeriod('daily'); navigate('more'); }}><FileText size={16} /> <span>Today’s report</span></button></header>
         <section className="cashflow-hero" aria-label="Today’s net cash position">
