@@ -21,9 +21,9 @@ Speech recognition is provided by the browser. It needs microphone permission an
 
 Each shop can set its trading day, including overnight shifts such as 6:00 a.m.–9:00 p.m. or 9:00 p.m.–6:00 a.m. Entries keep their actual date and time while also being grouped under the shop's trading date. The daily report follows that trading date.
 
-After the configured closing time, Hesabu shows a close-of-day prompt when there are entries for that trading day. The shopkeeper can enter the opening cash float and physically count the cash in the drawer. Hesabu calculates expected till cash from cash sales and repayments, less cash-paid expenses, and shows any shortage or surplus. M-Pesa transactions are excluded from the physical till count. The previous closing count is suggested as the next opening float, but it can be edited.
+After the configured closing time, Hesabu marks the latest unclosed trading date and shows a close-of-day prompt. If the browser was shut at closing time, the prompt is recovered the next time the owner opens the app. The shopkeeper can enter the opening cash float and physically count the cash in the drawer. Hesabu calculates expected till cash from cash sales and repayments, less cash-paid expenses, and shows any shortage or surplus. M-Pesa transactions are excluded from the physical till count. The previous closing count is suggested as the next opening float, but it can be edited. Editing, moving or deleting a transaction reopens that day's till count.
 
-The close prompt appears while the app is open. This version does not run a guaranteed background alarm or close the till while the browser is shut.
+A daily report is queued for sharing when a trading date needs closing. When the phone reconnects, the saved report date is restored in the report screen. Hesabu does not open WhatsApp or send a message without the shopkeeper's action; the owner reviews the report, taps Share, then taps Send in WhatsApp. This version does not run a guaranteed background alarm or close the till while the browser is shut.
 
 ## Offline use and data protection
 
