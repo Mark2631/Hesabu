@@ -209,14 +209,17 @@ function findAmount(text: string): { amount: number; quantity?: number } {
   const amountPattern = /(?:kes|ksh|kshs|bob|shillings?|ya|kwa|for|worth|of)\s*(\d[\d,]*(?:\.\d{1,2})?)/gi;
   const explicit: number[] = [];
   for (const match of text.matchAll(amountPattern)) explicit.push(Number(match[1].replaceAll(',', '')));
-  const quantityMatch = text.match(/\b(\d+)\s*(kg|kgs|kilograms?|kilos?|packets?|pieces?|pcs|litres?|liters?|bars?|bottles?|loaf|loaves|sachets?|trays?|crates?|cartons?|dozen|rolls?|tins?|cups?|bags?|bundles?|units?)\b/i);
+  const quantityMatch = text.match(/\b(\d+)\s*(kg|kgs|kilograms?|kilos?|kilo|packets?|pieces?|pcs|litres?|liters?|bars?|bottles?|loaf|loaves|sachets?|trays?|crates?|cartons?|dozen|rolls?|tins?|cups?|bags?|bundles?|units?)\b/i);
+  const quantityAfterUnit = !quantityMatch ? text.match(/\b(kg|kgs|kilograms?|kilos?|kilo|packets?|pieces?|pcs|litres?|liters?|bars?|bottles?|loaf|loaves|sachets?|trays?|crates?|cartons?|dozen|rolls?|tins?|cups?|bags?|bundles?|units?)\s*(\d+)\b/i) : null;
+  const quantityToken = quantityMatch?.[1] ?? quantityAfterUnit?.[2];
+  const quantity = quantityToken ? Number(quantityToken) : undefined;
   const all = [...text.matchAll(/\b\d[\d,]*(?:\.\d{1,2})?\b/g)].map(m => ({ raw: m[0], value: Number(m[0].replaceAll(',', '')), index: m.index ?? 0 }));
   let amount = explicit.find(v => v > 0) ?? 0;
   if (!amount && all.length) {
-    const filtered = all.filter(n => !(quantityMatch && n.raw === quantityMatch[1]));
+    const filtered = all.filter(n => !(quantityToken && n.raw === quantityToken));
     amount = (filtered.length ? filtered[filtered.length - 1] : all[all.length - 1])?.value ?? 0;
   }
-  return { amount: Math.max(0, Number.isFinite(amount) ? amount : 0), quantity: quantityMatch ? Number(quantityMatch[1]) : undefined };
+  return { amount: Math.max(0, Number.isFinite(amount) ? amount : 0), quantity };
 }
 
 function dueDateFromText(text: string) {
