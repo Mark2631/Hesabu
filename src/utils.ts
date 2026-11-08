@@ -75,6 +75,13 @@ export function suggestedOpeningCash(closes: DailyClose[], date: string) {
   return previous?.countedCash ?? 0;
 }
 
+/** Any ledger edit made after till close requires a fresh physical cash count. */
+export function invalidateDailyClose(data: AppData, ...dates: string[]): AppData {
+  if (!data.dailyCloses?.length || !dates.length) return data;
+  const invalidDates = new Set(dates.filter(Boolean));
+  return { ...data, dailyCloses: data.dailyCloses.filter(close => !invalidDates.has(close.date)) };
+}
+
 function localDateString(date: Date) {
   return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
 }
