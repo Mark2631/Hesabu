@@ -247,14 +247,27 @@ function App() {
   const tradingEnd = data.shopInfo.tradingDayEnd ?? '21:00';
   const tradingDate = tradingDayFor(clock, tradingStart, tradingEnd);
   const shopIsOpen = isWithinTradingHours(clock, tradingStart, tradingEnd);
-  const currentDailyClose = data.dailyCloses?.find(close => close.date === tradingDate);
   const todayTransactions = useMemo(() => data.transactions.filter(t => (t.tradingDay ?? t.date) === tradingDate), [data.transactions, tradingDate]);
+  const pendingCloseDate = useMemo(() => {
+    const closedDates = new Set((data.dailyCloses ?? []).map(close => close.date));
+    const businessDates = [...new Set(data.transactions.filter(tx => tx.tradingDay).map(tx => tx.tradingDay!))];
+    return businessDates
+      .filter(date => !closedDates.has(date) && (date < tradingDate || (!shopIsOpen && date === tradingDate)))
+      .sort((a, b) => b.localeCompare(a))[0] ?? null;
+  }, [data.transactions, data.dailyCloses, tradingDate, shopIsOpen]);
+  const pendingCloseCount = pendingCloseDate
+    ? data.transactions.filter(tx => (tx.tradingDay ?? tx.date) === pendingCloseDate).length
+    : 0;
   const todaysIn = useMemo(() => cashIn(todayTransactions), [todayTransactions]);
   const todaysOut = useMemo(() => cashOut(todayTransactions), [todayTransactions]);
   const outstanding = useMemo(() => data.customers.filter(c => c.balance > 0).reduce((sum, c) => sum + c.balance, 0), [data.customers]);
   const lowStock = useMemo(() => data.stock.filter(s => s.quantity <= s.lowStockAt), [data.stock]);
   const allReminders = useMemo(() => [...data.reminders].sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [data.reminders]);
   const report = useMemo(() => buildReport(data, reportPeriod, reportDate), [data, reportPeriod, reportDate]);
+
+  useEffect(() => {
+    if (pendingCloseDate && !queuedReportDate) setQueuedReportDate(pendingCloseDate);
+  }, [pendingCloseDate, queuedReportDate]);
 
   const navigate = (next: Section) => {
     setSection(next); setQuery(''); setPending(null); setQuickEntryOpen(false); setProfileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -655,7 +668,7 @@ function App() {
     </header>
 
     <main className="app-main">
-      {!shopIsOpen && todayTransactions.length > 0 && section !== 'home' && <section className="day-close-banner"><div><strong>{currentDailyClose ? 'Cash count saved' : 'Shop day finished'}</strong><span>{currentDailyClose ? `Expected ${money(currentDailyClose.expectedCash)} · Counted ${money(currentDailyClose.countedCash)}` : `${todayTransactions.length} ${todayTransactions.length === 1 ? 'entry is' : 'entries are'} ready for closing count.`}</span></div><button onClick={() => setModal({ kind: 'daily-close', date: tradingDate })}>{currentDailyClose ? 'Review cash count' : 'Count the cash'} <ChevronRight size={15} /></button></section>}
+      {pendingCloseDate && section !== 'home' && <section className="day-close-banner"><div><strong>Shop day needs closing</strong><span>{pendingCloseCount} {pendingCloseCount === 1 ? 'entry' : 'entries'} from {dateText(pendingCloseDate,{day:'numeric',month:'short',year:'numeric'})} need a cash count.</span></div><button onClick={() => { setReportDate(pendingCloseDate); setReportPeriod('daily'); setModal({ kind: 'daily-close', date: pendingCloseDate }); }}>Count the cash <ChevronRight size={15} /></button></section>}
       {section === 'home' && <div className="ledger-home">
         <header className="ledger-page-head"><div className="ledger-head-copy"><div className="ledger-date-line">{fullDateText(tradingDate)} <span>·</span> TODAY'S SHOP BOOK</div><h1>{data.shopInfo.name}</h1><p>{data.shopInfo.owner ? `Shop records for ${data.shopInfo.owner}` : 'Your shop’s daily record'}</p></div><button className="ledger-report-button" onClick={() => { setReportDate(tradingDate); setReportPeriod('daily'); navigate('more'); }}><FileText size={16} /> <span>Today’s report</span></button></header>
         <section className="cashflow-hero" aria-label="Today’s net cash position">
@@ -671,7 +684,7 @@ function App() {
           <button className="ledger-action ledger-action-credit" onClick={() => { setTypeChoice('credit'); setPending(null); setQuickEntryOpen(true); }}><span className="ledger-action-icon"><HandCoins size={18} /></span><span>Give credit</span></button>
         </div></section>
         <div className="voice-home-control"><div className="voice-language-row voice-language-home"><span>Speak in</span><div><button type="button" aria-pressed={voiceLanguage === 'en-KE'} className={voiceLanguage === 'en-KE' ? 'voice-language-active' : ''} onClick={() => setVoiceLanguage('en-KE')}>English</button><button type="button" aria-pressed={voiceLanguage === 'sw-KE'} className={voiceLanguage === 'sw-KE' ? 'voice-language-active' : ''} onClick={() => setVoiceLanguage('sw-KE')}>Kiswahili</button></div></div><button className="voice-entry-launch" onClick={() => { setQuickEntryOpen(true); if (voiceState === 'listening') recognitionRef.current?.stop(); else startVoice(); }}><span className="voice-entry-icon"><Mic size={19} /></span><span className="voice-entry-copy"><strong>Speak a sale or expense</strong><small>{voiceState === 'listening' ? voicePreview || 'Listening… say the item, amount and payment method' : 'Try “two kilos of sugar, two hundred, cash”'}</small></span><span className="voice-entry-action">{voiceState === 'listening' ? 'Stop' : 'Speak'} <ChevronRight size={16} /></span></button></div>
-        {!shopIsOpen && todayTransactions.length > 0 && <section className="day-close-banner"><div><strong>{currentDailyClose ? 'Cash count saved' : 'Shop day finished'}</strong><span>{currentDailyClose ? `Expected ${money(currentDailyClose.expectedCash)} · Counted ${money(currentDailyClose.countedCash)}` : `${todayTransactions.length} ${todayTransactions.length === 1 ? 'entry is' : 'entries are'} ready for closing count.`}</span></div><button onClick={() => setModal({ kind: 'daily-close', date: tradingDate })}>{currentDailyClose ? 'Review cash count' : 'Count the cash'} <ChevronRight size={15} /></button></section>}
+        {pendingCloseDate && <section className="day-close-banner"><div><strong>Shop day needs closing</strong><span>{pendingCloseCount} {pendingCloseCount === 1 ? 'entry' : 'entries'} from {dateText(pendingCloseDate,{day:'numeric',month:'short',year:'numeric'})} need a cash count.</span></div><button onClick={() => { setReportDate(pendingCloseDate); setReportPeriod('daily'); setModal({ kind: 'daily-close', date: pendingCloseDate }); }}>Count the cash <ChevronRight size={15} /></button></section>}
         {storageWriteFailed && <div className="storage-error-inline" role="status">Some changes may not be saved on this device. Open More and download a backup.</div>}
         {quickEntryOpen && <section id="transaction-entry" className="surface ledger-entry-panel">
           <div className="ledger-entry-heading"><div><div className="ledger-section-label">NEW RECORD</div><h2>{pending ? 'Review this entry' : 'Record a transaction'}</h2><p>Check the details before the entry is added to your book.</p></div><button className="ledger-close-entry" onClick={() => { setQuickEntryOpen(false); setPending(null); }} aria-label="Close transaction form">×</button></div>
