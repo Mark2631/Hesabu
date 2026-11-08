@@ -119,3 +119,16 @@ test('a transaction correction invalidates the old and new till-close dates', ()
   assert.equal(moved.dailyCloses?.length, 0);
   assert.equal(closed.dailyCloses?.length, 2);
 });
+
+test('Kiswahili stock quantity spoken as unit then number is understood', () => {
+  const data = {
+    ...emptyShop,
+    stock: [{ id: 'sugar', name: 'Sukari', quantity: 10, unit: 'kg', lowStockAt: 2, lastRestocked: '2026-11-01' }],
+  };
+  const draft = parseTransaction('nimeuza kilo mbili za sukari kwa shilingi mia mbili cash', data);
+  assert.ok(draft);
+  assert.equal(draft.type, 'sale');
+  assert.equal(draft.amount, 200);
+  assert.equal(draft.stockItemName, 'Sukari');
+  assert.equal(draft.stockQuantityDelta, -2);
+});
