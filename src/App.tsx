@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { createBackupEnvelope, hasSavedData, makeDemoData, markBackupAt, parseBackupPayload, readLastBackupAt, readSavedData, saveData } from './data';
 import type { AppData, Customer, DailyClose, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, drawerCashIn, drawerCashOut, expectedDrawerCash, fullDateText, id, isWithinTradingHours, makeDailyClose, money, normalizeKenyanWhatsAppNumber, normalizeSpokenNumbers, parseTransaction, receiptMessage, shortDay, suggestedOpeningCash, timeText, today, tradingDayFor, transactionLabel, whatsAppUrl } from './utils';
+import { addDays, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, drawerCashIn, drawerCashOut, expectedDrawerCash, fullDateText, id, invalidateDailyClose, isWithinTradingHours, makeDailyClose, money, normalizeKenyanWhatsAppNumber, normalizeSpokenNumbers, parseTransaction, receiptMessage, shortDay, suggestedOpeningCash, timeText, today, tradingDayFor, transactionLabel, whatsAppUrl } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'home', label: 'Today', icon: House },
@@ -293,7 +293,7 @@ function App() {
     const nextStock = matchedStock && effectiveStockDelta !== undefined
       ? current.stock.map(s => s.id === matchedStock.id ? { ...s, quantity: Math.max(0, s.quantity + effectiveStockDelta), lastRestocked: effectiveStockDelta > 0 ? today() : s.lastRestocked } : s)
       : current.stock;
-    updateData(c => ({ ...c, customers: nextCustomers, stock: nextStock, transactions: [txn, ...c.transactions] }));
+    updateData(c => ({ ...invalidateDailyClose(c, txn.tradingDay ?? txn.date), customers: nextCustomers, stock: nextStock, transactions: [txn, ...c.transactions] }));
     setPending(null); setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setTypeChoice('sale'); setQuickEntryOpen(false);
     notify('Entry saved.');
     if (navigator.vibrate) navigator.vibrate(18);
@@ -404,7 +404,7 @@ function App() {
       const stock = transaction.stockItemId && transaction.stockQuantityDelta !== undefined
         ? current.stock.map(s => s.id === transaction.stockItemId ? { ...s, quantity: Math.max(0, s.quantity - transaction.stockQuantityDelta!) } : s)
         : current.stock;
-      return { ...current, customers, stock, transactions: current.transactions.filter(t => t.id !== transaction.id) };
+      return { ...invalidateDailyClose(current, transaction.tradingDay ?? transaction.date), customers, stock, transactions: current.transactions.filter(t => t.id !== transaction.id) };
     });
     setModal(null); notify('Transaction removed.');
   };
@@ -418,6 +418,7 @@ function App() {
       description: values.description.trim() || transaction.description,
       amount: Math.round(amount),
       date: values.date,
+      tradingDay: tradingDayFor(new Date(values.date + 'T' + values.time), data.shopInfo.tradingDayStart ?? '06:00', data.shopInfo.tradingDayEnd ?? '21:00'),
       time: values.time,
       dueDate: values.dueDate || undefined,
     };
@@ -429,7 +430,7 @@ function App() {
     };
     const balanceAdjustment = balanceEffect(updated) - balanceEffect(transaction);
     updateData(current => ({
-      ...current,
+      ...invalidateDailyClose(current, transaction.tradingDay ?? transaction.date, updated.tradingDay ?? updated.date),
       customers: transaction.customerId && balanceAdjustment !== 0
         ? current.customers.map(c => c.id === transaction.customerId ? { ...c, balance: c.balance + balanceAdjustment } : c)
         : current.customers,
@@ -455,7 +456,7 @@ function App() {
     const amount = supplierPayment || refundingCustomerCredit ? Math.min(Math.abs(customer.balance), entered) : entered;
     if (!amount) return;
     const txn: Transaction = { id: id('txn'), type: supplierPayment || refundingCustomerCredit ? 'expense' : 'payment', description: note.trim() || (supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer credit refund' : 'Debt payment received'), amount, date: today(), tradingDay: tradingDayFor(new Date(), data.shopInfo.tradingDayStart ?? '06:00', data.shopInfo.tradingDayEnd ?? '21:00'), time: currentTime(), customerId: customer.id, customerName: customer.name, category: supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer refund' : undefined, paymentMethod: supplierPayment || refundingCustomerCredit ? undefined : paymentMethod };
-    updateData(current => ({ ...current, customers: current.customers.map(c => c.id === customer.id ? { ...c, balance: supplierPayment || refundingCustomerCredit ? Math.min(0, c.balance + amount) : c.balance - amount } : c), transactions: [txn, ...current.transactions] }));
+    updateData(current => ({ ...invalidateDailyClose(current, txn.tradingDay ?? txn.date), customers: current.customers.map(c => c.id === customer.id ? { ...c, balance: supplierPayment || refundingCustomerCredit ? Math.min(0, c.balance + amount) : c.balance - amount } : c), transactions: [txn, ...current.transactions] }));
     setModal(null); setSection('debts'); notify(`${money(amount)} ${supplierPayment ? 'paid to' : refundingCustomerCredit ? 'returned to' : 'received from'} ${customer.name}.`);
   };
 
