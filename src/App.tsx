@@ -68,13 +68,13 @@ function Button({ children, variant = 'primary', size = 'md', className, disable
   return <button type={type} disabled={disabled} onClick={onClick} className={cn('btn', `btn-${variant}`, `btn-${size}`, className)}>{children}</button>;
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', min, step, required, help, autoFocus, inputMode }: {
-  label: string; value: string | number; onChange: (value: string) => void; placeholder?: string; type?: string;
+function Field({ label, value, onChange, placeholder, type = 'text', min, step, required, help, autoFocus, inputMode, inputId }: {
+  label: string; value: string | number; onChange: (value: string) => void; placeholder?: string; type?: string; inputId?: string;
   min?: number; step?: number; required?: boolean; help?: string; autoFocus?: boolean; inputMode?: 'text' | 'decimal' | 'numeric' | 'tel' | 'search';
 }) {
   return <label className="field-wrap block">
     <span className="field-label">{label}</span>
-    <input className="field-control" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} min={min} step={step} required={required} autoFocus={autoFocus} inputMode={inputMode} />
+    <input id={inputId} className="field-control" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} min={min} step={step} required={required} autoFocus={autoFocus} inputMode={inputMode} />
     {help && <span className="mt-1.5 block text-[11px] leading-4 text-hesabu-muted">{help}</span>}
   </label>;
 }
@@ -161,6 +161,7 @@ function App() {
   const [quickDueDate, setQuickDueDate] = useState('');
   const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'unsupported'>('idle');
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const [voicePreview, setVoicePreview] = useState('');
   const [voiceLanguage, setVoiceLanguage] = useState<'en-KE' | 'sw-KE'>(() => {
     try { return localStorage.getItem('hesabu:v1:voice-language') === 'sw-KE' ? 'sw-KE' : 'en-KE'; } catch { return 'en-KE'; }
   });
@@ -331,23 +332,36 @@ function App() {
   const startVoice = () => {
     if (!navigator.onLine) {
       setVoiceState('unsupported');
-      notify('Voice recognition needs an internet connection in this browser. Offline, tap the description field and use your phone keyboard microphone if available.');
+      notify('No data connection. Hesabu still works offline. Use the microphone on your phone keyboard to dictate into the description field.');
+      window.setTimeout(() => document.getElementById('quick-entry-description')?.focus(), 100);
       return;
     }
     const Recognition = (window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition
       ?? (window as Window & { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
-    if (!Recognition) { setVoiceState('unsupported'); notify('This browser does not support in-app voice recognition. Use the microphone on your phone keyboard in the description field.'); return; }
+    if (!Recognition) { setVoiceState('unsupported'); notify('In-app voice is not supported here. Use the microphone on your phone keyboard in the description field.'); window.setTimeout(() => document.getElementById('quick-entry-description')?.focus(), 100); return; }
     try {
       recognitionRef.current?.abort();
       const recognition = new Recognition();
       recognitionRef.current = recognition;
       recognition.lang = voiceLanguage;
-      recognition.interimResults = false;
+      recognition.interimResults = true;
       recognition.maxAlternatives = 1;
+      setVoicePreview('');
       recognition.onstart = () => setVoiceState('listening');
       recognition.onresult = event => {
-        const spoken = event.results?.[0]?.[0]?.transcript ?? '';
+        let finalText = '';
+        let interimText = '';
+        for (let index = 0; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const phrase = result?.[0]?.transcript ?? '';
+          if (result?.isFinal) finalText += phrase + ' ';
+          else interimText += phrase;
+        }
+        setVoicePreview(interimText || finalText);
+        if (!finalText.trim()) return;
+        const spoken = finalText.trim();
         setVoiceState('idle');
+        setVoicePreview('');
         recognitionRef.current = null;
         const parsed = parseTransaction(spoken, data);
         if (parsed) {
@@ -373,6 +387,7 @@ function App() {
       };
       recognition.onerror = event => {
         setVoiceState('idle');
+        setVoicePreview('');
         recognitionRef.current = null;
         const reason = event.error === 'not-allowed' || event.error === 'service-not-allowed'
           ? 'Allow microphone access for Hesabu in your browser settings, then try again.'
@@ -383,6 +398,7 @@ function App() {
       };
       recognition.onend = () => {
         recognitionRef.current = null;
+        setVoicePreview('');
         setVoiceState(current => current === 'listening' ? 'idle' : current);
       };
       recognition.start();
@@ -647,14 +663,14 @@ function App() {
           <button className="ledger-action ledger-action-expense" onClick={() => { setTypeChoice('expense'); setPaymentMethodChoice('cash'); setPending(null); setQuickEntryOpen(true); }}><span className="ledger-action-icon"><ArrowUpRight size={18} /></span><span>Expense</span></button>
           <button className="ledger-action ledger-action-credit" onClick={() => { setTypeChoice('credit'); setPending(null); setQuickEntryOpen(true); }}><span className="ledger-action-icon"><HandCoins size={18} /></span><span>Give credit</span></button>
         </div></section>
-        <div className="voice-home-control"><div className="voice-language-row voice-language-home"><span>Speak in</span><div><button type="button" aria-pressed={voiceLanguage === 'en-KE'} className={voiceLanguage === 'en-KE' ? 'voice-language-active' : ''} onClick={() => setVoiceLanguage('en-KE')}>English</button><button type="button" aria-pressed={voiceLanguage === 'sw-KE'} className={voiceLanguage === 'sw-KE' ? 'voice-language-active' : ''} onClick={() => setVoiceLanguage('sw-KE')}>Kiswahili</button></div></div><button className="voice-entry-launch" onClick={() => { setQuickEntryOpen(true); if (voiceState === 'listening') recognitionRef.current?.stop(); else startVoice(); }}><span className="voice-entry-icon"><Mic size={19} /></span><span className="voice-entry-copy"><strong>Speak a sale or expense</strong><small>Try “two kilos of sugar, two hundred, cash”</small></span><span className="voice-entry-action">{voiceState === 'listening' ? 'Stop' : 'Speak'} <ChevronRight size={16} /></span></button></div>
+        <div className="voice-home-control"><div className="voice-language-row voice-language-home"><span>Speak in</span><div><button type="button" aria-pressed={voiceLanguage === 'en-KE'} className={voiceLanguage === 'en-KE' ? 'voice-language-active' : ''} onClick={() => setVoiceLanguage('en-KE')}>English</button><button type="button" aria-pressed={voiceLanguage === 'sw-KE'} className={voiceLanguage === 'sw-KE' ? 'voice-language-active' : ''} onClick={() => setVoiceLanguage('sw-KE')}>Kiswahili</button></div></div><button className="voice-entry-launch" onClick={() => { setQuickEntryOpen(true); if (voiceState === 'listening') recognitionRef.current?.stop(); else startVoice(); }}><span className="voice-entry-icon"><Mic size={19} /></span><span className="voice-entry-copy"><strong>Speak a sale or expense</strong><small>{voiceState === 'listening' ? voicePreview || 'Listening… say the item, amount and payment method' : 'Try “two kilos of sugar, two hundred, cash”'}</small></span><span className="voice-entry-action">{voiceState === 'listening' ? 'Stop' : 'Speak'} <ChevronRight size={16} /></span></button></div>
         {!shopIsOpen && todayTransactions.length > 0 && <section className="day-close-banner"><div><strong>{currentDailyClose ? 'Cash count saved' : 'Shop day finished'}</strong><span>{currentDailyClose ? `Expected ${money(currentDailyClose.expectedCash)} · Counted ${money(currentDailyClose.countedCash)}` : `${todayTransactions.length} ${todayTransactions.length === 1 ? 'entry is' : 'entries are'} ready for closing count.`}</span></div><button onClick={() => setModal({ kind: 'daily-close', date: tradingDate })}>{currentDailyClose ? 'Review cash count' : 'Count the cash'} <ChevronRight size={15} /></button></section>}
         {storageWriteFailed && <div className="storage-error-inline" role="status">Some changes may not be saved on this device. Open More and download a backup.</div>}
         {quickEntryOpen && <section id="transaction-entry" className="surface ledger-entry-panel">
           <div className="ledger-entry-heading"><div><div className="ledger-section-label">NEW RECORD</div><h2>{pending ? 'Review this entry' : 'Record a transaction'}</h2><p>Check the details before the entry is added to your book.</p></div><button className="ledger-close-entry" onClick={() => { setQuickEntryOpen(false); setPending(null); }} aria-label="Close transaction form">×</button></div>
           <div className="type-picker simple-type-picker" role="group" aria-label="What happened?">{(['sale', 'credit', 'expense', 'payment'] as const).map(type => { const Icon = TYPE_META[type].icon; return <button key={type} onClick={() => { setTypeChoice(type); setPaymentMethodChoice('cash'); setPending(null); }} className={cn('type-pick', typeChoice === type && 'type-pick-active')}><Icon size={16} strokeWidth={1.9} /><span>{TYPE_META[type].label}</span></button>; })}</div>
           <form className="simple-entry-form ledger-entry-form" onSubmit={handleQuickSubmit}>
-            <Field label={typeChoice === 'credit' ? 'What did the customer take?' : typeChoice === 'expense' ? 'What did you pay for?' : typeChoice === 'payment' ? 'What was the payment for?' : 'What did you sell?'} value={quickText} onChange={setQuickText} placeholder={typeChoice === 'credit' ? 'e.g. 2 loaves of bread' : typeChoice === 'expense' ? 'e.g. Shop rent' : typeChoice === 'payment' ? 'e.g. Kamau’s debt' : 'e.g. Bread and milk'} required />
+            <Field inputId="quick-entry-description" label={typeChoice === 'credit' ? 'What did the customer take?' : typeChoice === 'expense' ? 'What did you pay for?' : typeChoice === 'payment' ? 'What was the payment for?' : 'What did you sell?'} value={quickText} onChange={setQuickText} placeholder={typeChoice === 'credit' ? 'e.g. 2 loaves of bread' : typeChoice === 'expense' ? 'e.g. Shop rent' : typeChoice === 'payment' ? 'e.g. Kamau’s debt' : 'e.g. Bread and milk'} required />
             <Field label="Amount (KES)" value={quickAmount} onChange={setQuickAmount} placeholder="0" type="number" min={1} required inputMode="numeric" />
             {(typeChoice === 'credit' || typeChoice === 'payment') && <Field label={typeChoice === 'credit' ? 'Customer name' : 'Who paid you?'} value={quickPerson} onChange={setQuickPerson} placeholder="Enter customer name" required />}
             {typeChoice === 'credit' && <Field label="When should they pay? (optional)" value={quickDueDate} onChange={setQuickDueDate} type="date" />}
@@ -701,7 +717,7 @@ function App() {
 interface SpeechRecognitionLike {
   lang: string; interimResults: boolean; maxAlternatives: number;
   onstart: (() => void) | null;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }> }) => void) | null;
   onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void; stop: () => void; abort: () => void;
