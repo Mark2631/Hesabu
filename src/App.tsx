@@ -714,17 +714,23 @@ function LedgerSection({ transactions, filter, setFilter, search, setSearch, dat
 }) {
   const filters: { id: typeof filter; label: string }[] = [{id:'all',label:'All'},{id:'cash',label:'Cash'},{id:'mpesa',label:'M-Pesa'},{id:'credit',label:'Credit'},{id:'expense',label:'Expenses'}];
   const shown = transactions.filter(tx => {
-    const matches = filter === 'all' || (filter === 'cash' && (tx.type === 'sale' || tx.type === 'payment') && tx.paymentMethod !== 'mpesa') || (filter === 'mpesa' && (tx.type === 'sale' || tx.type === 'payment') && tx.paymentMethod === 'mpesa') || (filter === 'credit' && tx.type === 'credit') || (filter === 'expense' && tx.type === 'expense');
-    return matches && `${tx.description} ${tx.customerName ?? ''} ${tx.category ?? ''}`.toLowerCase().includes(search.toLowerCase()) && (!dateFilter || tx.date === dateFilter);
+    const moneyMovement = tx.type === 'sale' || tx.type === 'payment' || tx.type === 'expense';
+    const matches = filter === 'all'
+      || (filter === 'cash' && moneyMovement && tx.paymentMethod !== 'mpesa')
+      || (filter === 'mpesa' && moneyMovement && tx.paymentMethod === 'mpesa')
+      || (filter === 'credit' && tx.type === 'credit')
+      || (filter === 'expense' && tx.type === 'expense');
+    const businessDate = tx.tradingDay ?? tx.date;
+    return matches && `${tx.description} ${tx.customerName ?? ''} ${tx.category ?? ''}`.toLowerCase().includes(search.toLowerCase()) && (!dateFilter || businessDate === dateFilter);
   });
-  const grouped = shown.reduce<Record<string, Transaction[]>>((result, tx) => { (result[tx.date] ??= []).push(tx); return result; }, {});
+  const grouped = shown.reduce<Record<string, Transaction[]>>((result, tx) => { const businessDate = tx.tradingDay ?? tx.date; (result[businessDate] ??= []).push(tx); return result; }, {});
   const received = shown.filter(tx => tx.type === 'sale' || tx.type === 'payment').reduce((sum, tx) => sum + tx.amount, 0);
   const spent = shown.filter(tx => tx.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0);
   return <><SectionTitle eyebrow="THE DAILY BOOK" title="Ledger" detail="Search every entry, check how it was paid and open a record to correct it." />
     <section className="ledger-overview-strip"><div><span>Money received</span><strong className="money-positive">{money(received)}</strong></div><div><span>Money spent</span><strong className="money-negative">{money(spent)}</strong></div><div><span>Net movement</span><strong>{money(received-spent)}</strong></div></section>
     <section className="surface ledger-full-panel"><div className="ledger-full-filters"><label className="search-field"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search description or customer" aria-label="Search ledger" /></label><label className="ledger-date-filter"><span>Date</span><input type="date" value={dateFilter} max={today()} onChange={e=>setDateFilter(e.target.value)} /></label></div>
       <div className="ledger-filter-chips" role="group" aria-label="Filter entries">{filters.map(item=><button key={item.id} className={filter===item.id?'ledger-filter-active':''} onClick={()=>setFilter(item.id)}>{item.label}</button>)}</div>
-      <div className="ledger-full-list">{Object.keys(grouped).length ? Object.entries(grouped).map(([date,items])=><section key={date} className="ledger-date-group"><header className="ledger-date-heading"><strong>{date===today()?'Today':dateText(date,{weekday:'long',day:'numeric',month:'short',year:'numeric'})}</strong><span>{items.length} {items.length===1?'entry':'entries'}</span></header>{items.map(tx=><TransactionRow key={tx.id} transaction={tx} onClick={()=>onTransaction(tx)} onDelete={()=>onDelete(tx)} compact />)}</section>) : <EmptyState title="No entries found" detail="Change the search, date or filter to see other records." />}</div>
+      <div className="ledger-full-list">{Object.keys(grouped).length ? Object.entries(grouped).map(([date,items])=><section key={date} className="ledger-date-group"><header className="ledger-date-heading"><strong>{dateText(date,{weekday:'long',day:'numeric',month:'short',year:'numeric'})}</strong><span>{items.length} {items.length===1?'entry':'entries'}</span></header>{items.map(tx=><TransactionRow key={tx.id} transaction={tx} onClick={()=>onTransaction(tx)} onDelete={()=>onDelete(tx)} compact />)}</section>) : <EmptyState title="No entries found" detail="Change the search, date or filter to see other records." />}</div>
       <div className="ledger-full-foot">{shown.length} {shown.length===1?'entry':'entries'} shown</div>
     </section>
   </>;
