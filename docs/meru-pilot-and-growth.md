@@ -141,3 +141,93 @@ Before a public launch, resolve the current Vercel deployment protection: the pr
 5. Run the 50-shop funnel above and publish a short pilot report: activation, week-2 use, close adoption, failure reasons and requested features.
 
 **The stop/go rule:** do not scale promotion because people say the idea is good. Scale only when shopkeepers can record a normal day's activity, close the till and come back to do it again without the promoter standing beside them.
+
+
+## 11. The deeper product proposition: protect what they are building
+
+Hesabu is not sold as bookkeeping homework. The owner has already done the work of opening the shop, finding suppliers, serving customers and taking financial risk. The product should make that effort easier to protect and build on.
+
+The Kenya Small Firm Diaries study is a useful correction to the idea that all owners are either aggressive growth-seekers or survivalist traders. In its 155-firm sample, 61% described a vision combining growth and stability; 59% named savings as their primary risk-management measure; 63% said they would use a loan for cash-flow needs or inventory, while 56% said they rarely or never needed loans. This is a specific study sample, not a universal profile of Kenyan shopkeepers. It nevertheless suggests that steady growth, liquidity and control are stronger starting points than promises of rapid expansion.
+Source: https://www.fsdkenya.org/wp-content/uploads/2023/05/A-new-perspective-on-Small-Firms-in-Kenya-Summary-of-Key-Findings-from-the-Small-Firm-Diaries.pdf
+
+The August 2026 IGC policy brief reports a Nairobi experiment where a POS app with automated analytics increased daily record-keeping by 7–9 percentage points compared with the same app without analytics. It also reports better inventory knowledge, more diversified stock and higher daily sales among app users. The practical product lesson is to return a useful interpretation after each record, not to congratulate users for data entry.
+Source: https://www.theigc.org/publications/data-without-insight-why-small-businesses-under-invest-record-keeping-evidence-kenya
+
+The GSMA's 2026 work on Pochi la Biashara and women micro-entrepreneurs in Kenya also highlights trust, privacy, safety, financial control and digital confidence as design issues. Do not assume every owner has the same comfort with financial tools or the same authority over the business's phone and money.
+Source: https://www.gsma.com/solutions-and-impact/connectivity-for-good/mobile-for-development/gsma_resources/pochi-la-biashara-and-women-micro-entrepreneurs-in-kenya-from-insight-to-action/
+
+### The owner motivations to respect
+
+| Motivation | What it may mean in the shop | Product response |
+|---|---|---|
+| Independence and control | “I want to know where the money went without depending on someone else.” | Clear daily receipts, expenses, customer balances and a till count. |
+| Stability | “I cannot risk the cash that keeps the shop open.” | Show money movement, cash versus M-Pesa, overdue balances and closing differences honestly. |
+| Pride and competence | “I have built this business; I want to run it properly.” | Calm, respectful language; a clean weekly picture; never call the owner disorganised or failing. |
+| Growth without reckless risk | “I want more stock or another branch, but not at the expense of today's shop.” | Owner-selected milestones and useful working-capital/stock insights, not generic growth slogans. |
+| Family and future security | “The shop supports people and plans beyond the counter.” | Let the owner name their own milestone. Do not assume their personal or family circumstances. |
+| Trust and privacy | “My customer balances and sales are not for everyone to see.” | Keep records private, explain device-only storage, make sharing a deliberate action and never repurpose customer contacts for marketing. |
+
+These are design hypotheses to test in actual conversations, not psychological labels to assign to individual customers. Do not infer a person's ambition, family situation, confidence or gender role from their business type.
+
+### The behavioural design rule
+
+Use autonomy, competence and visible progress—not pressure.
+
+- **Autonomy:** the shopkeeper chooses the business milestone; Hesabu does not tell them what success must look like.
+- **Competence:** every number has a plain-language explanation and a clear next action.
+- **Progress:** show a user's own milestone and repeated trading-day habits, not arbitrary points, streak penalties or comparisons with neighbouring shops.
+- **Dignity:** never shame a missed day, a negative cash movement or a low target. Ask what the owner wants to improve.
+- **Honesty:** distinguish recorded receipts, expenses, credit given, outstanding debt, physical cash and self-reported milestone progress. Do not call net cash movement profit.
+- **Privacy:** business milestones and ledger data stay on the device in the current release. No silent analytics or customer-contact uploads.
+
+### The product loop
+
+**Record → understand → take one useful action → see progress → return.**
+
+The new owner check-in on Today should summarise the last seven trading dates and surface one grounded action: follow up on a due balance, review low stock, examine weekly outgoings or add the next ordinary record. The personal milestone card lets the owner track something they genuinely care about—growing stock, buying equipment, clearing supplier debt, keeping a cash reserve or opening another branch.
+
+Milestone progress is self-reported and separate from till cash. Hesabu must never imply that a target is funded, saved or achieved based on unverified ledger entries.
+
+### Five interview questions that reveal real motivation
+
+Do not start by asking whether a person likes Hesabu. Ask about the last concrete event:
+
+1. “Think about the last time the shop had a difficult day. What happened?”
+2. “What is one thing you wish you could know before closing the shop?”
+3. “What are you trying to make this shop able to do in the next six to twelve months?”
+4. “What is the biggest thing that could interrupt that plan?”
+5. “Show me how you currently know whether you can restock, pay a supplier or take money out of the business.”
+
+Follow with “Can you show me the last time that happened?” Avoid suggesting a loan, a second branch or a savings target before the owner describes their own priority.
+
+### Positioning and message tests
+
+Test these three value propositions with separate cohorts. Do not combine them into one long sales pitch.
+
+- **Control:** “Know what came in, what went out and who still owes the shop.”
+- **Stability:** “Close the day knowing what should be in the till—and what needs attention tomorrow.”
+- **Progress:** “Build your shop towards the next goal, one clear decision at a time.”
+
+Kiswahili candidate: **“Linda biashara uliyojenga. Jua pesa ilipo, madeni yaliyobaki na hatua inayofuata.”** Translate-test with shopkeepers in Meru; do not assume a literal translation is natural in every local language or context.
+
+Ask which message the owner remembers unaided after a day, not only which one they say they like during the pitch.
+
+### The necessity test
+
+Hesabu is becoming a daily tool only when a shopkeeper can name a decision it helped them make. During the pilot, collect concrete examples such as:
+
+- “I followed up because I saw the customer balance was due.”
+- “I reordered before the item ran out.”
+- “I found the till difference before leaving.”
+- “I delayed a purchase because the week's recorded expenses were already above collections.”
+- “I am tracking progress towards the equipment I chose.”
+
+Do not count compliments, downloads, app opens or a saved milestone as evidence of necessity. Track the action, whether the owner would have taken it without Hesabu, and whether it made a practical difference.
+
+### Product sequence from here
+
+1. Verify that the new owner check-in produces correct advice using real pilot data and is understandable without explanation.
+2. Validate that the milestone language and self-reported progress feel motivating rather than childish or intrusive.
+3. Add weekly comparisons only after enough reliable entries exist; clearly label incomplete weeks and missing records.
+4. Improve stock usefulness with simple reorder quantities and supplier costs, without claiming sales forecasts from sparse data.
+5. Evaluate a secure backup/sync option and real M-Pesa integration only after owners demonstrate repeat use and demand. Keep every claim aligned with what is actually integrated.
