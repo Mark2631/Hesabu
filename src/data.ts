@@ -183,8 +183,7 @@ export function hasSavedData(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return false;
-    const parsed = JSON.parse(raw) as Partial<AppData>;
-    return Boolean(parsed?.shopInfo && Array.isArray(parsed.transactions) && Array.isArray(parsed.customers) && Array.isArray(parsed.stock));
+    return parseBackupPayload(JSON.parse(raw)) !== null;
   } catch {
     return false;
   }
@@ -194,13 +193,8 @@ export function readSavedData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as AppData;
-      if (parsed?.shopInfo && Array.isArray(parsed.transactions) && Array.isArray(parsed.customers) && Array.isArray(parsed.stock)) {
-        const fallback = makeDemoData();
-        const customers = parsed.customers.map(c => ({ ...c, kind: c.kind ?? (c.balance < 0 ? 'supplier' as const : 'customer' as const) }));
-        const shopInfo = { ...fallback.shopInfo, ...parsed.shopInfo, tradingDayStart: validTime(parsed.shopInfo.tradingDayStart ?? '') ? parsed.shopInfo.tradingDayStart : '06:00', tradingDayEnd: validTime(parsed.shopInfo.tradingDayEnd ?? '') ? parsed.shopInfo.tradingDayEnd : '21:00' };
-        return { ...fallback, ...parsed, shopInfo, shopGoal: parsed.shopGoal ?? null, customers, reminders: parsed.reminders ?? fallback.reminders, dailyCloses: parsed.dailyCloses ?? [] };
-      }
+      const restored = parseBackupPayload(JSON.parse(raw));
+      if (restored) return restored;
     }
   } catch {
     // A corrupt or blocked local save should never prevent the ledger from opening.
