@@ -298,7 +298,7 @@ export function parseTransaction(input: string, data: AppData): TransactionDraft
 export interface OwnerBrief {
   title: string;
   detail: string;
-  action: 'debts' | 'stock' | 'weekly-report' | 'record';
+  action: 'debts' | 'supplier-debts' | 'stock' | 'weekly-report' | 'record';
   actionLabel: string;
   collected: number;
   expenses: number;
@@ -321,11 +321,16 @@ export function buildOwnerBrief(data: AppData, reportDate: string): OwnerBrief {
   const expenses = cashOut(recent);
   const netMovement = collected - expenses;
   const activeDays = new Set(recent.map(tx => tx.tradingDay ?? tx.date)).size;
-  const outstandingCustomers = data.customers.filter(customer => customer.balance > 0);
+  const outstandingCustomers = data.customers.filter(customer => customer.balance > 0 && customer.kind !== 'supplier');
   const outstanding = outstandingCustomers.reduce((sum, customer) => sum + customer.balance, 0);
   const overdue = outstandingCustomers
     .filter(customer => customer.dueDate && customer.dueDate <= reportDate)
     .sort((a, b) => b.balance - a.balance);
+  const suppliersOwed = data.customers.filter(customer => customer.kind === 'supplier' && customer.balance < 0);
+  const supplierPayables = suppliersOwed.reduce((sum, supplier) => sum + Math.abs(supplier.balance), 0);
+  const supplierDue = suppliersOwed
+    .filter(supplier => supplier.dueDate && supplier.dueDate <= reportDate)
+    .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
   const lowStock = [...data.stock]
     .filter(item => item.quantity <= item.lowStockAt)
     .sort((a, b) => (a.quantity / Math.max(1, a.lowStockAt)) - (b.quantity / Math.max(1, b.lowStockAt)));
@@ -333,13 +338,28 @@ export function buildOwnerBrief(data: AppData, reportDate: string): OwnerBrief {
   const goalTitle = data.shopGoal?.title.toLowerCase() ?? '';
   const focusOnStock = /stock|inventory|restock|bidhaa|stock up/.test(goalTitle);
   const focusOnDebts = /debt|deni|owe|supplier|madeni/.test(goalTitle);
+  const focusOnSupplierDebt = /supplier|wholesale|wholesaler/.test(goalTitle);
 
   let title = 'Start with one useful record';
   let detail = 'Record the next sale, expense or customer credit. Hesabu can only give useful guidance from the activity you enter.';
   let action: OwnerBrief['action'] = 'record';
   let actionLabel = 'Record an entry';
 
-  if (focusOnStock && lowStock.length) {
+  if (focusOnSupplierDebt && supplierDue.length) {
+    const supplier = supplierDue[0];
+    title = `You owe ${money(Math.abs(supplier.balance))} to ${supplier.name}`;
+    detail = supplier.dueDate && supplier.dueDate < reportDate
+      ? 'This supplier balance is past its recorded due date. Review the agreement and plan the payment without putting the shop’s working cash under pressure.'
+      : 'This supplier balance is due. Check the agreed date and the cash available before making the payment.';
+    action = 'supplier-debts';
+    actionLabel = 'Review supplier balance';
+  } else if (focusOnSupplierDebt && suppliersOwed.length) {
+    const supplier = [...suppliersOwed].sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))[0];
+    title = `You still owe ${money(Math.abs(supplier.balance))} to ${supplier.name}`;
+    detail = 'Keep the supplier balance and agreed payment date visible so restocking does not quietly turn into an unplanned cash strain.';
+    action = 'supplier-debts';
+    actionLabel = 'Review supplier balance';
+  } else if (focusOnStock && lowStock.length) {
     const item = lowStock[0];
     title = 'Protect the stock customers come in for';
     detail = `${item.name} is at ${item.quantity} ${item.unit}; your restock reminder starts at ${item.lowStockAt}. Review it before buying more stock.`;
@@ -387,7 +407,7 @@ export function buildOwnerBrief(data: AppData, reportDate: string): OwnerBrief {
 
   return {
     title, detail, action, actionLabel, collected, expenses, netMovement,
-    outstanding, overdueCount: overdue.length, lowStockCount: lowStock.length,
+    outstanding, supplierPayables, overdueCount: overdue.length, lowStockCount: lowStock.length,
     activeDays, entries: recent.length, rangeStart,
   };
 }
