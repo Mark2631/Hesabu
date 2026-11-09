@@ -714,7 +714,8 @@ function App() {
         </section>
         <div className="owner-focus-grid">
           <OwnerInsightCard brief={ownerBrief} onAction={() => {
-            if (ownerBrief.action === 'debts') navigate('debts');
+            if (ownerBrief.action === 'debts') { setDebtDirection('owed-to-us'); navigate('debts'); }
+            else if (ownerBrief.action === 'supplier-debts') { setDebtDirection('we-owe'); navigate('debts'); }
             else if (ownerBrief.action === 'stock') navigate('stock');
             else if (ownerBrief.action === 'weekly-report') { setReportDate(tradingDate); setReportPeriod('weekly'); navigate('more'); }
             else { setTypeChoice('sale'); setPending(null); setQuickEntryOpen(true); }
