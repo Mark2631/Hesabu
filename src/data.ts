@@ -102,6 +102,7 @@ export function parseBackupPayload(value: unknown): AppData | null {
   const stock = candidate.stock;
   const reminders = candidate.reminders === undefined ? [] : candidate.reminders;
   const dailyCloses = candidate.dailyCloses === undefined ? [] : candidate.dailyCloses;
+  const shopGoal = candidate.shopGoal === undefined || candidate.shopGoal === null ? null : candidate.shopGoal;
   if (!Array.isArray(reminders) || !Array.isArray(dailyCloses)) return null;
 
   const validTransactions = transactions.every(row => isRecord(row)
@@ -130,10 +131,16 @@ export function parseBackupPayload(value: unknown): AppData | null {
     && finiteAmount(row.openingCash) && finiteAmount(row.expectedCash)
     && finiteAmount(row.countedCash) && typeof row.difference === 'number' && Number.isFinite(row.difference)
     && typeof row.closedAt === 'string' && Number.isFinite(Date.parse(row.closedAt)));
-  if (!validTransactions || !validCustomers || !validStock || !validReminders || !validDailyCloses) return null;
+  const validShopGoal = shopGoal === null || (isRecord(shopGoal)
+    && typeof shopGoal.title === 'string' && Boolean(shopGoal.title.trim())
+    && finiteAmount(shopGoal.targetAmount) && shopGoal.targetAmount > 0
+    && finiteAmount(shopGoal.progressAmount) && shopGoal.progressAmount <= shopGoal.targetAmount
+    && typeof shopGoal.updatedAt === 'string' && Number.isFinite(Date.parse(shopGoal.updatedAt)));
+  if (!validTransactions || !validCustomers || !validStock || !validReminders || !validDailyCloses || !validShopGoal) return null;
 
   const fallback = makeDemoData();
   return {
+    shopGoal: shopGoal as AppData['shopGoal'] ?? null,
     shopInfo: {
       name: shop.name.trim(),
       owner: typeof shop.owner === 'string' ? shop.owner : '',
@@ -173,7 +180,7 @@ export function readSavedData(): AppData {
         const fallback = makeDemoData();
         const customers = parsed.customers.map(c => ({ ...c, kind: c.kind ?? (c.balance < 0 ? 'supplier' as const : 'customer' as const) }));
         const shopInfo = { ...fallback.shopInfo, ...parsed.shopInfo, tradingDayStart: validTime(parsed.shopInfo.tradingDayStart ?? '') ? parsed.shopInfo.tradingDayStart : '06:00', tradingDayEnd: validTime(parsed.shopInfo.tradingDayEnd ?? '') ? parsed.shopInfo.tradingDayEnd : '21:00' };
-        return { ...fallback, ...parsed, shopInfo, customers, reminders: parsed.reminders ?? fallback.reminders, dailyCloses: parsed.dailyCloses ?? [] };
+        return { ...fallback, ...parsed, shopInfo, shopGoal: parsed.shopGoal ?? null, customers, reminders: parsed.reminders ?? fallback.reminders, dailyCloses: parsed.dailyCloses ?? [] };
       }
     }
   } catch {
