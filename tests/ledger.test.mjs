@@ -211,3 +211,20 @@ test('business milestone is included in backups and malformed milestones are rej
   invalid.shopGoal.progressAmount = 60000;
   assert.equal(parseBackupPayload(invalid), null);
 });
+
+
+test('supplier-debt goal points to payables instead of customer receivables', () => {
+  const sample = {
+    ...makeDemoData(),
+    shopGoal: { title: 'Clear supplier debt', targetAmount: 12000, progressAmount: 3000, updatedAt: '2026-11-09T08:00:00.000Z' },
+    customers: [
+      { id: 'supplier-1', kind: 'supplier', name: 'Meru Wholesalers', phone: '', balance: -4800, dueDate: '2026-11-08' },
+    ],
+    stock: [],
+    transactions: [],
+  };
+  const brief = buildOwnerBrief(sample, '2026-11-09');
+  assert.equal(brief.action, 'supplier-debts');
+  assert.equal(brief.supplierPayables, 4800);
+  assert.match(brief.title, /Meru Wholesalers/);
+});
