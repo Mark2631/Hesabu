@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBackupEnvelope, makeDemoData, parseBackupPayload } from '../src/data.ts';
-import { buildReport, cashIn, cashOut, cashReceived, creditGiven, mpesaReceived, normalizeKenyanWhatsAppNumber, parseTransaction } from '../src/utils.ts';
+import { buildOwnerBrief, buildReport, cashIn, cashOut, cashReceived, creditGiven, mpesaReceived, normalizeKenyanWhatsAppNumber, parseTransaction } from '../src/utils.ts';
 
 const data = makeDemoData();
 
@@ -140,4 +140,74 @@ test('daily till closes survive backup export and are validated on restore', () 
   const malformed = structuredClone(withClose);
   malformed.dailyCloses[0].closedAt = 'not-a-date';
   assert.equal(parseBackupPayload(malformed), null);
+});
+
+
+test('owner check-in prioritises an overdue customer and keeps collected money separate from credit', () => {
+  const sample = {
+    ...makeDemoData(),
+    customers: [{ id: 'c1', kind: 'customer', name: 'Kamau', phone: '', balance: 600, dueDate: '2026-11-08' }],
+    stock: [],
+    transactions: [
+      { id: 'sale-1', type: 'sale', description: 'Shop sales', amount: 1000, date: '2026-11-09', tradingDay: '2026-11-09', time: '10:00', paymentMethod: 'cash' },
+      { id: 'credit-1', type: 'credit', description: 'Goods on credit', amount: 300, date: '2026-11-09', tradingDay: '2026-11-09', time: '10:05', customerName: 'Kamau' },
+      { id: 'expense-1', type: 'expense', description: 'Transport', amount: 200, date: '2026-11-09', tradingDay: '2026-11-09', time: '10:10', paymentMethod: 'cash' },
+    ],
+  };
+  const brief = buildOwnerBrief(sample, '2026-11-09');
+  assert.equal(brief.action, 'debts');
+  assert.equal(brief.overdueCount, 1);
+  assert.equal(brief.outstanding, 600);
+  assert.equal(brief.collected, 1000);
+  assert.equal(brief.expenses, 200);
+  assert.equal(brief.netMovement, 800);
+  assert.match(brief.title, /Kamau/);
+});
+
+test('the owner’s stock-growth goal changes the next-step priority', () => {
+  const sample = {
+    ...makeDemoData(),
+    shopGoal: { title: 'Grow my stock', targetAmount: 15000, progressAmount: 2500, updatedAt: '2026-11-09T08:00:00.000Z' },
+    customers: [{ id: 'c1', kind: 'customer', name: 'Kamau', phone: '', balance: 600, dueDate: '2026-11-08' }],
+    stock: [{ id: 's1', name: 'Unga', quantity: 2, unit: 'packets', lowStockAt: 8, lastRestocked: '2026-11-01' }],
+    transactions: [],
+  };
+  const brief = buildOwnerBrief(sample, '2026-11-09');
+  assert.equal(brief.action, 'stock');
+  assert.equal(brief.lowStockCount, 1);
+  assert.match(brief.title, /stock|customers/i);
+});
+
+test('owner check-in does not call net cash movement profit', () => {
+  const sample = {
+    ...makeDemoData(),
+    shopGoal: null,
+    customers: [],
+    stock: [],
+    transactions: [
+      { id: 'sale-1', type: 'sale', description: 'Sales', amount: 100, date: '2026-11-09', tradingDay: '2026-11-09', time: '10:00' },
+      { id: 'expense-1', type: 'expense', description: 'Stock purchase', amount: 250, date: '2026-11-09', tradingDay: '2026-11-09', time: '10:10' },
+    ],
+  };
+  const brief = buildOwnerBrief(sample, '2026-11-09');
+  assert.equal(brief.netMovement, -150);
+  assert.match(brief.detail, /not profit/);
+});
+
+test('business milestone is included in backups and malformed milestones are rejected', () => {
+  const withGoal = {
+    ...makeDemoData(),
+    shopGoal: {
+      title: 'Open another branch',
+      targetAmount: 50000,
+      progressAmount: 12500,
+      updatedAt: '2026-11-09T08:00:00.000Z',
+    },
+  };
+  const restored = parseBackupPayload(createBackupEnvelope(withGoal, '2026-11-09T09:00:00.000Z'));
+  assert.equal(restored?.shopGoal?.title, 'Open another branch');
+  assert.equal(restored?.shopGoal?.progressAmount, 12500);
+  const invalid = structuredClone(withGoal);
+  invalid.shopGoal.progressAmount = 60000;
+  assert.equal(parseBackupPayload(invalid), null);
 });
