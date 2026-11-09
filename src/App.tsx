@@ -154,8 +154,9 @@ interface InstallPromptEvent extends Event {
 }
 
 function App() {
-  const [data, setData] = useState<AppData>(() => readSavedData());
-  const [showWelcome, setShowWelcome] = useState(() => !hasSavedData());
+  const previewDemoMode = new URLSearchParams(window.location.search).get('demo') === '1';
+  const [data, setData] = useState<AppData>(() => previewDemoMode ? makeDemoData() : readSavedData());
+  const [showWelcome, setShowWelcome] = useState(() => !previewDemoMode && !hasSavedData());
   const [section, setSection] = useState<Section>('home');
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
