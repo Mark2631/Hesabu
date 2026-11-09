@@ -3,13 +3,13 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles.css';
 
-type ErrorState = { hasError: boolean };
+type ErrorState = { hasError: boolean; message: string; stack: string };
 
 class HesabuErrorBoundary extends React.Component<React.PropsWithChildren, ErrorState> {
-  state: ErrorState = { hasError: false };
+  state: ErrorState = { hasError: false, message: '', stack: '' };
 
-  static getDerivedStateFromError(): ErrorState {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): ErrorState {
+    return { hasError: true, message: error?.message || 'Unknown rendering error', stack: error?.stack || '' };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
@@ -26,8 +26,12 @@ class HesabuErrorBoundary extends React.Component<React.PropsWithChildren, Error
         }}>
           <strong style={{ fontSize: 23 }}>Hesabu could not open this screen.</strong>
           <p style={{ maxWidth: 360, margin: 0, color: '#6E7785', fontSize: 14, lineHeight: 1.6 }}>
-            Your saved shop records have not been deliberately cleared. Reload the app to try again.
+            Your saved records have not been cleared. Reload the app or use the fresh-preview link.
           </p>
+          <details style={{ maxWidth: 520, width: '100%', textAlign: 'left', fontSize: 12, color: '#6E7785' }}>
+            <summary style={{ cursor: 'pointer', padding: 8 }}>Technical error details</summary>
+            <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', padding: 10, background: '#ECEAE4', borderRadius: 8 }}>{this.state.message}{this.state.stack ? '\\n' + this.state.stack.slice(0, 1800) : ''}</pre>
+          </details>
           <button onClick={() => window.location.reload()} style={{
             justifySelf: 'center', minHeight: 44, padding: '0 18px', border: 0,
             borderRadius: 8, background: '#285BC5', color: '#fff', fontWeight: 700,
