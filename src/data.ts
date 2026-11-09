@@ -47,6 +47,15 @@ export function makeDemoData(): AppData {
     { id: 'tx-2day-flour', type: 'sale', description: 'Unga wa mahindi', amount: 500, date: daysAgo(2), time: timeAt(13, 10), stockItemId: 'stock-flour', stockQuantityDelta: -4 },
     { id: 'tx-2day-electricity', type: 'expense', description: 'Electricity tokens', amount: 500, date: daysAgo(2), time: timeAt(11, 0), category: 'Utilities' },
     { id: 'tx-2day-hassan', type: 'credit', description: 'Mchele and Sukari', amount: 300, date: daysAgo(2), time: timeAt(9, 40), customerId: 'customer-hassan', customerName: 'Hassan', dueDate: offset(2) },
+    { id: 'tx-3day-sale', type: 'sale', description: 'Mixed groceries', amount: 1850, date: daysAgo(3), time: timeAt(17, 5), paymentMethod: 'mpesa' },
+    { id: 'tx-3day-expense', type: 'expense', description: 'Vegetable delivery', amount: 180, date: daysAgo(3), time: timeAt(12, 30), paymentMethod: 'cash', category: 'Transport' },
+    { id: 'tx-4day-sale', type: 'sale', description: 'Household goods', amount: 2240, date: daysAgo(4), time: timeAt(15, 45), paymentMethod: 'cash' },
+    { id: 'tx-4day-credit', type: 'credit', description: 'Cooking oil and soap', amount: 540, date: daysAgo(4), time: timeAt(11, 20), customerId: 'customer-wanjiku', customerName: 'Wanjiku', dueDate: offset(-1) },
+    { id: 'tx-4day-payment', type: 'payment', description: 'Debt payment from Kamau', amount: 250, date: daysAgo(4), time: timeAt(10, 5), customerId: 'customer-kamau', customerName: 'Kamau', paymentMethod: 'mpesa' },
+    { id: 'tx-5day-sale', type: 'sale', description: 'Rice, sugar and flour', amount: 3100, date: daysAgo(5), time: timeAt(16, 15), paymentMethod: 'mpesa' },
+    { id: 'tx-5day-expense', type: 'expense', description: 'County market levy', amount: 150, date: daysAgo(5), time: timeAt(8, 5), paymentMethod: 'cash', category: 'Other' },
+    { id: 'tx-6day-sale', type: 'sale', description: 'Morning shop sales', amount: 1680, date: daysAgo(6), time: timeAt(13, 35), paymentMethod: 'cash' },
+    { id: 'tx-6day-stock', type: 'expense', description: 'Supplier restock — Sukari', amount: 1450, date: daysAgo(6), time: timeAt(9, 10), paymentMethod: 'mpesa', category: 'Stock purchase', stockItemId: 'stock-sugar', stockQuantityDelta: 10 },
   ];
 
   const reminders: Reminder[] = [
@@ -58,10 +67,20 @@ export function makeDemoData(): AppData {
 
   return {
     shopInfo: { name: 'Mama Grace General Shop', owner: 'Grace', phone: '0712 000 123', businessType: 'General shop', tradingDayStart: '06:00', tradingDayEnd: '21:00' },
+    shopGoal: { title: 'Build a cash reserve', targetAmount: 30000, progressAmount: 8500, updatedAt: new Date().toISOString() },
     transactions,
     customers,
     stock,
-    reminders,
+    reminders: [
+      ...reminders,
+      { id: 'rem-water', title: 'Water bill', detail: 'Check the shop water account.', amount: 650, dueDate: offset(-2), kind: 'bill', done: true },
+      { id: 'rem-stock', title: 'Check sugar stock', detail: 'Compare shelf quantity before ordering.', dueDate: offset(1), kind: 'other', stockItemId: 'stock-sugar', done: false },
+    ],
+    dailyCloses: [
+      { id: 'close-1', date: daysAgo(1), openingCash: 2500, expectedCash: 5820, countedCash: 5720, difference: -100, closedAt: new Date(daysAgo(1) + 'T20:55:00').toISOString() },
+      { id: 'close-2', date: daysAgo(2), openingCash: 2200, expectedCash: 6410, countedCash: 6410, difference: 0, closedAt: new Date(daysAgo(2) + 'T20:48:00').toISOString() },
+      { id: 'close-3', date: daysAgo(3), openingCash: 2000, expectedCash: 4970, countedCash: 5020, difference: 50, closedAt: new Date(daysAgo(3) + 'T20:52:00').toISOString() },
+    ],
   };
 }
 
