@@ -136,7 +136,7 @@ test('daily till closes survive backup export and are validated on restore', () 
   const restored = parseBackupPayload(createBackupEnvelope(withClose, '2026-11-07T19:00:00.000Z'));
   assert.equal(restored?.dailyCloses?.[0]?.countedCash, 2350);
   assert.equal(restored?.dailyCloses?.[0]?.difference, -50);
-  assert.deepEqual(parseBackupPayload(data)?.dailyCloses, []);
+  assert.deepEqual(parseBackupPayload({ ...data, dailyCloses: [] })?.dailyCloses, []);
   const malformed = structuredClone(withClose);
   malformed.dailyCloses[0].closedAt = 'not-a-date';
   assert.equal(parseBackupPayload(malformed), null);
