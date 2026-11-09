@@ -148,6 +148,11 @@ function StockStatus({ item }: { item: StockItem }) {
   return <span className={cn('stock-status', critical ? 'stock-critical' : low ? 'stock-low' : 'stock-good')}><span className="status-led" />{label}</span>;
 }
 
+interface InstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
+
 function App() {
   const [data, setData] = useState<AppData>(() => readSavedData());
   const [showWelcome, setShowWelcome] = useState(() => !hasSavedData());
@@ -182,6 +187,8 @@ function App() {
   const [clock, setClock] = useState(() => new Date());
   const [online, setOnline] = useState(() => navigator.onLine);
   const [queuedReportDate, setQueuedReportDate] = useState<string | null>(() => { try { return localStorage.getItem('hesabu:v1:queued-report') || null; } catch { return null; } });
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [appInstalled, setAppInstalled] = useState(() => window.matchMedia?.('(display-mode: standalone)').matches === true || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
 
   useEffect(() => { if (!showWelcome) setStorageWriteFailed(!saveData(data)); }, [data, showWelcome]);
   useEffect(() => {
@@ -204,6 +211,19 @@ function App() {
   }, [online, queuedReportDate]);
   useEffect(() => () => { recognitionRef.current?.abort(); }, []);
   useEffect(() => {
+    const captureInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    };
+    const markInstalled = () => { setAppInstalled(true); setInstallPrompt(null); };
+    window.addEventListener('beforeinstallprompt', captureInstallPrompt);
+    window.addEventListener('appinstalled', markInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', captureInstallPrompt);
+      window.removeEventListener('appinstalled', markInstalled);
+    };
+  }, []);
+  useEffect(() => {
     let active = true;
     if (!navigator.storage?.persisted) { setStorageProtection('unsupported'); return () => { active = false; }; }
     navigator.storage.persisted()
@@ -222,6 +242,25 @@ function App() {
     } catch { setStorageProtection('unsupported'); notify('Could not request browser storage protection. Download a backup regularly.'); }
   };
   const closeToast = () => setToastMessage('');
+  const installHint = installPrompt
+    ? 'Your phone can install Hesabu now.'
+    : /iphone|ipad|ipod/i.test(navigator.userAgent)
+      ? 'In Safari, tap Share, then Add to Home Screen.'
+      : /android/i.test(navigator.userAgent)
+        ? 'In Chrome, open the menu and choose Install app or Add to Home screen.'
+        : 'Use your browser menu and choose Install app or Add to Home screen, when available.';
+  const installHesabu = async () => {
+    if (!installPrompt) { notify(installHint); return; }
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === 'accepted') { setAppInstalled(true); notify('Hesabu was added to your home screen.'); }
+    } catch {
+      notify('Installation is not available in this browser. Use the browser menu instead.');
+    } finally {
+      setInstallPrompt(null);
+    }
+  };
   const closeModal = () => setModal(null);
   const updateData = (updater: (current: AppData) => AppData) => setData(current => updater(current));
   const saveDailyClose = (date: string, openingCash: number, countedCash: number) => {
@@ -705,7 +744,7 @@ function App() {
         <div className="ledger-privacy-note"><CheckCircle2 size={16} /><span><strong>Saved on this device</strong><small>Your records stay on this device. Keep a separate backup in More.</small></span></div>
       </div>}
       {section === 'ledger' && <LedgerSection transactions={sortedTransactions} filter={filterTransactions} setFilter={setFilterTransactions} search={transactionSearch} setSearch={setTransactionSearch} dateFilter={ledgerDateFilter} setDateFilter={setLedgerDateFilter} onTransaction={transaction => setModal({ kind: 'transaction', transactionId: transaction.id })} onDelete={deleteTransaction} />}
-      {section === 'more' && <MoreSection onStock={() => navigate('stock')} online={online} queuedReportDate={queuedReportDate} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShareReport={shareReport} onCopyReport={copyReport} onPrintReport={() => window.print()} reminders={allReminders} onToggleReminder={toggleReminder} onEditReminder={reminder => setModal({ kind: 'reminder', reminder })} onAddReminder={() => setModal({ kind: 'reminder' })} onOpenRecord={openReminderRecord} customers={data.customers} stock={data.stock} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} onSettings={() => setModal({ kind: 'settings' })} lastBackupAt={lastBackupAt} storageWriteFailed={storageWriteFailed} storageProtection={storageProtection} />}
+      {section === 'more' && <MoreSection onStock={() => navigate('stock')} appInstalled={appInstalled} installAvailable={Boolean(installPrompt)} installHint={installHint} onInstall={installHesabu} online={online} queuedReportDate={queuedReportDate} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShareReport={shareReport} onCopyReport={copyReport} onPrintReport={() => window.print()} reminders={allReminders} onToggleReminder={toggleReminder} onEditReminder={reminder => setModal({ kind: 'reminder', reminder })} onAddReminder={() => setModal({ kind: 'reminder' })} onOpenRecord={openReminderRecord} customers={data.customers} stock={data.stock} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} onSettings={() => setModal({ kind: 'settings' })} lastBackupAt={lastBackupAt} storageWriteFailed={storageWriteFailed} storageProtection={storageProtection} />}
       {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const phone = normalizeKenyanWhatsAppNumber(customer.phone); if (!phone) { notify('Please add a valid Kenyan phone number for this customer.'); return; } const message = debtReminderMessage(customer.name, data.shopInfo.name, customer.balance, customer.dueDate); window.open(whatsAppUrl(message, phone), '_blank', 'noopener,noreferrer'); }} onCreateFollowUp={customer => setModal({ kind: 'reminder', link: { customerId: customer.id, label: customer.name, kind: 'customer' } })} />}
       {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} onReminder={item => setModal({ kind: 'reminder', link: { stockItemId: item.id, label: item.name, kind: 'other' } })} />}
     </main>
@@ -767,8 +806,8 @@ function LedgerSection({ transactions, filter, setFilter, search, setSearch, dat
   </>;
 }
 
-function MoreSection({ onStock, online, queuedReportDate, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShareReport, onCopyReport, onPrintReport, reminders, onToggleReminder, onEditReminder, onAddReminder, onOpenRecord, customers, stock, onExportBackup, onExportCsv, onImportBackup, onSettings, lastBackupAt, storageWriteFailed, storageProtection }: {
-  onStock: () => void; online: boolean; queuedReportDate: string | null;
+function MoreSection({ onStock, appInstalled, installAvailable, installHint, onInstall, online, queuedReportDate, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShareReport, onCopyReport, onPrintReport, reminders, onToggleReminder, onEditReminder, onAddReminder, onOpenRecord, customers, stock, onExportBackup, onExportCsv, onImportBackup, onSettings, lastBackupAt, storageWriteFailed, storageProtection }: {
+  onStock: () => void; appInstalled: boolean; installAvailable: boolean; installHint: string; onInstall: () => void; online: boolean; queuedReportDate: string | null;
   report: ReturnType<typeof buildReport>; reportPeriod: 'daily'|'weekly'|'monthly'; setReportPeriod: (value:'daily'|'weekly'|'monthly')=>void;
   reportDate:string; setReportDate:(value:string)=>void; onShareReport:()=>void; onCopyReport:()=>void; onPrintReport:()=>void;
   reminders:Reminder[]; onToggleReminder:(reminder:Reminder)=>void; onEditReminder:(reminder:Reminder)=>void; onAddReminder:()=>void;
@@ -778,6 +817,7 @@ function MoreSection({ onStock, online, queuedReportDate, report, reportPeriod, 
 }) {
   const open=reminders.filter(r=>!r.done), done=reminders.filter(r=>r.done);
   return <div className="more-page"><SectionTitle eyebrow="SHOP TOOLS" title="More" detail="Reports, reminders, stock and copies of your shop records." right={<Button size="sm" variant="secondary" onClick={onStock}><Package size={14} /> Stock</Button>} />
+    {!appInstalled && <section className="surface install-app-panel"><div><span className="ledger-section-label">QUICK ACCESS</span><h2>Add Hesabu to this phone</h2><p>Open your shop book from the home screen. It is easier to return to each day.</p><small>{installHint}</small></div><Button size="sm" onClick={onInstall}>{installAvailable ? 'Install Hesabu' : 'Show install steps'}</Button></section>}
     <ReportsSection online={online} queuedReportDate={queuedReportDate} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={onShareReport} onCopy={onCopyReport} onPrint={onPrintReport} />
     <div className="more-tools-grid">
       <section className="surface more-tool-panel"><header className="more-tool-heading"><div><span className="ledger-section-label">FOLLOW THROUGH</span><h2>Reminders</h2><p>Tasks you can tick off when they are done.</p></div><Button size="sm" onClick={onAddReminder}><Plus size={14} /> Add</Button></header>
