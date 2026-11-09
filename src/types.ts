@@ -72,8 +72,16 @@ export interface Reminder {
   done: boolean;
 }
 
+export interface ShopGoal {
+  title: string;
+  targetAmount: number;
+  progressAmount: number;
+  updatedAt: string;
+}
+
 export interface AppData {
   shopInfo: ShopInfo;
+  shopGoal?: ShopGoal | null;
   transactions: Transaction[];
   customers: Customer[];
   stock: StockItem[];
