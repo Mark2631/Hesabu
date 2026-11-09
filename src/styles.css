@@ -1492,3 +1492,81 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:3px soli
 
 .voice-home-control { display:flex;flex-direction:column;align-items:stretch;gap:7px; }
 .voice-language-home { justify-content:flex-end;margin:0 2px 0 auto; }
+
+
+/* Device-first corrections: a full-width tablet workspace and a true four-item nav. */
+html, body, #root { min-height:100%; }
+body { min-width:320px; overflow-x:hidden; }
+.app-shell { min-height:100svh; }
+.app-main, .ledger-home, .more-page, .surface { min-width:0; }
+.install-app-panel {
+  display:flex; align-items:center; justify-content:space-between; gap:18px;
+  padding:16px 18px; margin:0 0 16px; border:1px solid #DDE4F1;
+  border-radius:9px; background:#F8FAFE;
+}
+.install-app-panel > div { min-width:0; }
+.install-app-panel h2 { margin:5px 0 0; color:#303B4C; font-size:15px; font-weight:750; }
+.install-app-panel p { margin:5px 0 0; color:#697587; font-size:11px; line-height:1.5; }
+.install-app-panel small { display:block; margin-top:6px; color:#858F9E; font-size:10px; line-height:1.45; }
+.install-app-panel .btn { flex:none; }
+
+@media (min-width:721px) and (max-width:900px) {
+  .desktop-nav { display:none; }
+  .app-shell { padding-bottom:calc(78px + env(safe-area-inset-bottom)); }
+  .app-main {
+    width:100%; max-width:none; margin:0 auto;
+    padding:24px 22px calc(30px + env(safe-area-inset-bottom));
+  }
+  .mobile-nav {
+    position:fixed; z-index:50; right:0; bottom:0; left:0;
+    display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
+    min-height:calc(66px + env(safe-area-inset-bottom));
+    padding:6px 12px calc(6px + env(safe-area-inset-bottom));
+    border-top:1px solid #E2E1DC; background:rgba(250,249,246,.98);
+    box-shadow:0 -5px 18px rgba(35,44,58,.035);
+  }
+  .mobile-nav-item { display:flex; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:0 2px; color:#828995; font-size:10px; font-weight:700; }
+  .mobile-nav-active { color:#244FA7; }
+  .mobile-nav-icon { display:flex; width:35px; height:29px; align-items:center; justify-content:center; border-radius:7px; }
+  .mobile-nav-active .mobile-nav-icon { background:#EAF0FC; }
+  .mobile-nav-dot { position:absolute; bottom:0; width:4px; height:4px; border-radius:50%; background:#285BC5; }
+  .more-tools-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+
+@media (max-width:720px) {
+  .mobile-nav { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+  .mobile-nav-item { min-width:0; padding:0 2px; }
+  .app-main { width:100%; max-width:none; margin:0 auto; }
+  .install-app-panel { align-items:stretch; flex-direction:column; gap:12px; padding:14px; }
+  .install-app-panel .btn { width:100%; justify-content:center; min-height:42px; }
+  .more-tools-grid { grid-template-columns:minmax(0,1fr); }
+  .cashflow-breakdown { align-items:flex-start; }
+  .cashflow-hero-value { align-items:flex-start; flex-direction:column; gap:6px; }
+  .cashflow-hero-value > span { max-width:34ch; line-height:1.45; }
+  .ledger-head-copy { min-width:0; flex:1 1 180px; }
+}
+
+@media (max-width:390px) {
+  .header-inner { padding-right:10px; padding-left:10px; gap:7px; }
+  .brand-lockup { min-width:0; }
+  .hesabu-wordmark { font-size:18px; }
+  .header-tools { min-width:0; gap:6px; }
+  .network-status { width:25px; height:25px; flex:none; justify-content:center; padding:0; overflow:hidden; font-size:0; }
+  .network-status > span { width:7px; height:7px; }
+  .profile-chip { width:34px; min-width:34px; height:34px; justify-content:center; padding:0; overflow:hidden; font-size:0; }
+  .profile-chip svg { width:16px; height:16px; flex:none; }
+  .ledger-page-head { align-items:flex-start; flex-wrap:wrap; }
+  .ledger-report-button { max-width:100%; }
+  .cashflow-hero-top { align-items:flex-start; flex-wrap:wrap; }
+  .cashflow-breakdown { gap:8px 12px; }
+  .mobile-nav-item > span:last-of-type:not(.mobile-nav-dot) { font-size:9px; }
+}
+
+@media (max-width:350px) {
+  .app-main { padding-right:9px; padding-left:9px; }
+  .cashflow-hero { padding-right:11px; padding-left:11px; }
+  .ledger-action-list { gap:4px; }
+  .ledger-action { font-size:9px; }
+  .mobile-nav { padding-right:3px; padding-left:3px; }
+  .mobile-nav-item { font-size:8px; }
+}
