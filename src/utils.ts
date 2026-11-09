@@ -1,4 +1,4 @@
-import type { AppData, Transaction, TransactionDraft, TransactionType } from './types';
+import type { AppData, DailyClose, Transaction, TransactionDraft, TransactionType } from './types';
 
 export const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 export const id = (prefix = 'id') => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -43,6 +43,156 @@ export function creditGiven(tx: Transaction[]) {
 }
 export function netCash(tx: Transaction[]) { return cashIn(tx) - cashOut(tx); }
 
+export function mpesaReceived(tx: Transaction[]) {
+  return tx.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0);
+}
+export function cashReceived(tx: Transaction[]) {
+  return tx.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0);
+}
+
+export function drawerCashIn(tx: Transaction[]) {
+  return tx.filter(t => (t.type === 'sale' || t.type === 'payment')
+    && t.paymentMethod !== 'mpesa')
+    .reduce((sum, t) => sum + t.amount, 0);
+}
+export function drawerCashOut(tx: Transaction[]) {
+  return tx.filter(t => t.type === 'expense' && t.paymentMethod !== 'mpesa')
+    .reduce((sum, t) => sum + t.amount, 0);
+}
+export function expectedDrawerCash(data: AppData, date: string, openingCash: number) {
+  const tx = data.transactions.filter(t => (t.tradingDay ?? t.date) === date);
+  return Math.max(0, Math.round(openingCash) + drawerCashIn(tx) - drawerCashOut(tx));
+}
+export function makeDailyClose(data: AppData, date: string, openingCash: number, countedCash: number, closedAt = new Date()): DailyClose {
+  const opening = Math.max(0, Math.round(openingCash));
+  const counted = Math.max(0, Math.round(countedCash));
+  const expected = expectedDrawerCash(data, date, opening);
+  return { id: 'close-' + date, date, openingCash: opening, expectedCash: expected, countedCash: counted, difference: counted - expected, closedAt: closedAt.toISOString() };
+}
+export function suggestedOpeningCash(closes: DailyClose[], date: string) {
+  const previous = [...closes].filter(close => close.date < date)
+    .sort((a, b) => (b.date + b.closedAt).localeCompare(a.date + a.closedAt))[0];
+  return previous?.countedCash ?? 0;
+}
+
+/** Any ledger edit made after till close requires a fresh physical cash count. */
+export function invalidateDailyClose(data: AppData, ...dates: string[]): AppData {
+  if (!data.dailyCloses?.length || !dates.length) return data;
+  const invalidDates = new Set(dates.filter(Boolean));
+  return { ...data, dailyCloses: data.dailyCloses.filter(close => !invalidDates.has(close.date)) };
+}
+
+/** Find a recorded trading day that still needs its physical till count. */
+export function pendingCloseTradingDate(data: AppData, currentTradingDate: string, shopIsOpen: boolean) {
+  const closedDates = new Set((data.dailyCloses ?? []).map(close => close.date));
+  const businessDates = [...new Set(data.transactions.filter(tx => tx.tradingDay).map(tx => tx.tradingDay!))];
+  return businessDates
+    .filter(date => !closedDates.has(date) && (date < currentTradingDate || (!shopIsOpen && date === currentTradingDate)))
+    .sort((a, b) => b.localeCompare(a))[0] ?? null;
+}
+
+function localDateString(date: Date) {
+  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+}
+function clockMinutes(value: string, fallback: number) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return fallback;
+  const hours = Number(match[1]), minutes = Number(match[2]);
+  return hours <= 23 && minutes <= 59 ? hours * 60 + minutes : fallback;
+}
+
+/** Resolve the business date for a shop's trading session, including overnight shifts. */
+export function tradingDayFor(now = new Date(), start = '06:00', end = '21:00') {
+  const date = localDateString(now);
+  const minute = now.getHours() * 60 + now.getMinutes();
+  const startMinute = clockMinutes(start, 360);
+  const endMinute = clockMinutes(end, 1260);
+  if (startMinute === endMinute) return date;
+  if (startMinute < endMinute) return minute < startMinute ? addDays(date, -1) : date;
+  return minute >= startMinute ? date : addDays(date, -1);
+}
+
+/** Whether the shop is currently inside its configured trading window. */
+export function isWithinTradingHours(now = new Date(), start = '06:00', end = '21:00') {
+  const minute = now.getHours() * 60 + now.getMinutes();
+  const startMinute = clockMinutes(start, 360);
+  const endMinute = clockMinutes(end, 1260);
+  if (startMinute === endMinute) return true;
+  return startMinute < endMinute
+    ? minute >= startMinute && minute < endMinute
+    : minute >= startMinute || minute < endMinute;
+}
+
+/** Convert common dictated English/Kiswahili number words to digits before parsing entries. */
+export function normalizeSpokenNumbers(input: string) {
+  const words = 'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|and|moja|mbili|tatu|nne|tano|sita|saba|nane|tisa|kumi|ishirini|thelathini|arobaini|hamsini|sitini|sabini|themanini|tisini|mia|elfu|na';
+  const pattern = new RegExp('\\b(?:' + words + ')(?:[\\s-]+(?:' + words + '))*\\b', 'gi');
+  const units: Record<string, number> = {
+    zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9,
+    ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16,
+    seventeen:17, eighteen:18, nineteen:19, moja:1, mbili:2, tatu:3, nne:4, tano:5,
+    sita:6, saba:7, nane:8, tisa:9, kumi:10,
+  };
+  const tens: Record<string, number> = {
+    twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90,
+    ishirini:20, thelathini:30, arobaini:40, hamsini:50, sitini:60, sabini:70, themanini:80, tisini:90,
+  };
+  return input.replace(pattern, phrase => {
+    const tokens = phrase.toLowerCase().split(/[\s-]+/).filter(token => token !== 'and' && token !== 'na');
+    if (!tokens.length || tokens.every(token => token === 'hundred' || token === 'thousand' || token === 'mia' || token === 'elfu')) return phrase;
+    let total = 0, group = 0, prefixScale = 0;
+    for (const token of tokens) {
+      if (units[token] !== undefined || tens[token] !== undefined) {
+        const number = units[token] ?? tens[token];
+        if (prefixScale) {
+          total += number * prefixScale;
+          prefixScale = 0;
+        } else {
+          group += number;
+        }
+      } else if (token === 'hundred' || token === 'thousand') {
+        const scale = token === 'hundred' ? 100 : 1000;
+        total += (group || 1) * scale;
+        group = 0;
+      } else if (token === 'mia' || token === 'elfu') {
+        prefixScale = token === 'mia' ? 100 : 1000;
+      }
+    }
+    return String(total + group);
+  });
+}
+export function normalizeKenyanWhatsAppNumber(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '');
+  if (/^0[17]\d{8}$/.test(digits)) return '254' + digits.slice(1);
+  if (/^254[17]\d{8}$/.test(digits)) return digits;
+  return null;
+}
+export function whatsAppUrl(message: string, phone?: string | null) {
+  return 'https://wa.me/' + (phone ?? '') + '?text=' + encodeURIComponent(message);
+}
+export function debtReminderMessage(customerName: string, shopName: string, balance: number, dueDate?: string) {
+  return [
+    'Habari ' + customerName + ',',
+    'Tunakuandikia kutoka ' + shopName + ' kukukumbusha salio lako la ' + money(balance) + '.',
+    dueDate ? 'Tarehe ya kulipa ilikuwa/ni ' + dateText(dueDate, { day: 'numeric', month: 'short' }) + '.' : '',
+    'Tafadhali tujulishe utakapoweza kulipa. Asante kwa biashara yako.',
+  ].filter(Boolean).join('\n');
+}
+export function receiptMessage(shopName: string, transaction: Transaction, outstandingBalance?: number) {
+  const credit = transaction.type === 'credit';
+  return [
+    shopName,
+    credit ? 'CREDIT NOTE' : 'SALES RECEIPT',
+    'Item / maelezo: ' + transaction.description,
+    'Amount: ' + money(transaction.amount),
+    'Date: ' + dateText(transaction.date, { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' + timeText(transaction.time),
+    'Payment: ' + (credit ? 'Credit / Deni' : transaction.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'),
+    ...(credit && outstandingBalance !== undefined ? ['Outstanding balance: ' + money(outstandingBalance)] : []),
+    'Asante kwa biashara yako.',
+  ].join('\n');
+}
+
+
 const aliases: Record<string, string[]> = {
   Sukari: ['sukari', 'sugar'],
   'Unga wa mahindi': ['unga', 'maize flour', 'flour'],
@@ -58,8 +208,8 @@ const nameFromText = (text: string, data: AppData) => {
   const lower = text.toLowerCase();
   const known = data.customers.find(c => lower.includes(c.name.toLowerCase()));
   if (known) return known.name;
-  const match = text.match(/\b(?:customer\s+)?([A-Z][a-z]{2,})\b/);
-  if (match && !/^(I|Kamau|Njeri|Otieno|Wanjiku|Hassan|Supplier|Bought|Paid|Cash|Sale|Today|Tomorrow)$/i.test(match[1])) return match[1];
+  const match = text.match(/\b(?:customer\s+)?([A-Z][a-z]{2,})\b/i);
+  if (match && !/^(I|we|my|our|Supplier|Bought|Paid|Cash|Sale|Today|Tomorrow|Two|One|Three|Four|Five|Six|Seven|Eight|Nine|Ten)$/i.test(match[1])) return match[1];
   if (/kamau/i.test(text)) return 'Kamau';
   return undefined;
 };
@@ -68,14 +218,17 @@ function findAmount(text: string): { amount: number; quantity?: number } {
   const amountPattern = /(?:kes|ksh|kshs|bob|shillings?|ya|kwa|for|worth|of)\s*(\d[\d,]*(?:\.\d{1,2})?)/gi;
   const explicit: number[] = [];
   for (const match of text.matchAll(amountPattern)) explicit.push(Number(match[1].replaceAll(',', '')));
-  const quantityMatch = text.match(/\b(\d+)\s*(kg|kilos?|packets?|pieces?|pcs|litres?|liters?|bars?|bottles?|loaf|loaves|sachets?|trays?|crates?|cartons?|dozen|rolls?|tins?|cups?|bags?|bundles?|units?)\b/i);
+  const quantityMatch = text.match(/\b(\d+)\s*(kg|kgs|kilograms?|kilos?|kilo|packets?|pieces?|pcs|litres?|liters?|bars?|bottles?|loaf|loaves|sachets?|trays?|crates?|cartons?|dozen|rolls?|tins?|cups?|bags?|bundles?|units?)\b/i);
+  const quantityAfterUnit = !quantityMatch ? text.match(/\b(kg|kgs|kilograms?|kilos?|kilo|packets?|pieces?|pcs|litres?|liters?|bars?|bottles?|loaf|loaves|sachets?|trays?|crates?|cartons?|dozen|rolls?|tins?|cups?|bags?|bundles?|units?)\s*(\d+)\b/i) : null;
+  const quantityToken = quantityMatch?.[1] ?? quantityAfterUnit?.[2];
+  const quantity = quantityToken ? Number(quantityToken) : undefined;
   const all = [...text.matchAll(/\b\d[\d,]*(?:\.\d{1,2})?\b/g)].map(m => ({ raw: m[0], value: Number(m[0].replaceAll(',', '')), index: m.index ?? 0 }));
   let amount = explicit.find(v => v > 0) ?? 0;
   if (!amount && all.length) {
-    const filtered = all.filter(n => !(quantityMatch && n.raw === quantityMatch[1]));
+    const filtered = all.filter(n => !(quantityToken && n.raw === quantityToken));
     amount = (filtered.length ? filtered[filtered.length - 1] : all[all.length - 1])?.value ?? 0;
   }
-  return { amount: Math.max(0, Number.isFinite(amount) ? amount : 0), quantity: quantityMatch ? Number(quantityMatch[1]) : undefined };
+  return { amount: Math.max(0, Number.isFinite(amount) ? amount : 0), quantity };
 }
 
 function dueDateFromText(text: string) {
@@ -96,13 +249,14 @@ function dueDateFromText(text: string) {
 }
 
 export function parseTransaction(input: string, data: AppData): TransactionDraft | null {
-  const text = input.trim().replace(/\s+/g, ' ');
+  const text = normalizeSpokenNumbers(input).trim().replace(/\s+/g, ' ');
   if (text.length < 2) return null;
   const lower = text.toLowerCase();
   const { amount, quantity } = findAmount(text);
   if (!amount) return null;
 
-  const payment = /paid.*debt|paid.*back|alilipa.*deni|amelipa.*deni|deni yake|payment received|received.*payment|paid the balance|lipa deni/.test(lower);
+  const namedPayment = /^([a-z][a-z'-]{2,})\s+(?:has\s+)?(?:paid|payed|amelipa|alilipa)\b/i.test(text) && !/^(i|we|my|the shop)\b/i.test(text);
+  const payment = /paid.*debt|paid.*back|alilipa.*deni|amelipa.*deni|deni yake|payment received|received.*payment|paid the balance|lipa deni/.test(lower) || namedPayment;
   const credit = !payment && /on credit|credit|alichukua|amechukua|took\b|pay later|ata.?lipa|kwa deni|deni|will pay/.test(lower);
   const expense = !payment && !credit && /supplier|nilinunua|nimenunua|bought|purchase|nililipa|paid supplier|umeme|electricity|rent|fuel|transport|expense|matumizi|bill|bill ilikuwa/.test(lower);
   const type: TransactionType = payment ? 'payment' : credit ? 'credit' : expense ? 'expense' : 'sale';
@@ -131,6 +285,7 @@ export function parseTransaction(input: string, data: AppData): TransactionDraft
 
   return {
     type, description, amount, customerName,
+    paymentMethod: (type === 'sale' || type === 'payment') && /m[\s-]?pesa|paybill|till number/i.test(lower) ? 'mpesa' : undefined,
     dueDate: type === 'credit' ? dueDateFromText(text) : undefined,
     stockItemName: stockEntry?.name,
     stockQuantityDelta,
@@ -140,22 +295,152 @@ export function parseTransaction(input: string, data: AppData): TransactionDraft
   };
 }
 
+export interface OwnerBrief {
+  title: string;
+  detail: string;
+  action: 'debts' | 'supplier-debts' | 'stock' | 'weekly-report' | 'record';
+  actionLabel: string;
+  collected: number;
+  expenses: number;
+  netMovement: number;
+  outstanding: number;
+  supplierPayables: number;
+  overdueCount: number;
+  lowStockCount: number;
+  activeDays: number;
+  entries: number;
+  rangeStart: string;
+}
+
+export function buildOwnerBrief(data: AppData, reportDate: string): OwnerBrief {
+  const rangeStart = addDays(reportDate, -6);
+  const recent = data.transactions.filter(tx => {
+    const date = tx.tradingDay ?? tx.date;
+    return date >= rangeStart && date <= reportDate;
+  });
+  const collected = cashIn(recent);
+  const expenses = cashOut(recent);
+  const netMovement = collected - expenses;
+  const activeDays = new Set(recent.map(tx => tx.tradingDay ?? tx.date)).size;
+  const outstandingCustomers = data.customers.filter(customer => customer.balance > 0 && customer.kind !== 'supplier');
+  const outstanding = outstandingCustomers.reduce((sum, customer) => sum + customer.balance, 0);
+  const overdue = outstandingCustomers
+    .filter(customer => customer.dueDate && customer.dueDate <= reportDate)
+    .sort((a, b) => b.balance - a.balance);
+  const suppliersOwed = data.customers.filter(customer => customer.kind === 'supplier' && customer.balance < 0);
+  const supplierPayables = suppliersOwed.reduce((sum, supplier) => sum + Math.abs(supplier.balance), 0);
+  const supplierDue = suppliersOwed
+    .filter(supplier => supplier.dueDate && supplier.dueDate <= reportDate)
+    .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
+  const lowStock = [...data.stock]
+    .filter(item => item.quantity <= item.lowStockAt)
+    .sort((a, b) => (a.quantity / Math.max(1, a.lowStockAt)) - (b.quantity / Math.max(1, b.lowStockAt)));
+
+  const goalTitle = data.shopGoal?.title.toLowerCase() ?? '';
+  const focusOnStock = /stock|inventory|restock|bidhaa|stock up/.test(goalTitle);
+  const focusOnDebts = /debt|deni|owe|supplier|madeni/.test(goalTitle);
+  const focusOnSupplierDebt = /supplier|wholesale|wholesaler/.test(goalTitle);
+
+  let title = 'Start with one useful record';
+  let detail = 'Record the next sale, expense or customer credit. Hesabu can only give useful guidance from the activity you enter.';
+  let action: OwnerBrief['action'] = 'record';
+  let actionLabel = 'Record an entry';
+
+  if (focusOnSupplierDebt && supplierDue.length) {
+    const supplier = supplierDue[0];
+    title = `You owe ${money(Math.abs(supplier.balance))} to ${supplier.name}`;
+    detail = supplier.dueDate && supplier.dueDate < reportDate
+      ? 'This supplier balance is past its recorded due date. Review the agreement and plan the payment without putting the shop’s working cash under pressure.'
+      : 'This supplier balance is due. Check the agreed date and the cash available before making the payment.';
+    action = 'supplier-debts';
+    actionLabel = 'Review supplier balance';
+  } else if (focusOnSupplierDebt && suppliersOwed.length) {
+    const supplier = [...suppliersOwed].sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))[0];
+    title = `You still owe ${money(Math.abs(supplier.balance))} to ${supplier.name}`;
+    detail = 'Keep the supplier balance and agreed payment date visible so restocking does not quietly turn into an unplanned cash strain.';
+    action = 'supplier-debts';
+    actionLabel = 'Review supplier balance';
+  } else if (focusOnStock && lowStock.length) {
+    const item = lowStock[0];
+    title = 'Protect the stock customers come in for';
+    detail = `${item.name} is at ${item.quantity} ${item.unit}; your restock reminder starts at ${item.lowStockAt}. Review it before buying more stock.`;
+    action = 'stock';
+    actionLabel = 'Review stock';
+  } else if (focusOnDebts && overdue.length) {
+    const customer = overdue[0];
+    title = `${money(customer.balance)} is due from ${customer.name}`;
+    detail = `A respectful follow-up may bring working cash back into the shop. Check the balance and agreed payment date before contacting them.`;
+    action = 'debts';
+    actionLabel = 'Review customer balances';
+  } else if (overdue.length) {
+    const customer = overdue[0];
+    title = `${money(customer.balance)} is due from ${customer.name}`;
+    detail = `${overdue.length} customer ${overdue.length === 1 ? 'balance is' : 'balances are'} due or overdue. Review the records and follow up only where the agreement says payment is due.`;
+    action = 'debts';
+    actionLabel = 'Review customer balances';
+  } else if (focusOnDebts && outstanding > 0) {
+    title = `${money(outstanding)} is still out with customers`;
+    detail = 'These balances are not money in the till yet. Keep their due dates clear and follow up at the time you agreed.';
+    action = 'debts';
+    actionLabel = 'Review customer balances';
+  } else if ((focusOnStock || !focusOnDebts) && lowStock.length) {
+    const item = lowStock[0];
+    title = `${item.name} is running low`;
+    detail = `${item.quantity} ${item.unit} left in the stock record against a restock level of ${item.lowStockAt}. Check what you need before placing the next order.`;
+    action = 'stock';
+    actionLabel = 'Review stock';
+  } else if (recent.length && netMovement < 0) {
+    title = 'Check this week’s outgoings';
+    detail = `You recorded ${money(collected)} collected and ${money(expenses)} in expenses over the last seven trading dates. Recorded expenses are ${money(Math.abs(netMovement))} higher; this is cash movement, not profit.`;
+    action = 'weekly-report';
+    actionLabel = 'Review this week';
+  } else if (activeDays >= 3) {
+    title = `You kept records on ${activeDays} days this week`;
+    detail = `You recorded ${money(collected)} collected and ${money(expenses)} in expenses. Keep the entries accurate and close the till at the end of each trading day.`;
+    action = 'weekly-report';
+    actionLabel = 'See weekly position';
+  } else if (activeDays > 0) {
+    title = 'Build a clearer picture of the week';
+    detail = `There are entries on ${activeDays} of the last seven trading dates. Record the normal activity of the shop; do not add made-up figures to fill gaps.`;
+    action = 'weekly-report';
+    actionLabel = 'Review this week';
+  }
+
+  return {
+    title, detail, action, actionLabel, collected, expenses, netMovement,
+    outstanding, supplierPayables, overdueCount: overdue.length, lowStockCount: lowStock.length,
+    activeDays, entries: recent.length, rangeStart,
+  };
+}
+
 export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly', reportDate: string) {
   const from = period === 'daily' ? reportDate : period === 'weekly' ? addDays(reportDate, -6) : `${reportDate.slice(0, 7)}-01`;
-  const tx = data.transactions.filter(t => t.date >= from && t.date <= reportDate);
+  const tx = data.transactions.filter(t => (t.tradingDay ?? t.date) >= from && (t.tradingDay ?? t.date) <= reportDate);
   const inTotal = cashIn(tx);
   const outTotal = cashOut(tx);
   const credit = creditGiven(tx);
+  const cashReceivedTotal = cashReceived(tx);
+  const mpesaReceivedTotal = mpesaReceived(tx);
   const due = data.reminders.filter(r => !r.done && r.dueDate >= from && r.dueDate <= addDays(reportDate, 3));
   const lowStock = data.stock.filter(s => s.quantity <= s.lowStockAt);
+  const dailyClose = period === 'daily'
+    ? [...(data.dailyCloses ?? [])].filter(close => close.date === reportDate).sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0]
+    : undefined;
   const label = period === 'daily' ? 'Daily' : period === 'weekly' ? 'Weekly' : 'Monthly';
   const lines = [
     `Hesabu yako · ${label} report`,
     new Date(`${reportDate}T12:00:00`).toLocaleDateString('en-KE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
     '',
     `Pesa iliyoingia: ${money(inTotal)}`,
+    `Cash received: ${money(cashReceivedTotal)}`,
+    `M-Pesa received: ${money(mpesaReceivedTotal)}`,
     `Matumizi: ${money(outTotal)}`,
     `Net cash: ${money(inTotal - outTotal)}`,
+    ...(dailyClose ? [
+      `Till expected: ${money(dailyClose.expectedCash)}`,
+      `Till counted: ${money(dailyClose.countedCash)}`,
+      `Till difference: ${dailyClose.difference >= 0 ? '+' : '−'}${money(Math.abs(dailyClose.difference))}`,
+    ] : []),
     `Madeni mapya: ${money(credit)}`,
     '',
     'Wateja waliochukua kwa deni:',
@@ -167,5 +452,5 @@ export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly
     '',
     'Keep your records close. Hesabu.',
   ];
-  return { transactions: tx, cashIn: inTotal, cashOut: outTotal, net: inTotal - outTotal, credit, lowStock, due, text: lines.join('\n') };
+  return { transactions: tx, cashIn: inTotal, cashOut: outTotal, net: inTotal - outTotal, cashReceived: cashReceivedTotal, mpesaReceived: mpesaReceivedTotal, credit, lowStock, due, dailyClose, text: lines.join('\n') };
 }

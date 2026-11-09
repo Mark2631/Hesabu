@@ -47,6 +47,15 @@ export function makeDemoData(): AppData {
     { id: 'tx-2day-flour', type: 'sale', description: 'Unga wa mahindi', amount: 500, date: daysAgo(2), time: timeAt(13, 10), stockItemId: 'stock-flour', stockQuantityDelta: -4 },
     { id: 'tx-2day-electricity', type: 'expense', description: 'Electricity tokens', amount: 500, date: daysAgo(2), time: timeAt(11, 0), category: 'Utilities' },
     { id: 'tx-2day-hassan', type: 'credit', description: 'Mchele and Sukari', amount: 300, date: daysAgo(2), time: timeAt(9, 40), customerId: 'customer-hassan', customerName: 'Hassan', dueDate: offset(2) },
+    { id: 'tx-3day-sale', type: 'sale', description: 'Mixed groceries', amount: 1850, date: daysAgo(3), time: timeAt(17, 5), paymentMethod: 'mpesa' },
+    { id: 'tx-3day-expense', type: 'expense', description: 'Vegetable delivery', amount: 180, date: daysAgo(3), time: timeAt(12, 30), paymentMethod: 'cash', category: 'Transport' },
+    { id: 'tx-4day-sale', type: 'sale', description: 'Household goods', amount: 2240, date: daysAgo(4), time: timeAt(15, 45), paymentMethod: 'cash' },
+    { id: 'tx-4day-credit', type: 'credit', description: 'Cooking oil and soap', amount: 540, date: daysAgo(4), time: timeAt(11, 20), customerId: 'customer-wanjiku', customerName: 'Wanjiku', dueDate: offset(-1) },
+    { id: 'tx-4day-payment', type: 'payment', description: 'Debt payment from Kamau', amount: 250, date: daysAgo(4), time: timeAt(10, 5), customerId: 'customer-kamau', customerName: 'Kamau', paymentMethod: 'mpesa' },
+    { id: 'tx-5day-sale', type: 'sale', description: 'Rice, sugar and flour', amount: 3100, date: daysAgo(5), time: timeAt(16, 15), paymentMethod: 'mpesa' },
+    { id: 'tx-5day-expense', type: 'expense', description: 'County market levy', amount: 150, date: daysAgo(5), time: timeAt(8, 5), paymentMethod: 'cash', category: 'Other' },
+    { id: 'tx-6day-sale', type: 'sale', description: 'Morning shop sales', amount: 1680, date: daysAgo(6), time: timeAt(13, 35), paymentMethod: 'cash' },
+    { id: 'tx-6day-stock', type: 'expense', description: 'Supplier restock — Sukari', amount: 1450, date: daysAgo(6), time: timeAt(9, 10), paymentMethod: 'mpesa', category: 'Stock purchase', stockItemId: 'stock-sugar', stockQuantityDelta: 10 },
   ];
 
   const reminders: Reminder[] = [
@@ -57,22 +66,124 @@ export function makeDemoData(): AppData {
   ];
 
   return {
-    shopInfo: { name: 'Mama Grace General Shop', owner: 'Grace', phone: '0712 000 123', businessType: 'General shop' },
+    shopInfo: { name: 'Mama Grace General Shop', owner: 'Grace', phone: '0712 000 123', businessType: 'General shop', tradingDayStart: '06:00', tradingDayEnd: '21:00' },
+    shopGoal: { title: 'Build a cash reserve', targetAmount: 30000, progressAmount: 8500, updatedAt: new Date().toISOString() },
     transactions,
     customers,
     stock,
-    reminders,
+    reminders: [
+      ...reminders,
+      { id: 'rem-water', title: 'Water bill', detail: 'Check the shop water account.', amount: 650, dueDate: offset(-2), kind: 'bill', done: true },
+      { id: 'rem-stock', title: 'Check sugar stock', detail: 'Compare shelf quantity before ordering.', dueDate: offset(1), kind: 'other', stockItemId: 'stock-sugar', done: false },
+    ],
+    dailyCloses: [
+      { id: 'close-1', date: daysAgo(1), openingCash: 2500, expectedCash: 5820, countedCash: 5720, difference: -100, closedAt: new Date(daysAgo(1) + 'T20:55:00').toISOString() },
+      { id: 'close-2', date: daysAgo(2), openingCash: 2200, expectedCash: 6410, countedCash: 6410, difference: 0, closedAt: new Date(daysAgo(2) + 'T20:48:00').toISOString() },
+      { id: 'close-3', date: daysAgo(3), openingCash: 2000, expectedCash: 4970, countedCash: 5020, difference: 50, closedAt: new Date(daysAgo(3) + 'T20:52:00').toISOString() },
+    ],
   };
 }
 
 export const STORAGE_KEY = 'hesabu:v1:shop-data';
 
+export const LAST_BACKUP_KEY = 'hesabu:v1:last-backup';
+
+type UnknownRecord = Record<string, unknown>;
+const isRecord = (value: unknown): value is UnknownRecord => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+const validDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+const validTime = (value: unknown): value is string => typeof value === 'string' && /^\d{2}:\d{2}$/.test(value);
+const finiteAmount = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+export function readLastBackupAt(): string | null {
+  try {
+    const value = localStorage.getItem(LAST_BACKUP_KEY);
+    return value && Number.isFinite(Date.parse(value)) ? value : null;
+  } catch { return null; }
+}
+
+export function markBackupAt(value = new Date().toISOString()): boolean {
+  try { localStorage.setItem(LAST_BACKUP_KEY, value); return true; }
+  catch { return false; }
+}
+
+export function createBackupEnvelope(data: AppData, exportedAt = new Date().toISOString()) {
+  return { format: 'hesabu-backup' as const, version: 1 as const, exportedAt, data };
+}
+
+export function parseBackupPayload(value: unknown): AppData | null {
+  const candidate = isRecord(value) && value.format === 'hesabu-backup' && value.version === 1 ? value.data : value;
+  if (!isRecord(candidate) || !isRecord(candidate.shopInfo)) return null;
+  const shop = candidate.shopInfo;
+  if (typeof shop.name !== 'string' || !shop.name.trim()) return null;
+  if (!Array.isArray(candidate.transactions) || !Array.isArray(candidate.customers) || !Array.isArray(candidate.stock)) return null;
+  const transactions = candidate.transactions;
+  const customers = candidate.customers;
+  const stock = candidate.stock;
+  const reminders = candidate.reminders === undefined ? [] : candidate.reminders;
+  const dailyCloses = candidate.dailyCloses === undefined ? [] : candidate.dailyCloses;
+  const shopGoal = candidate.shopGoal === undefined || candidate.shopGoal === null ? null : candidate.shopGoal;
+  if (!Array.isArray(reminders) || !Array.isArray(dailyCloses)) return null;
+
+  const validTransactions = transactions.every(row => isRecord(row)
+    && typeof row.id === 'string'
+    && ['sale', 'credit', 'expense', 'payment'].includes(String(row.type))
+    && typeof row.description === 'string' && finiteAmount(row.amount)
+    && validDate(row.date) && validTime(row.time)
+    && (row.tradingDay === undefined || validDate(row.tradingDay))
+    && (row.paymentMethod === undefined || row.paymentMethod === 'cash' || row.paymentMethod === 'mpesa'));
+  const validCustomers = customers.every(row => isRecord(row)
+    && typeof row.id === 'string' && typeof row.name === 'string' && typeof row.phone === 'string'
+    && typeof row.balance === 'number' && Number.isFinite(row.balance)
+    && (row.kind === undefined || row.kind === 'customer' || row.kind === 'supplier'));
+  const validStock = stock.every(row => isRecord(row)
+    && typeof row.id === 'string' && typeof row.name === 'string' && typeof row.unit === 'string'
+    && finiteAmount(row.quantity) && finiteAmount(row.lowStockAt) && validDate(row.lastRestocked));
+  const validReminders = reminders.every(row => isRecord(row)
+    && typeof row.id === 'string' && typeof row.title === 'string'
+    && validDate(row.dueDate) && typeof row.done === 'boolean'
+    && ['bill', 'supplier', 'customer', 'other'].includes(String(row.kind))
+    && (row.amount === undefined || finiteAmount(row.amount))
+    && (row.customerId === undefined || typeof row.customerId === 'string')
+    && (row.stockItemId === undefined || typeof row.stockItemId === 'string'));
+  const validDailyCloses = dailyCloses.every(row => isRecord(row)
+    && typeof row.id === 'string' && validDate(row.date)
+    && finiteAmount(row.openingCash) && finiteAmount(row.expectedCash)
+    && finiteAmount(row.countedCash) && typeof row.difference === 'number' && Number.isFinite(row.difference)
+    && typeof row.closedAt === 'string' && Number.isFinite(Date.parse(row.closedAt)));
+  const validShopGoal = shopGoal === null || (isRecord(shopGoal)
+    && typeof shopGoal.title === 'string' && Boolean(shopGoal.title.trim())
+    && typeof shopGoal.targetAmount === 'number' && finiteAmount(shopGoal.targetAmount) && shopGoal.targetAmount > 0
+    && typeof shopGoal.progressAmount === 'number' && finiteAmount(shopGoal.progressAmount) && shopGoal.progressAmount <= shopGoal.targetAmount
+    && typeof shopGoal.updatedAt === 'string' && Number.isFinite(Date.parse(shopGoal.updatedAt)));
+  if (!validTransactions || !validCustomers || !validStock || !validReminders || !validDailyCloses || !validShopGoal) return null;
+
+  const fallback = makeDemoData();
+  return {
+    shopGoal: shopGoal as AppData['shopGoal'] ?? null,
+    shopInfo: {
+      name: shop.name.trim(),
+      owner: typeof shop.owner === 'string' ? shop.owner : '',
+      phone: typeof shop.phone === 'string' ? shop.phone : '',
+      businessType: typeof shop.businessType === 'string' ? shop.businessType : fallback.shopInfo.businessType,
+      tradingDayStart: validTime(shop.tradingDayStart) ? shop.tradingDayStart : '06:00',
+      tradingDayEnd: validTime(shop.tradingDayEnd) ? shop.tradingDayEnd : '21:00',
+    },
+    transactions: transactions as AppData['transactions'],
+    customers: customers.map(row => {
+      const customer = row as AppData['customers'][number];
+      return { ...customer, kind: customer.kind ?? (customer.balance < 0 ? 'supplier' as const : 'customer' as const) };
+    }),
+    stock: stock as AppData['stock'],
+    reminders: reminders as AppData['reminders'],
+    dailyCloses: dailyCloses as AppData['dailyCloses'],
+  };
+}
+
 export function hasSavedData(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return false;
-    const parsed = JSON.parse(raw) as Partial<AppData>;
-    return Boolean(parsed?.shopInfo && Array.isArray(parsed.transactions) && Array.isArray(parsed.customers) && Array.isArray(parsed.stock));
+    return parseBackupPayload(JSON.parse(raw)) !== null;
   } catch {
     return false;
   }
@@ -82,12 +193,8 @@ export function readSavedData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as AppData;
-      if (parsed?.shopInfo && Array.isArray(parsed.transactions) && Array.isArray(parsed.customers) && Array.isArray(parsed.stock)) {
-        const fallback = makeDemoData();
-        const customers = parsed.customers.map(c => ({ ...c, kind: c.kind ?? (c.balance < 0 ? 'supplier' as const : 'customer' as const) }));
-        return { ...fallback, ...parsed, customers, reminders: parsed.reminders ?? fallback.reminders };
-      }
+      const restored = parseBackupPayload(JSON.parse(raw));
+      if (restored) return restored;
     }
   } catch {
     // A corrupt or blocked local save should never prevent the ledger from opening.
@@ -95,10 +202,12 @@ export function readSavedData(): AppData {
   return makeDemoData();
 }
 
-export function saveData(data: AppData) {
+export function saveData(data: AppData): boolean {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    return true;
   } catch {
-    // The in-memory ledger still works for this session if storage is unavailable.
+    // The caller must show that changes may not survive a reload.
+    return false;
   }
 }

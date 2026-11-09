@@ -1,10 +1,17 @@
 {
-  "name": "Hesabu — Business, in balance",
+  "name": "Hesabu — Your shop book",
   "short_name": "Hesabu",
-  "description": "A simple day-to-day ledger for small shops.",
+  "description": "Record shop sales, expenses, customer debts and daily cash, even offline.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f7fb",
-  "theme_color": "#172747",
-  "icons": [{ "src": "/hesabu-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+  "background_color": "#F6F4EF",
+  "theme_color": "#285BC5",
+  "icons": [
+    {
+      "src": "/hesabu-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }

@@ -1,28 +1,25 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  ArrowDownLeft, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, CalendarDays,
-  Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, ClipboardList,
-  FileSpreadsheet, FileText, HandCoins, Headphones, House, Mic, Mic2, MoreHorizontal, Package, Plus,
-  Download, ReceiptText, RotateCcw, Search, Settings2, Share2, SlidersHorizontal, Sparkles, Store, Upload,
-  Trash2, TrendingDown, TrendingUp, Users,
-  Wallet, X, type LucideIcon,
+  ArrowDownLeft, ArrowUpRight, Bell, BookOpen, Check, CheckCircle2, ChevronRight, ClipboardList,
+  FileSpreadsheet, FileText, HandCoins, House, Mic, MoreHorizontal, Package, Plus, Download, RotateCcw, Settings2,
+  Share2, SlidersHorizontal, Store, Upload, Trash2, Users, Wallet, type LucideIcon,
 } from 'lucide-react';
-import { hasSavedData, makeDemoData, readSavedData, saveData } from './data';
-import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, fullDateText, id, money, parseTransaction, shortDay, timeText, today, transactionLabel } from './utils';
+import { createBackupEnvelope, hasSavedData, makeDemoData, markBackupAt, parseBackupPayload, readLastBackupAt, readSavedData, saveData } from './data';
+import type { AppData, Customer, DailyClose, Reminder, Section, ShopGoal, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
+import { addDays, buildOwnerBrief, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, drawerCashIn, drawerCashOut, expectedDrawerCash, fullDateText, id, invalidateDailyClose, isWithinTradingHours, makeDailyClose, money, normalizeKenyanWhatsAppNumber, normalizeSpokenNumbers, parseTransaction, pendingCloseTradingDate, receiptMessage, shortDay, suggestedOpeningCash, timeText, today, tradingDayFor, transactionLabel, whatsAppUrl } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
-  { id: 'home', label: 'Home', icon: House },
-  { id: 'debts', label: 'Customers', icon: Users },
-  { id: 'stock', label: 'Inventory', icon: Package },
-  { id: 'reports', label: 'Reports', icon: FileText },
+  { id: 'home', label: 'Today', icon: House },
+  { id: 'ledger', label: 'Book', icon: BookOpen },
+  { id: 'debts', label: 'People', icon: Users },
+  { id: 'more', label: 'More', icon: MoreHorizontal },
 ];
 
 const TYPE_META: Record<TransactionType, { label: string; swahili: string; icon: LucideIcon; hint: string }> = {
-  sale: { label: 'Cash sale', swahili: 'Mauzo', icon: ArrowDownLeft, hint: 'Cash or M-Pesa received' },
-  credit: { label: 'Credit given', swahili: 'Deni', icon: HandCoins, hint: 'Someone takes goods and pays later' },
-  expense: { label: 'Expense', swahili: 'Expenses', icon: ArrowUpRight, hint: 'Stock, bills or day-to-day costs' },
-  payment: { label: 'Debt payment', swahili: 'Malipo ya deni', icon: Wallet, hint: 'A customer pays what they owe' },
+  sale: { label: 'Sale', swahili: 'Mauzo', icon: ArrowDownLeft, hint: 'Money received for goods' },
+  credit: { label: 'On credit', swahili: 'Deni', icon: HandCoins, hint: 'Goods taken and paid for later' },
+  expense: { label: 'Expense', swahili: 'Matumizi', icon: ArrowUpRight, hint: 'Money paid out' },
+  payment: { label: 'Debt repayment', swahili: 'Malipo ya deni', icon: Wallet, hint: 'A customer pays what they owe' },
 };
 
 const TYPE_TONE: Record<TransactionType, string> = {
@@ -35,21 +32,22 @@ type ModalState =
   | { kind: 'stock'; item?: StockItem }
   | { kind: 'stock-update'; itemId: string; mode: 'restock' | 'adjust' }
   | { kind: 'stock-edit'; itemId: string }
-  | { kind: 'reminder'; reminder?: Reminder }
+  | { kind: 'reminder'; reminder?: Reminder; link?: { customerId?: string; stockItemId?: string; label: string; kind: Reminder['kind'] } }
   | { kind: 'profile' }
   | { kind: 'edit-draft' }
   | { kind: 'transaction'; transactionId: string }
   | { kind: 'edit-transaction'; transactionId: string }
   | { kind: 'settings' }
+  | { kind: 'daily-close'; date: string }
   | null;
 
 function cn(...classes: Array<string | undefined | null | false>) { return classes.filter(Boolean).join(' '); }
 
-function Logo({ compact = false }: { compact?: boolean }) {
-  return <div className="flex min-w-0 items-center gap-3">
-    <div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M9 9v22M9 20h22M31 9v22" stroke="currentColor" strokeWidth="4.1" strokeLinecap="round"/><circle cx="31" cy="9" r="3.2" fill="#F3AC63" /></svg></div>
-    {!compact && <div className="min-w-0"><div className="font-display text-[18px] font-extrabold tracking-[-.055em] text-hesabu-ink">hesabu<span className="text-hesabu-green">.</span></div><div className="-mt-0.5 text-[10px] font-medium tracking-[.03em] text-hesabu-muted">Business, in balance.</div></div>}
-  </div>;
+function Logo() {
+  return <span className="brand-lockup" aria-label="Hesabu">
+    <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
+    <span className="hesabu-wordmark">Hesabu<span className="brand-period">.</span></span>
+  </span>;
 }
 
 function SectionTitle({ eyebrow, title, detail, right }: { eyebrow?: string; title: string; detail?: string; right?: ReactNode }) {
@@ -70,13 +68,13 @@ function Button({ children, variant = 'primary', size = 'md', className, disable
   return <button type={type} disabled={disabled} onClick={onClick} className={cn('btn', `btn-${variant}`, `btn-${size}`, className)}>{children}</button>;
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', min, step, required, help, autoFocus, inputMode }: {
-  label: string; value: string | number; onChange: (value: string) => void; placeholder?: string; type?: string;
+function Field({ label, value, onChange, placeholder, type = 'text', min, step, required, help, autoFocus, inputMode, inputId }: {
+  label: string; value: string | number; onChange: (value: string) => void; placeholder?: string; type?: string; inputId?: string;
   min?: number; step?: number; required?: boolean; help?: string; autoFocus?: boolean; inputMode?: 'text' | 'decimal' | 'numeric' | 'tel' | 'search';
 }) {
   return <label className="field-wrap block">
     <span className="field-label">{label}</span>
-    <input className="field-control" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} min={min} step={step} required={required} autoFocus={autoFocus} inputMode={inputMode} />
+    <input id={inputId} className="field-control" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} min={min} step={step} required={required} autoFocus={autoFocus} inputMode={inputMode} />
     {help && <span className="mt-1.5 block text-[11px] leading-4 text-hesabu-muted">{help}</span>}
   </label>;
 }
@@ -99,7 +97,7 @@ function Modal({ title, detail, onClose, children, size = 'md' }: { title: strin
     <section role="dialog" aria-modal="true" aria-label={title} className={cn('modal-panel', size === 'lg' && 'modal-panel-lg')}>
       <header className="mb-5 flex items-start justify-between gap-4 border-b border-hesabu-line pb-4">
         <div><h2 className="font-display text-xl font-extrabold tracking-[-.04em]">{title}</h2>{detail && <p className="mt-1.5 text-[12px] leading-5 text-hesabu-muted">{detail}</p>}</div>
-        <button className="icon-button -mr-1 -mt-1" onClick={onClose} aria-label="Close dialog"><X size={19} /></button>
+        <button className="modal-close" onClick={onClose} aria-label="Close dialog">Close</button>
       </header>
       {children}
     </section>
@@ -132,44 +130,14 @@ function TransactionRow({ transaction, onClick, onDelete, compact = false }: { t
       <ToneDot type={transaction.type} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-bold leading-[1.35] text-hesabu-ink">{transaction.customerName && transaction.type === 'credit' ? `${transaction.customerName} · ${transaction.description}` : transaction.description}</span>
-        <span className="mt-1 block truncate text-[10px] font-medium text-hesabu-muted">{timeText(transaction.time)} <span className="mx-1 text-[#CAD0CA]">·</span> {transactionLabel[transaction.type]}</span>
+        <span className="mt-1 block truncate text-[12px] text-hesabu-muted">{timeText(transaction.time)} · {transactionLabel[transaction.type]}{(transaction.type === 'sale' || transaction.type === 'payment' || transaction.type === 'expense') ? ` · ${transaction.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'}` : ''}</span>
       </span>
       <span className="ml-2 shrink-0 text-right">
         <span className={cn('block text-[13px] font-bold tabular-nums', `amount-${transaction.type}`)}>{prefix}{money(transaction.amount)}</span>
         {transaction.type === 'credit' && <span className="mt-1 block text-[9px] font-semibold uppercase tracking-[.06em] text-[#A47731]">On credit</span>}
       </span>
     </button>
-    <button className="transaction-delete" onClick={onDelete} aria-label={`Delete ${transaction.description}`} title="Delete transaction"><Trash2 size={14} /></button>
-  </div>;
-}
-
-function Metric({ label, value, hint, tone, icon: Icon }: { label: string; value: number; hint: string; tone: 'green' | 'red' | 'amber'; icon: LucideIcon }) {
-  return <div className="metric-card">
-    <div className="flex items-center justify-between gap-2"><span className="text-[11px] font-semibold text-[#69776D]">{label}</span><span className={cn('metric-icon', `metric-${tone}`)}><Icon size={15} /></span></div>
-    <div className={cn('mt-3 font-display text-[22px] font-extrabold leading-none tracking-[-.055em] tabular-nums sm:text-[24px]', tone === 'red' ? 'text-[#B94C46]' : tone === 'amber' ? 'text-[#A4762A]' : 'text-hesabu-green')}>{money(value)}</div>
-    <div className="mt-2 text-[10px] font-medium text-[#89948B]">{hint}</div>
-  </div>;
-}
-
-function ActivityProgress({ transactions }: { transactions: Transaction[] }) {
-  const sales = transactions.filter(t => t.type === 'sale').length;
-  const credits = transactions.filter(t => t.type === 'credit').length;
-  const expenses = transactions.filter(t => t.type === 'expense').length;
-  return <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-hesabu-line pt-3 text-[10px] font-semibold text-hesabu-muted">
-    <span className="inline-flex items-center gap-1.5"><span className="legend-dot bg-[#1A7A4A]" />{sales} sales</span>
-    <span className="inline-flex items-center gap-1.5"><span className="legend-dot bg-[#C89A43]" />{credits} credit</span>
-    <span className="inline-flex items-center gap-1.5"><span className="legend-dot bg-[#D56A63]" />{expenses} expenses</span>
-  </div>;
-}
-
-function ReminderLine({ reminder, onDone, onEdit }: { reminder: Reminder; onDone: () => void; onEdit: () => void }) {
-  const days = daysUntil(reminder.dueDate);
-  const due = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `Due ${shortDay(reminder.dueDate)}`;
-  const Icon = reminder.kind === 'bill' ? ReceiptText : reminder.kind === 'supplier' ? Store : reminder.kind === 'customer' ? Users : Bell;
-  return <div className={cn('reminder-row', reminder.done && 'opacity-55')}>
-    <div className={cn('reminder-icon', days <= 1 && !reminder.done ? 'reminder-icon-due' : '')}><Icon size={16} /></div>
-    <div className="min-w-0 flex-1"><div className="truncate text-[12px] font-bold">{reminder.title}</div><div className="mt-1 text-[10px] text-hesabu-muted">{reminder.amount ? `${money(reminder.amount)} · ` : ''}{due}</div></div>
-    <button className="icon-button !h-7 !w-7" onClick={onEdit} title="Edit reminder" aria-label={`Edit reminder: ${reminder.title}`}><Settings2 size={13} /></button>{reminder.done ? <button className="tiny-done" onClick={onDone} title="Reopen reminder" aria-label={`Reopen reminder: ${reminder.title}`}><RotateCcw size={13} /></button> : <button className="tiny-done" onClick={onDone} title="Mark as done" aria-label={`Mark reminder as done: ${reminder.title}`}><Check size={14} /></button>}
+    <button className="transaction-delete" onClick={onDelete} aria-label={`Delete ${transaction.description}`}>Delete</button>
   </div>;
 }
 
@@ -180,33 +148,128 @@ function StockStatus({ item }: { item: StockItem }) {
   return <span className={cn('stock-status', critical ? 'stock-critical' : low ? 'stock-low' : 'stock-good')}><span className="status-led" />{label}</span>;
 }
 
+interface InstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
+
 function App() {
-  const [data, setData] = useState<AppData>(() => readSavedData());
-  const [showWelcome, setShowWelcome] = useState(() => !hasSavedData());
+  const previewDemoMode = new URLSearchParams(window.location.search).get('demo') === '1';
+  const [data, setData] = useState<AppData>(() => previewDemoMode ? makeDemoData() : readSavedData());
+  const [showWelcome, setShowWelcome] = useState(() => !previewDemoMode && !hasSavedData());
   const [section, setSection] = useState<Section>('home');
+  const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [pending, setPending] = useState<TransactionDraft | null>(null);
   const [quickText, setQuickText] = useState('');
+  const [quickAmount, setQuickAmount] = useState('');
+  const [quickPerson, setQuickPerson] = useState('');
+  const [quickDueDate, setQuickDueDate] = useState('');
   const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'unsupported'>('idle');
-  const voiceLanguage = 'en-KE';
-  const [typeChoice, setTypeChoice] = useState<TransactionType | 'auto'>('auto');
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const [voicePreview, setVoicePreview] = useState('');
+  const [voiceLanguage, setVoiceLanguage] = useState<'en-KE' | 'sw-KE'>(() => {
+    try { return localStorage.getItem('hesabu:v1:voice-language') === 'sw-KE' ? 'sw-KE' : 'en-KE'; } catch { return 'en-KE'; }
+  });
+  const [typeChoice, setTypeChoice] = useState<TransactionType | 'auto'>('sale');
+  const [paymentMethodChoice, setPaymentMethodChoice] = useState<'cash' | 'mpesa'>('cash');
+  const [storageWriteFailed, setStorageWriteFailed] = useState(false);
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => readLastBackupAt());
+  const [storageProtection, setStorageProtection] = useState<'checking' | 'protected' | 'standard' | 'unsupported'>('checking');
   const [query, setQuery] = useState('');
   const [debtDirection, setDebtDirection] = useState<'owed-to-us' | 'we-owe'>('owed-to-us');
   const [reportPeriod, setReportPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [reportDate, setReportDate] = useState(today());
-  const [showAllTransactions, setShowAllTransactions] = useState(false);
-  const [showAllReminders, setShowAllReminders] = useState(false);
+  const [reportDate, setReportDate] = useState(() => tradingDayFor(new Date(), data.shopInfo.tradingDayStart ?? '06:00', data.shopInfo.tradingDayEnd ?? '21:00'));
   const [toastMessage, setToastMessage] = useState('');
-  const [filterTransactions, setFilterTransactions] = useState<'all' | TransactionType>('all');
+  const [filterTransactions, setFilterTransactions] = useState<'all' | 'cash' | 'mpesa' | 'credit' | 'expense'>('all');
   const [transactionSearch, setTransactionSearch] = useState('');
+  const [ledgerDateFilter, setLedgerDateFilter] = useState('');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [clock, setClock] = useState(() => new Date());
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [queuedReportDate, setQueuedReportDate] = useState<string | null>(() => { try { return localStorage.getItem('hesabu:v1:queued-report') || null; } catch { return null; } });
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [appInstalled, setAppInstalled] = useState(() => window.matchMedia?.('(display-mode: standalone)').matches === true || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
 
-  useEffect(() => { if (!showWelcome) saveData(data); }, [data, showWelcome]);
+  useEffect(() => { if (!showWelcome) setStorageWriteFailed(!saveData(data)); }, [data, showWelcome]);
+  useEffect(() => {
+    const refresh = () => setClock(new Date());
+    const network = () => setOnline(navigator.onLine);
+    const timer = window.setInterval(refresh, 15000);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', network);
+    window.addEventListener('offline', network);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('online', network); window.removeEventListener('offline', network); };
+  }, []);
+  useEffect(() => {
+    try { if (queuedReportDate) localStorage.setItem('hesabu:v1:queued-report', queuedReportDate); else localStorage.removeItem('hesabu:v1:queued-report'); } catch { /* The report remains available in this session. */ }
+  }, [queuedReportDate]);
+  useEffect(() => {
+    try { localStorage.setItem('hesabu:v1:voice-language', voiceLanguage); } catch { /* Keep the selected language for this session. */ }
+  }, [voiceLanguage]);
+  useEffect(() => {
+    if (online && queuedReportDate) { setReportDate(queuedReportDate); setReportPeriod('daily'); }
+  }, [online, queuedReportDate]);
+  useEffect(() => () => { recognitionRef.current?.abort(); }, []);
+  useEffect(() => {
+    const captureInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    };
+    const markInstalled = () => { setAppInstalled(true); setInstallPrompt(null); };
+    window.addEventListener('beforeinstallprompt', captureInstallPrompt);
+    window.addEventListener('appinstalled', markInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', captureInstallPrompt);
+      window.removeEventListener('appinstalled', markInstalled);
+    };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    if (!navigator.storage?.persisted) { setStorageProtection('unsupported'); return () => { active = false; }; }
+    navigator.storage.persisted()
+      .then(persisted => { if (active) setStorageProtection(persisted ? 'protected' : 'standard'); })
+      .catch(() => { if (active) setStorageProtection('unsupported'); });
+    return () => { active = false; };
+  }, []);
 
   const notify = (message: string) => setToastMessage(message);
+  const protectDeviceStorage = async () => {
+    if (!navigator.storage?.persist) { setStorageProtection('unsupported'); notify('This browser does not support persistent storage requests.'); return; }
+    try {
+      const granted = await navigator.storage.persist();
+      setStorageProtection(granted ? 'protected' : 'standard');
+      notify(granted ? 'Browser storage protection is enabled. Keep a separate backup too.' : 'The browser did not grant storage protection. Keep regular backups.');
+    } catch { setStorageProtection('unsupported'); notify('Could not request browser storage protection. Download a backup regularly.'); }
+  };
   const closeToast = () => setToastMessage('');
+  const installHint = installPrompt
+    ? 'Your phone can install Hesabu now.'
+    : /iphone|ipad|ipod/i.test(navigator.userAgent)
+      ? 'In Safari, tap Share, then Add to Home Screen.'
+      : /android/i.test(navigator.userAgent)
+        ? 'In Chrome, open the menu and choose Install app or Add to Home screen.'
+        : 'Use your browser menu and choose Install app or Add to Home screen, when available.';
+  const installHesabu = async () => {
+    if (!installPrompt) { notify(installHint); return; }
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === 'accepted') { setAppInstalled(true); notify('Hesabu was added to your home screen.'); }
+    } catch {
+      notify('Installation is not available in this browser. Use the browser menu instead.');
+    } finally {
+      setInstallPrompt(null);
+    }
+  };
   const closeModal = () => setModal(null);
   const updateData = (updater: (current: AppData) => AppData) => setData(current => updater(current));
+  const saveDailyClose = (date: string, openingCash: number, countedCash: number) => {
+    const close = makeDailyClose(data, date, openingCash, countedCash);
+    updateData(current => ({ ...current, dailyCloses: [...(current.dailyCloses ?? []).filter(item => item.date !== date), close] }));
+    setModal(null);
+    notify(close.difference === 0 ? 'Till balanced. Closing count saved.' : 'Closing count saved. Check the difference before you finish.');
+  };
 
   const chooseDemo = () => {
     const demo = makeDemoData();
@@ -214,24 +277,35 @@ function App() {
   };
   const createLocalShop = (values: { name: string; owner: string; phone: string; businessType: string }) => {
     const fresh: AppData = {
-      shopInfo: { name: values.name.trim(), owner: values.owner.trim(), phone: values.phone.trim(), businessType: values.businessType },
+      shopInfo: { name: values.name.trim(), owner: values.owner.trim(), phone: values.phone.trim(), businessType: values.businessType, tradingDayStart: '06:00', tradingDayEnd: '21:00' },
       transactions: [], customers: [], stock: [], reminders: [],
     };
     setData(fresh); saveData(fresh); setShowWelcome(false); setSection('home');
   };
 
-  const todayTransactions = useMemo(() => data.transactions.filter(t => t.date === today()), [data.transactions]);
+  const tradingStart = data.shopInfo.tradingDayStart ?? '06:00';
+  const tradingEnd = data.shopInfo.tradingDayEnd ?? '21:00';
+  const tradingDate = tradingDayFor(clock, tradingStart, tradingEnd);
+  const shopIsOpen = isWithinTradingHours(clock, tradingStart, tradingEnd);
+  const todayTransactions = useMemo(() => data.transactions.filter(t => (t.tradingDay ?? t.date) === tradingDate), [data.transactions, tradingDate]);
+  const pendingCloseDate = useMemo(() => pendingCloseTradingDate(data, tradingDate, shopIsOpen), [data, tradingDate, shopIsOpen]);
+  const pendingCloseCount = pendingCloseDate
+    ? data.transactions.filter(tx => (tx.tradingDay ?? tx.date) === pendingCloseDate).length
+    : 0;
   const todaysIn = useMemo(() => cashIn(todayTransactions), [todayTransactions]);
   const todaysOut = useMemo(() => cashOut(todayTransactions), [todayTransactions]);
-  const todaysCredit = useMemo(() => creditGiven(todayTransactions), [todayTransactions]);
   const outstanding = useMemo(() => data.customers.filter(c => c.balance > 0).reduce((sum, c) => sum + c.balance, 0), [data.customers]);
   const lowStock = useMemo(() => data.stock.filter(s => s.quantity <= s.lowStockAt), [data.stock]);
   const allReminders = useMemo(() => [...data.reminders].sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [data.reminders]);
-  const activeReminders = useMemo(() => allReminders.filter(r => !r.done), [allReminders]);
+  const ownerBrief = useMemo(() => buildOwnerBrief(data, tradingDate), [data, tradingDate]);
   const report = useMemo(() => buildReport(data, reportPeriod, reportDate), [data, reportPeriod, reportDate]);
 
+  useEffect(() => {
+    if (pendingCloseDate && !queuedReportDate) setQueuedReportDate(pendingCloseDate);
+  }, [pendingCloseDate, queuedReportDate]);
+
   const navigate = (next: Section) => {
-    setSection(next); setQuery(''); setPending(null); setProfileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+    setSection(next); setQuery(''); setPending(null); setQuickEntryOpen(false); setProfileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const applyTransaction = (draft: TransactionDraft) => {
@@ -239,7 +313,11 @@ function App() {
     const current = data;
     let nextCustomers = [...current.customers];
     let customer = createdName ? nextCustomers.find(c => c.name.toLowerCase() === createdName?.toLowerCase()) : undefined;
-    if ((draft.type === 'credit' || draft.type === 'payment') && createdName && !customer) {
+    if (draft.type === 'payment' && (!customer || customer.balance <= 0)) {
+      notify(createdName ? `No unpaid balance is recorded for ${createdName}. Add the debt to the book first.` : 'Choose a customer with an unpaid balance before recording a repayment.');
+      return;
+    }
+    if (draft.type === 'credit' && createdName && !customer) {
       customer = { id: id('person'), name: createdName, phone: '', balance: 0, dueDate: draft.dueDate, kind: 'customer' };
       nextCustomers = [customer, ...nextCustomers];
     }
@@ -251,10 +329,11 @@ function App() {
     const matchedStock = draft.stockItemName ? current.stock.find(s => s.name.toLowerCase() === draft.stockItemName?.toLowerCase()) : undefined;
     const txn: Transaction = {
       id: id('txn'), type: draft.type, description: draft.description.trim() || draft.summary,
-      amount: Math.max(0, Math.round(draft.amount)), date: today(), time: currentTime(),
+      amount: Math.max(0, Math.round(draft.amount)), date: today(), tradingDay: tradingDayFor(new Date(), current.shopInfo.tradingDayStart ?? '06:00', current.shopInfo.tradingDayEnd ?? '21:00'), time: currentTime(),
       customerId: customer?.id, customerName: createdName, dueDate: draft.dueDate,
       stockItemId: matchedStock?.id, stockQuantityDelta: draft.stockQuantityDelta,
       category: draft.category,
+      paymentMethod: draft.type === 'sale' || draft.type === 'payment' || draft.type === 'expense' ? (draft.paymentMethod ?? 'cash') : undefined,
     };
     const effectiveStockDelta = matchedStock && draft.stockQuantityDelta !== undefined && draft.stockQuantityDelta < 0
       ? -Math.min(matchedStock.quantity, Math.abs(draft.stockQuantityDelta))
@@ -263,52 +342,119 @@ function App() {
     const nextStock = matchedStock && effectiveStockDelta !== undefined
       ? current.stock.map(s => s.id === matchedStock.id ? { ...s, quantity: Math.max(0, s.quantity + effectiveStockDelta), lastRestocked: effectiveStockDelta > 0 ? today() : s.lastRestocked } : s)
       : current.stock;
-    updateData(c => ({ ...c, customers: nextCustomers, stock: nextStock, transactions: [txn, ...c.transactions] }));
-    setPending(null); setQuickText(''); setTypeChoice('auto');
-    notify('Imeandikwa. Record saved.');
+    updateData(c => ({ ...invalidateDailyClose(c, txn.tradingDay ?? txn.date), customers: nextCustomers, stock: nextStock, transactions: [txn, ...c.transactions] }));
+    setPending(null); setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setTypeChoice('sale'); setQuickEntryOpen(false);
+    notify('Entry saved.');
     if (navigator.vibrate) navigator.vibrate(18);
   };
 
   const handleQuickSubmit = (event?: FormEvent) => {
     event?.preventDefault();
-    const parsed = parseTransaction(quickText, data);
-    if (!parsed) { notify('Add the amount so Hesabu can record it.'); return; }
-    if (typeChoice !== 'auto') {
-      parsed.type = typeChoice;
-      if (typeChoice === 'credit' && !parsed.dueDate) parsed.dueDate = addDays(today(), 7);
-      const typeName = TYPE_META[typeChoice].label.toLowerCase();
-      parsed.summary = `${typeName}${parsed.customerName ? ` for ${parsed.customerName}` : ''} — ${money(parsed.amount)}`;
-      if (parsed.stockItemName && (typeChoice === 'sale' || typeChoice === 'credit')) parsed.stockQuantityDelta = -(parsed.stockQuantityDelta ? Math.abs(parsed.stockQuantityDelta) : 1);
-      else if (typeChoice === 'expense' && parsed.stockQuantityDelta !== undefined && parsed.stockQuantityDelta < 0) parsed.stockQuantityDelta = undefined;
-      else if (typeChoice === 'payment') parsed.stockQuantityDelta = undefined;
+    const description = quickText.trim();
+    const amount = Number(quickAmount);
+    if (!description) { notify('Enter what the sale or payment was for.'); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { notify('Enter an amount greater than zero.'); return; }
+    const selectedType = typeChoice === 'auto' ? 'sale' : typeChoice;
+    const parsed = parseTransaction(description + ' for KES ' + amount, data);
+    if (!parsed) { notify('Check the description and amount, then try again.'); return; }
+    parsed.type = selectedType;
+    parsed.description = description;
+    parsed.amount = Math.round(amount);
+    parsed.customerName = selectedType === 'credit' || selectedType === 'payment' ? (quickPerson.trim() || undefined) : undefined;
+    if ((selectedType === 'credit' || selectedType === 'payment') && !parsed.customerName) {
+      notify('Enter the customer’s name.'); return;
     }
-    if (parsed.type === 'credit' && !parsed.customerName) {
-      const name = quickText.trim().match(/\b([A-Z][a-z]{2,})\b/)?.[1];
-      if (name && !['I', 'Bought', 'Supplier', 'Cash', 'Sale'].includes(name)) parsed.customerName = name;
+    if (selectedType === 'payment' && !data.customers.some(c => c.name.toLowerCase() === (parsed.customerName ?? '').toLowerCase() && c.balance > 0)) {
+      notify('No unpaid balance found for this person. Add their name and balance first.'); return;
     }
+    parsed.dueDate = selectedType === 'credit' ? (quickDueDate || addDays(today(), 7)) : undefined;
+    if (selectedType === 'sale' || selectedType === 'payment' || selectedType === 'expense') parsed.paymentMethod = paymentMethodChoice;
+    else parsed.paymentMethod = undefined;
+    if (selectedType === 'payment') parsed.stockQuantityDelta = undefined;
+    if (selectedType === 'expense' && parsed.stockQuantityDelta !== undefined && parsed.stockQuantityDelta < 0) parsed.stockQuantityDelta = undefined;
+    const person = parsed.customerName ? parsed.customerName + ' · ' : '';
+    parsed.summary = person + TYPE_META[selectedType].label + ' · ' + money(parsed.amount) + ' · ' + description;
     setPending(parsed);
   };
 
   const startVoice = () => {
+    if (!navigator.onLine) {
+      setVoiceState('unsupported');
+      notify('No data connection. Hesabu still works offline. Use the microphone on your phone keyboard to dictate into the description field.');
+      window.setTimeout(() => document.getElementById('quick-entry-description')?.focus(), 100);
+      return;
+    }
     const Recognition = (window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition
       ?? (window as Window & { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
-    if (!Recognition) { setVoiceState('unsupported'); notify('Voice typing is not available in this browser. Type the transaction instead.'); return; }
+    if (!Recognition) { setVoiceState('unsupported'); notify('In-app voice is not supported here. Use the microphone on your phone keyboard in the description field.'); window.setTimeout(() => document.getElementById('quick-entry-description')?.focus(), 100); return; }
     try {
+      recognitionRef.current?.abort();
       const recognition = new Recognition();
-      recognition.lang = voiceLanguage; recognition.interimResults = false; recognition.maxAlternatives = 1;
-      setVoiceState('listening');
+      recognitionRef.current = recognition;
+      recognition.lang = voiceLanguage;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      setVoicePreview('');
+      recognition.onstart = () => setVoiceState('listening');
       recognition.onresult = event => {
-        const text = event.results?.[0]?.[0]?.transcript ?? '';
-        setQuickText(text);
+        let finalText = '';
+        let interimText = '';
+        for (let index = 0; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const phrase = result?.[0]?.transcript ?? '';
+          if (result?.isFinal) finalText += phrase + ' ';
+          else interimText += phrase;
+        }
+        setVoicePreview(interimText || finalText);
+        if (!finalText.trim()) return;
+        const spoken = finalText.trim();
         setVoiceState('idle');
-        const parsed = parseTransaction(text, data);
-        if (parsed) setPending(parsed);
-        else notify('I heard you, but could not find the amount. Check the words and try again.');
+        setVoicePreview('');
+        recognitionRef.current = null;
+        const parsed = parseTransaction(spoken, data);
+        if (parsed) {
+          if (parsed.type === 'payment' && !data.customers.some(customer => customer.name.toLowerCase() === (parsed.customerName ?? '').toLowerCase() && customer.balance > 0)) {
+            setQuickText(parsed.description);
+            setQuickAmount(String(parsed.amount));
+            setQuickPerson(parsed.customerName ?? '');
+            setTypeChoice('payment');
+            setPending(null);
+            notify(parsed.customerName ? `I heard a repayment for ${parsed.customerName}, but no unpaid balance is in the book. Add the debt first.` : 'I heard a repayment, but need the customer with an unpaid balance.');
+            return;
+          }
+          setQuickText(parsed.description);
+          setQuickAmount(String(parsed.amount));
+          setQuickPerson(parsed.customerName ?? '');
+          setTypeChoice(parsed.type);
+          setPaymentMethodChoice(parsed.paymentMethod ?? 'cash');
+          setPending(parsed);
+        } else {
+          setQuickText(normalizeSpokenNumbers(spoken));
+          notify('I heard you, but could not identify the amount. Check the details before saving.');
+        }
       };
-      recognition.onerror = () => { setVoiceState('idle'); notify('Could not hear that clearly. Try again or type it.'); };
-      recognition.onend = () => setVoiceState(s => s === 'listening' ? 'idle' : s);
+      recognition.onerror = event => {
+        setVoiceState('idle');
+        setVoicePreview('');
+        recognitionRef.current = null;
+        const reason = event.error === 'not-allowed' || event.error === 'service-not-allowed'
+          ? 'Allow microphone access for Hesabu in your browser settings, then try again.'
+          : event.error === 'network'
+            ? 'The voice service could not connect. Check your data connection and try again.'
+            : 'Could not hear that clearly. Move closer to the phone microphone and try again.';
+        notify(reason);
+      };
+      recognition.onend = () => {
+        recognitionRef.current = null;
+        setVoicePreview('');
+        setVoiceState(current => current === 'listening' ? 'idle' : current);
+      };
       recognition.start();
-    } catch { setVoiceState('idle'); notify('Microphone is unavailable. Type the transaction instead.'); }
+    } catch {
+      recognitionRef.current = null;
+      setVoiceState('idle');
+      notify('Microphone could not start. Check browser permission or use the phone keyboard microphone.');
+    }
   };
 
   const deleteTransaction = (transaction: Transaction) => {
@@ -322,7 +468,7 @@ function App() {
       const stock = transaction.stockItemId && transaction.stockQuantityDelta !== undefined
         ? current.stock.map(s => s.id === transaction.stockItemId ? { ...s, quantity: Math.max(0, s.quantity - transaction.stockQuantityDelta!) } : s)
         : current.stock;
-      return { ...current, customers, stock, transactions: current.transactions.filter(t => t.id !== transaction.id) };
+      return { ...invalidateDailyClose(current, transaction.tradingDay ?? transaction.date), customers, stock, transactions: current.transactions.filter(t => t.id !== transaction.id) };
     });
     setModal(null); notify('Transaction removed.');
   };
@@ -336,6 +482,7 @@ function App() {
       description: values.description.trim() || transaction.description,
       amount: Math.round(amount),
       date: values.date,
+      tradingDay: tradingDayFor(new Date(values.date + 'T' + values.time), data.shopInfo.tradingDayStart ?? '06:00', data.shopInfo.tradingDayEnd ?? '21:00'),
       time: values.time,
       dueDate: values.dueDate || undefined,
     };
@@ -347,7 +494,7 @@ function App() {
     };
     const balanceAdjustment = balanceEffect(updated) - balanceEffect(transaction);
     updateData(current => ({
-      ...current,
+      ...invalidateDailyClose(current, transaction.tradingDay ?? transaction.date, updated.tradingDay ?? updated.date),
       customers: transaction.customerId && balanceAdjustment !== 0
         ? current.customers.map(c => c.id === transaction.customerId ? { ...c, balance: c.balance + balanceAdjustment } : c)
         : current.customers,
@@ -366,14 +513,14 @@ function App() {
     setModal(null); notify('Contact added.');
   };
 
-  const recordPayment = (customer: Customer, amountValue: string, note: string) => {
+  const recordPayment = (customer: Customer, amountValue: string, note: string, paymentMethod: 'cash' | 'mpesa' = 'cash') => {
     const entered = Math.max(0, Number(amountValue) || 0);
     const supplierPayment = customer.kind === 'supplier' || (!customer.kind && customer.balance < 0);
     const refundingCustomerCredit = customer.kind === 'customer' && customer.balance < 0;
     const amount = supplierPayment || refundingCustomerCredit ? Math.min(Math.abs(customer.balance), entered) : entered;
     if (!amount) return;
-    const txn: Transaction = { id: id('txn'), type: supplierPayment || refundingCustomerCredit ? 'expense' : 'payment', description: note.trim() || (supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer credit refund' : 'Debt payment received'), amount, date: today(), time: currentTime(), customerId: customer.id, customerName: customer.name, category: supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer refund' : undefined };
-    updateData(current => ({ ...current, customers: current.customers.map(c => c.id === customer.id ? { ...c, balance: supplierPayment || refundingCustomerCredit ? Math.min(0, c.balance + amount) : c.balance - amount } : c), transactions: [txn, ...current.transactions] }));
+    const txn: Transaction = { id: id('txn'), type: supplierPayment || refundingCustomerCredit ? 'expense' : 'payment', description: note.trim() || (supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer credit refund' : 'Debt payment received'), amount, date: today(), tradingDay: tradingDayFor(new Date(), data.shopInfo.tradingDayStart ?? '06:00', data.shopInfo.tradingDayEnd ?? '21:00'), time: currentTime(), customerId: customer.id, customerName: customer.name, category: supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer refund' : undefined, paymentMethod };
+    updateData(current => ({ ...invalidateDailyClose(current, txn.tradingDay ?? txn.date), customers: current.customers.map(c => c.id === customer.id ? { ...c, balance: supplierPayment || refundingCustomerCredit ? Math.min(0, c.balance + amount) : c.balance - amount } : c), transactions: [txn, ...current.transactions] }));
     setModal(null); setSection('debts'); notify(`${money(amount)} ${supplierPayment ? 'paid to' : refundingCustomerCredit ? 'returned to' : 'received from'} ${customer.name}.`);
   };
 
@@ -406,8 +553,8 @@ function App() {
     setModal(null); notify(mode === 'restock' ? `${item.name} stock updated.` : `${item.name} quantity adjusted.`);
   };
 
-  const saveReminder = (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }, existing?: Reminder) => {
-    const reminder: Reminder = { id: existing?.id ?? id('rem'), title: values.title.trim(), detail: values.detail.trim(), amount: values.amount.trim() ? Math.max(0, Number(values.amount) || 0) : undefined, dueDate: values.dueDate || today(), kind: values.kind, done: existing?.done ?? false };
+  const saveReminder = (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind']; customerId?: string; stockItemId?: string }, existing?: Reminder) => {
+    const reminder: Reminder = { id: existing?.id ?? id('rem'), title: values.title.trim(), detail: values.detail.trim(), amount: values.amount.trim() ? Math.max(0, Number(values.amount) || 0) : undefined, dueDate: values.dueDate || today(), kind: values.kind, customerId: values.customerId ?? existing?.customerId, stockItemId: values.stockItemId ?? existing?.stockItemId, done: existing?.done ?? false };
     updateData(current => ({ ...current, reminders: existing ? current.reminders.map(r => r.id === existing.id ? reminder : r) : [reminder, ...current.reminders] }));
     setModal(null); notify(existing ? 'Reminder updated.' : 'Reminder added.');
   };
@@ -422,10 +569,43 @@ function App() {
     updateData(current => ({ ...current, reminders: current.reminders.map(r => r.id === reminder.id ? { ...r, done: !r.done } : r) }));
     notify(reminder.done ? 'Reminder reopened.' : 'Marked as done.');
   };
+  const openReminderRecord = (reminder: Reminder) => {
+    if (reminder.customerId) {
+      const customer = data.customers.find(item => item.id === reminder.customerId);
+      if (customer) { navigate('debts'); setQuery(customer.name); return; }
+    }
+    if (reminder.stockItemId) {
+      const item = data.stock.find(stock => stock.id === reminder.stockItemId);
+      if (item) { navigate('stock'); setQuery(item.name); return; }
+    }
+    notify('This reminder is not linked to a shop record.');
+  };
 
-  const shareReport = async () => {
-    const url = `https://wa.me/?text=${encodeURIComponent(report.text)}`;
+  const shareReport = () => {
+    if (!navigator.onLine) {
+      setQueuedReportDate(reportDate);
+      notify('Report saved on this phone. Connect to the internet, then tap Share on WhatsApp.');
+      return;
+    }
+    if (queuedReportDate && queuedReportDate !== reportDate) {
+      setReportDate(queuedReportDate);
+      setReportPeriod('daily');
+      notify('I selected the report you saved earlier. Check it, then tap Share on WhatsApp.');
+      return;
+    }
+    const url = 'https://wa.me/?text=' + encodeURIComponent(report.text);
     window.open(url, '_blank', 'noopener,noreferrer');
+    setQueuedReportDate(null);
+    notify('WhatsApp opened. Review the report and tap Send.');
+  };
+
+  const shareReceipt = (transaction: Transaction, customer?: Customer) => {
+    const phone = customer?.phone ? normalizeKenyanWhatsAppNumber(customer.phone) : null;
+    if (customer?.phone && !phone) { notify('This customer phone number is not a valid Kenyan WhatsApp number. Correct it in the contact record.'); return; }
+    const message = receiptMessage(data.shopInfo.name, transaction, customer?.balance);
+    window.open(whatsAppUrl(message, phone), '_blank', 'noopener,noreferrer');
+    setModal(null);
+    notify('Receipt opened in WhatsApp. Review it before sending.');
   };
 
   const copyReport = async () => {
@@ -439,7 +619,7 @@ function App() {
   };
 
   const updateProfile = (name: string, owner: string, phone: string, businessType: string) => {
-    updateData(current => ({ ...current, shopInfo: { name: name.trim(), owner: owner.trim(), phone: phone.trim(), businessType } }));
+    updateData(current => ({ ...current, shopInfo: { ...current.shopInfo, name: name.trim(), owner: owner.trim(), phone: phone.trim(), businessType } }));
     setModal(null); notify('Shop details saved.');
   };
 
@@ -448,30 +628,44 @@ function App() {
     const original = makeDemoData(); setData(original); saveData(original); setModal(null); setSection('home'); notify('Demo ledger reset.');
   };
 
-  const downloadFile = (filename: string, contents: string, mimeType: string) => {
-    const blob = new Blob([contents], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a'); link.href = url; link.download = filename;
-    document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+  const downloadFile = (filename: string, contents: string, mimeType: string): boolean => {
+    try {
+      const blob = new Blob([contents], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a'); link.href = url; link.download = filename;
+      document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+      return true;
+    } catch { return false; }
   };
   const exportBackup = () => {
-    downloadFile(`hesabu-backup-${today()}.json`, JSON.stringify(data, null, 2), 'application/json');
-    notify('Backup downloaded. Keep it somewhere safe.');
+    const envelope = createBackupEnvelope(data);
+    if (!downloadFile(`hesabu-backup-${today()}.json`, JSON.stringify(envelope, null, 2), 'application/json')) {
+      notify('Backup could not be downloaded. Try again or use another browser.');
+      return;
+    }
+    const timestamp = new Date().toISOString();
+    if (markBackupAt(timestamp)) {
+      setLastBackupAt(timestamp);
+      notify('Backup downloaded. Keep the file somewhere safe.');
+    } else notify('Backup downloaded, but Hesabu could not save its backup date. Keep the file somewhere safe.');
   };
   const exportCsv = () => {
     const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const rows = [['Date', 'Time', 'Type', 'Description', 'Amount KES', 'Person', 'Due date', 'Category'], ...data.transactions.map(t => [t.date, t.time, t.type, t.description, t.amount, t.customerName ?? '', t.dueDate ?? '', t.category ?? ''])];
+    const rows = [['Date', 'Time', 'Type', 'Description', 'Amount KES', 'Payment method', 'Person', 'Due date', 'Category'], ...data.transactions.map(t => [t.date, t.time, t.type, t.description, t.amount, t.paymentMethod ?? '', t.customerName ?? '', t.dueDate ?? '', t.category ?? ''])];
     downloadFile(`hesabu-transactions-${today()}.csv`, rows.map(row => row.map(escape).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
     notify('Transactions exported to CSV.');
   };
   const importBackup = async (file: File) => {
     try {
-      const parsed = JSON.parse(await file.text()) as Partial<AppData>;
-      if (!parsed.shopInfo || typeof parsed.shopInfo.name !== 'string' || !Array.isArray(parsed.transactions) || !Array.isArray(parsed.customers) || !Array.isArray(parsed.stock)) throw new Error('invalid backup');
-      if (!window.confirm('Restore this backup and replace the data in this browser?')) return;
-      const backup: AppData = { ...makeDemoData(), ...parsed, shopInfo: { ...makeDemoData().shopInfo, ...parsed.shopInfo }, customers: parsed.customers.map(c => ({ ...c, kind: c.kind ?? (c.balance < 0 ? 'supplier' as const : 'customer' as const) })), transactions: parsed.transactions, stock: parsed.stock, reminders: Array.isArray(parsed.reminders) ? parsed.reminders : [] };
-      setData(backup); saveData(backup); setModal(null); notify('Backup restored successfully.');
-    } catch { notify('That file does not look like a Hesabu backup. Nothing was changed.'); }
+      if (file.size > 10 * 1024 * 1024) { notify('This backup is larger than 10 MB. Nothing was changed.'); return; }
+      const parsed = parseBackupPayload(JSON.parse(await file.text()));
+      if (!parsed) { notify('That file is not a valid Hesabu backup. Nothing was changed.'); return; }
+      if (!window.confirm('Restore this backup and replace the data in this browser? Download your current backup first if you need to keep it.')) return;
+      setData(parsed);
+      setStorageWriteFailed(!saveData(parsed));
+      setModal(null);
+      notify('Backup restored. Check the storage warning before closing Hesabu.');
+    } catch { notify('That file could not be read as a Hesabu backup. Nothing was changed.'); }
   };
 
   const editDraft = (values: { type: TransactionType; description: string; amount: string; customerName: string; dueDate: string; stockItemName: string }) => {
@@ -481,6 +675,7 @@ function App() {
     const next: TransactionDraft = {
       ...pending, type: values.type, description: values.description.trim(), amount,
       customerName: values.customerName.trim() || undefined, dueDate: values.type === 'credit' ? values.dueDate || addDays(today(), 7) : undefined,
+      paymentMethod: values.type === 'sale' || values.type === 'payment' ? (pending.paymentMethod ?? paymentMethodChoice) : undefined,
       stockItemName: item?.name,
       stockQuantityDelta: item ? (values.type === 'sale' || values.type === 'credit' ? -(pending.stockQuantityDelta ? Math.abs(pending.stockQuantityDelta) : 1) : values.type === 'expense' ? (pending.stockQuantityDelta && pending.stockQuantityDelta > 0 ? pending.stockQuantityDelta : undefined) : undefined) : undefined,
       summary: `${TYPE_META[values.type].label}${values.customerName ? ` for ${values.customerName}` : ''} — ${money(amount)}`,
@@ -500,98 +695,73 @@ function App() {
           {NAV.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => navigate(item.id)} className={cn('nav-link', section === item.id && 'nav-link-active')}><Icon size={16} strokeWidth={1.9} />{item.label}</button>; })}
         </nav>
         <div className="header-tools">
-          <div className="hidden text-right sm:block"><div className="text-[11px] font-bold text-hesabu-ink">{shortDay(today())}</div><div className="mt-0.5 text-[10px] text-hesabu-muted">Local ledger</div></div>
-          <button className="profile-chip" onClick={() => setProfileMenuOpen(v => !v)} aria-label="Shop settings"><span className="profile-avatar">{(data.shopInfo.owner || data.shopInfo.name || 'H').slice(0, 1).toUpperCase()}</span><ChevronDown size={14} className="text-hesabu-muted" /></button>
+          <div className={cn('network-status', online ? 'network-online' : 'network-offline')}><span />{online ? 'Online' : 'Offline · saved here'}</div><div className="hidden text-right sm:block"><div className="text-[11px] font-bold text-hesabu-ink">{shortDay(today())}</div><div className="mt-0.5 text-[10px] text-hesabu-muted">Local ledger</div></div>
+          <button className="profile-chip" onClick={() => setProfileMenuOpen(v => !v)}><Settings2 size={16} strokeWidth={1.8} />Settings</button>
           {profileMenuOpen && <div className="profile-menu"><div className="border-b border-hesabu-line px-3 pb-3 pt-1"><div className="text-xs font-bold">{data.shopInfo.name}</div><div className="mt-1 text-[10px] text-hesabu-muted">{data.shopInfo.businessType}</div></div><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'profile' }); }}><Settings2 size={15} /> Shop details</button><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'settings' }); }}><SlidersHorizontal size={15} /> Preferences</button></div>}
         </div>
       </div>
     </header>
 
     <main className="app-main">
-      {section === 'home' && <>
-
-        <section className="welcome-row">
-          <div><div className="eyebrow">{fullDateText()}</div><h1 className="welcome-title">Business overview</h1><p className="welcome-copy">{data.shopInfo.name} · {data.shopInfo.owner ? `Welcome, ${data.shopInfo.owner}` : 'Your daily overview'}</p></div>
-          <button className="today-pill" onClick={() => { setReportDate(today()); setReportPeriod('daily'); navigate('reports'); }}><CalendarDays size={15}/><span>Today's report</span><ArrowRight size={13}/></button>
+      {pendingCloseDate && section !== 'home' && <section className="day-close-banner"><div><strong>Shop day needs closing</strong><span>{pendingCloseCount} {pendingCloseCount === 1 ? 'entry' : 'entries'} from {dateText(pendingCloseDate,{day:'numeric',month:'short',year:'numeric'})} need a cash count.</span></div><button onClick={() => { setReportDate(pendingCloseDate); setReportPeriod('daily'); setModal({ kind: 'daily-close', date: pendingCloseDate }); }}>Count the cash <ChevronRight size={15} /></button></section>}
+      {section === 'home' && <div className="ledger-home">
+        <header className="ledger-page-head"><div className="ledger-head-copy"><div className="ledger-date-line">{fullDateText(tradingDate)} <span>·</span> TODAY'S SHOP BOOK</div><h1>{data.shopInfo.name}</h1><p>{data.shopInfo.owner ? `Shop records for ${data.shopInfo.owner}` : 'Your shop’s daily record'}</p></div><button className="ledger-report-button" onClick={() => { setReportDate(tradingDate); setReportPeriod('daily'); navigate('more'); }}><FileText size={16} /> <span>Today’s report</span></button></header>
+        <section className="cashflow-hero" aria-label="Today’s net cash position">
+          <div className="cashflow-hero-top"><span>MONEY LEFT TODAY</span><span>{todayTransactions.length} {todayTransactions.length === 1 ? 'entry' : 'entries'}</span></div>
+          <div className="cashflow-hero-value"><strong className={todaysIn - todaysOut < 0 ? 'cashflow-negative' : 'cashflow-positive'}>{todaysIn - todaysOut < 0 ? '−' : ''}{money(Math.abs(todaysIn - todaysOut))}</strong><span>Money received less recorded expenses · not profit</span></div>
+          <div className="cashflow-bar"><span className="cashflow-bar-in" style={{ width: `${(todaysIn / Math.max(1, todaysIn + todaysOut)) * 100}%` }} /><span className="cashflow-bar-out" style={{ width: `${(todaysOut / Math.max(1, todaysIn + todaysOut)) * 100}%` }} /></div>
+          <div className="cashflow-breakdown"><div><span className="cashflow-key cashflow-key-in" /><span>Money in</span><strong>{money(todaysIn)}</strong></div><div><span className="cashflow-key cashflow-key-out" /><span>Money out</span><strong>{money(todaysOut)}</strong></div><small>Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0))} <i>·</i> M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0))}</small></div>
+          <div className="cashflow-collect">Customers who owe you <strong>{money(outstanding)}</strong></div>
         </section>
-        <section className="balance-panel" aria-label="Today's net cash position">
-          <div className="balance-panel-copy"><span className="balance-eyebrow"><span className="balance-status"/> TODAY'S NET CASH</span><div className="balance-total">{money(todaysIn - todaysOut)}</div><div className="balance-caption">Cash received less expenses recorded today</div></div>
-          <div className="balance-panel-bottom"><div><span>Money in</span><strong>+{money(todaysIn)}</strong></div><span className="balance-divider"/><div><span>Money out</span><strong>−{money(todaysOut)}</strong></div><button aria-label="Open financial reports" className="balance-view" onClick={() => navigate('reports')}><ArrowUpRight size={19}/></button></div>
-        </section>
-        <section className="action-panel" aria-label="Quick actions"><div className="action-panel-top"><strong>Quick actions</strong><span>Your everyday tools</span></div>
-          <div className="quick-actions">
-            <button onClick={() => {setTypeChoice('sale'); document.getElementById('transaction-entry')?.scrollIntoView({behavior:'smooth'});}}><span className="qa-icon qa-sale"><ArrowDownLeft size={21}/></span><span>Record sale</span></button>
-            <button onClick={() => {setTypeChoice('expense'); document.getElementById('transaction-entry')?.scrollIntoView({behavior:'smooth'});}}><span className="qa-icon qa-expense"><ReceiptText size={21}/></span><span>Add expense</span></button>
-            <button onClick={() => navigate('stock')}><span className="qa-icon qa-stock"><Package size={21}/></span><span>Inventory</span></button>
-            <button onClick={() => navigate('reports')}><span className="qa-icon qa-reports"><FileSpreadsheet size={21}/></span><span>Reports</span></button>
-            <button onClick={() => navigate('debts')}><span className="qa-icon qa-customers"><Users size={21}/></span><span>Customers</span></button>
-            <button onClick={shareReport}><span className="qa-icon qa-whatsapp"><Share2 size={21}/></span><span>WhatsApp</span></button>
-          </div>
-        </section>
-        <section className="metrics-grid" aria-label="Today's accounting summary">
-          <Metric label="Cash sales" value={todayTransactions.filter(t => t.type === 'sale').reduce((sum,t) => sum + t.amount, 0)} hint="Sales paid today" tone="green" icon={TrendingUp}/>
-          <Metric label="Expenses" value={todaysOut} hint="Money paid out" tone="red" icon={TrendingDown}/>
-          <Metric label="Credit sales" value={todaysCredit} hint="Not yet collected" tone="amber" icon={HandCoins}/>
-        </section>
-        <div className="home-grid">
-          <div className="home-primary">
-            <section id="transaction-entry" className="surface log-surface">
-              <div className="section-heading-row"><div><div className="eyebrow">QUICK ENTRY</div><h2 className="surface-title">Record a transaction</h2><p className="surface-subtitle">Record sales, expenses and payments in one place.</p></div><span className="keyboard-shortcut">FAST ENTRY</span></div>
-              <div className="type-picker" role="group" aria-label="Transaction type">
-                {(['auto', 'sale', 'credit', 'expense', 'payment'] as const).map(type => <button key={type} onClick={() => setTypeChoice(type)} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
-                  {type === 'auto' ? <Sparkles size={15} /> : (() => { const Icon = TYPE_META[type].icon; return <Icon size={15} />; })()}
-                  <span>{type === 'auto' ? 'Auto' : TYPE_META[type].label}</span>
-                </button>)}
-              </div>
-              <form onSubmit={handleQuickSubmit}>
-                <label className="quick-input-wrap"><span className="sr-only">Describe the transaction</span><input value={quickText} onChange={e => setQuickText(e.target.value)} placeholder="e.g. Sold groceries for KES 1,200" className="quick-input" /><button type="button" className={cn('mic-button', voiceState === 'listening' && 'mic-button-listening')} onClick={startVoice} aria-label="Record by voice">{voiceState === 'listening' ? <span className="listening-dot" /> : <Mic2 size={19} />}</button></label>
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row"><Button type="submit" className="flex-1">Review transaction <ArrowRight size={16} /></Button><Button variant="secondary" onClick={() => { setQuickText(''); setPending(null); setTypeChoice('auto'); }} className="sm:!w-[100px]">Clear</Button></div>
-              </form>
-              
-              <div className="helper-row"><span><CheckCircle2 size={13} /> Confirm before it’s saved</span><span className="helper-divider" /><span>English voice input where supported</span></div>
-              {pending && <div className="draft-review" aria-live="polite">
-                <div className="flex items-start gap-3"><div className="draft-check"><Check size={17} /></div><div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-[.13em] text-hesabu-green">Review before saving</div><div className="mt-1 text-[13px] font-bold leading-5 text-hesabu-ink">{pending.summary}</div>{pending.type === 'credit' && <div className="mt-1 text-[11px] text-hesabu-muted">Due {dateText(pending.dueDate ?? addDays(today(), 7), { weekday: 'long', day: 'numeric', month: 'short' })}. This creates a receivable, not cash collected.</div>}{pending.stockQuantityDelta !== undefined && <div className="mt-1 text-[11px] text-hesabu-muted">Stock adjustment: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</div>}{pendingStockExceedsCount && pendingStockItem && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-[#8D6321]">Only <b>{pendingStockItem.quantity} {pendingStockItem.unit}</b> tracked. Saving will bring this item’s tracked count to zero. Use “Edit details” if the quantity or product is wrong.</div>}</div><button onClick={() => setPending(null)} className="icon-button !h-7 !w-7" aria-label="Dismiss review"><X size={14} /></button></div>
-                <div className="mt-4 grid grid-cols-2 gap-2"><Button onClick={() => applyTransaction(pending)}><Check size={15} /> Confirm & save</Button><Button variant="outline" onClick={() => setModal({ kind: 'edit-draft' })}>Edit details</Button></div>
-              </div>}
-              <div className="voice-note"><Mic size={15} /><span>Try: “Njeri paid 500 towards her balance” or “Bought stock for 800”.</span></div>
-            </section>
-
-            <section className="surface activity-surface">
-              <div className="section-heading-row"><div><h2 className="surface-title">Recent transactions</h2><p className="surface-subtitle">Your latest entries, in one place.</p></div><button className="text-action" onClick={() => { setShowAllTransactions(v => !v); setFilterTransactions('all'); }}>{showAllTransactions ? 'Show less' : 'View all'} <ArrowRight size={14} /></button></div>
-              {showAllTransactions && <div className="mb-3 flex gap-2"><label className="search-field flex-1"><Search size={15} /><input value={transactionSearch} onChange={e => setTransactionSearch(e.target.value)} placeholder="Search transactions" /></label><select className="filter-select" value={filterTransactions} onChange={e => setFilterTransactions(e.target.value as 'all' | TransactionType)} aria-label="Filter transaction type"><option value="all">All</option>{Object.entries(TYPE_META).map(([type, meta]) => <option key={type} value={type}>{meta.label}</option>)}</select></div>}
-              {sortedTransactions.length === 0 ? <EmptyState title="No entries yet" detail="Your transactions will appear here as soon as you log the first one." /> : <div className="divide-y divide-hesabu-line/80">{sortedTransactions.filter(t => !showAllTransactions || (filterTransactions === 'all' || t.type === filterTransactions)).filter(t => !showAllTransactions || `${t.description} ${t.customerName ?? ''}`.toLowerCase().includes(transactionSearch.toLowerCase())).slice(0, showAllTransactions ? 80 : 5).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact={!showAllTransactions} />)}</div>}
-              <ActivityProgress transactions={todayTransactions} />
-            </section>
-          </div>
-
-          <aside className="home-aside">
-            <section className="surface aside-surface debt-summary">
-              <div className="flex items-start justify-between gap-3"><div><div className="eyebrow">CREDIT BOOK</div><h2 className="surface-title mt-1">Customer balances</h2></div><span className="aside-icon"><Users size={18} /></span></div>
-              <div className="mt-5 font-display text-[28px] font-extrabold tracking-[-.06em] text-hesabu-ink">{money(outstanding)}</div>
-              <div className="mt-1 text-[11px] text-hesabu-muted">Owed to your shop by {data.customers.filter(c => c.balance > 0).length} people</div>
-              <div className="mt-4 flex items-center justify-between border-t border-hesabu-line pt-3"><span className="text-[10px] font-semibold text-hesabu-muted">Oldest outstanding</span><span className="text-[11px] font-bold text-[#B96D3C]">{data.customers.filter(c => c.balance > 0 && c.dueDate).some(c => daysUntil(c.dueDate!) < 0) ? 'Needs follow-up' : 'On track'}</span></div>
-              <Button variant="secondary" className="mt-4 w-full" onClick={() => navigate('debts')}>Manage balances <ArrowRight size={15} /></Button>
-            </section>
-
-            <section className="surface aside-surface">
-              <div className="section-heading-row !items-start"><div><div className="eyebrow">DON’T FORGET</div><h2 className="surface-title mt-1">Upcoming</h2></div><button className="icon-button" onClick={() => setModal({ kind: 'reminder' })} aria-label="Add reminder"><Plus size={18} /></button></div>
-              {(showAllReminders ? allReminders : activeReminders.slice(0, 3)).length ? <div className="mt-2">{(showAllReminders ? allReminders : activeReminders.slice(0, 3)).map(reminder => <ReminderLine key={reminder.id} reminder={reminder} onDone={() => toggleReminder(reminder)} onEdit={() => setModal({ kind: 'reminder', reminder })} />)}</div> : <p className="py-4 text-xs text-hesabu-muted">{allReminders.length ? 'You’re all caught up. Open all reminders to review completed items.' : 'No reminders yet. Add a bill or follow-up so it doesn’t get forgotten.'}</p>}
-              <div className="mt-3 flex items-center justify-between border-t border-hesabu-line pt-3"><button onClick={() => setShowAllReminders(v => !v)} className="text-action">{showAllReminders ? 'Show fewer' : 'All reminders'} <ArrowRight size={13} /></button><button onClick={() => setModal({ kind: 'reminder' })} className="text-action">Add new <Plus size={13} /></button></div>
-            </section>
-
-            <section className="stock-callout">
-              <div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold uppercase tracking-[.14em] text-[#A0C9AE]">STOCK CHECK</div><div className="mt-2 font-display text-[17px] font-bold text-white">{lowStock.length ? `${lowStock.length} items need a look` : 'Stock is looking good'}</div></div><div className="stock-callout-icon"><Package size={19} /></div></div>
-              {lowStock.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{lowStock.slice(0, 3).map(s => <span key={s.id} className="stock-callout-chip">{s.name}</span>)}</div>}
-              <button className="stock-callout-action" onClick={() => navigate('stock')}>View inventory <ArrowRight size={14} /></button>
-            </section>
-            <div className="privacy-note"><div className="privacy-lock"><Settings2 size={14} /></div><span><b>Your ledger stays on this device.</b><br />This prototype saves data in this browser only.</span></div>
-          </aside>
+        <div className="owner-focus-grid">
+          <OwnerInsightCard brief={ownerBrief} onAction={() => {
+            if (ownerBrief.action === 'debts') { setDebtDirection('owed-to-us'); navigate('debts'); }
+            else if (ownerBrief.action === 'supplier-debts') { setDebtDirection('we-owe'); navigate('debts'); }
+            else if (ownerBrief.action === 'stock') navigate('stock');
+            else if (ownerBrief.action === 'weekly-report') { setReportDate(tradingDate); setReportPeriod('weekly'); navigate('more'); }
+            else { setTypeChoice('sale'); setPending(null); setQuickEntryOpen(true); }
+          }} />
+          <ShopGoalCard goal={data.shopGoal ?? null} onSave={goal => {
+            updateData(current => ({ ...current, shopGoal: goal }));
+            notify(goal ? 'Your business milestone has been saved.' : 'Business milestone cleared.');
+          }} />
         </div>
-      </>}
-
-      {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const text = `Hello ${customer.name}, this is a friendly reminder from ${data.shopInfo.name} regarding your balance of ${money(customer.balance)}. Please let us know when you expect to make payment. Thank you.`; const digits = customer.phone.replace(/\D/g, ''); const phone = digits.startsWith('0') ? `254${digits.slice(1)}` : digits.startsWith('254') ? digits : `254${digits}`; if (!/^254[17]\d{8}$/.test(phone)) { notify('Please add a valid Kenyan phone number for this customer.'); return; } window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); }} />}
-      {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} />}
-      {section === 'reports' && <ReportsSection data={data} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={shareReport} onCopy={copyReport} />}
+        <section className="ledger-quick-actions" aria-label="Add a transaction"><div className="ledger-section-label">WHAT HAPPENED?</div><div className="ledger-action-list">
+          <button className="ledger-action ledger-action-sale" onClick={() => { setTypeChoice('sale'); setPaymentMethodChoice('cash'); setPending(null); setQuickEntryOpen(true); }}><span className="ledger-action-icon"><Wallet size={18} /></span><span>Sale</span></button>
+          <button className="ledger-action ledger-action-expense" onClick={() => { setTypeChoice('expense'); setPaymentMethodChoice('cash'); setPending(null); setQuickEntryOpen(true); }}><span className="ledger-action-icon"><ArrowUpRight size={18} /></span><span>Expense</span></button>
+          <button className="ledger-action ledger-action-credit" onClick={() => { setTypeChoice('credit'); setPending(null); setQuickEntryOpen(true); }}><span className="ledger-action-icon"><HandCoins size={18} /></span><span>Give credit</span></button>
+        </div></section>
+        <div className="voice-home-control"><div className="voice-language-row voice-language-home"><span>Speak in</span><div><button type="button" aria-pressed={voiceLanguage === 'en-KE'} className={voiceLanguage === 'en-KE' ? 'voice-language-active' : ''} onClick={() => setVoiceLanguage('en-KE')}>English</button><button type="button" aria-pressed={voiceLanguage === 'sw-KE'} className={voiceLanguage === 'sw-KE' ? 'voice-language-active' : ''} onClick={() => setVoiceLanguage('sw-KE')}>Kiswahili</button></div></div><button className="voice-entry-launch" onClick={() => { setQuickEntryOpen(true); if (voiceState === 'listening') recognitionRef.current?.stop(); else startVoice(); }}><span className="voice-entry-icon"><Mic size={19} /></span><span className="voice-entry-copy"><strong>Speak a sale or expense</strong><small>{voiceState === 'listening' ? voicePreview || 'Listening… say the item, amount and payment method' : 'Try “two kilos of sugar, two hundred, cash”'}</small></span><span className="voice-entry-action">{voiceState === 'listening' ? 'Stop' : 'Speak'} <ChevronRight size={16} /></span></button></div>
+        {pendingCloseDate && <section className="day-close-banner"><div><strong>Shop day needs closing</strong><span>{pendingCloseCount} {pendingCloseCount === 1 ? 'entry' : 'entries'} from {dateText(pendingCloseDate,{day:'numeric',month:'short',year:'numeric'})} need a cash count.</span></div><button onClick={() => { setReportDate(pendingCloseDate); setReportPeriod('daily'); setModal({ kind: 'daily-close', date: pendingCloseDate }); }}>Count the cash <ChevronRight size={15} /></button></section>}
+        {queuedReportDate && !pendingCloseDate && <section className="day-close-banner report-ready-banner"><div><strong>Daily report ready</strong><span>{dateText(queuedReportDate,{day:'numeric',month:'short',year:'numeric'})} · {online ? 'Ready to share on WhatsApp.' : 'Saved on this phone. Connect to share.'}</span></div><button onClick={() => { setReportDate(queuedReportDate); setReportPeriod('daily'); navigate('more'); }}>Open report <ChevronRight size={15} /></button></section>}
+        {storageWriteFailed && <div className="storage-error-inline" role="status">Some changes may not be saved on this device. Open More and download a backup.</div>}
+        {quickEntryOpen && <section id="transaction-entry" className="surface ledger-entry-panel">
+          <div className="ledger-entry-heading"><div><div className="ledger-section-label">NEW RECORD</div><h2>{pending ? 'Review this entry' : 'Record a transaction'}</h2><p>Check the details before the entry is added to your book.</p></div><button className="ledger-close-entry" onClick={() => { setQuickEntryOpen(false); setPending(null); }} aria-label="Close transaction form">×</button></div>
+          <div className="type-picker simple-type-picker" role="group" aria-label="What happened?">{(['sale', 'credit', 'expense', 'payment'] as const).map(type => { const Icon = TYPE_META[type].icon; return <button key={type} onClick={() => { setTypeChoice(type); setPaymentMethodChoice('cash'); setPending(null); }} className={cn('type-pick', typeChoice === type && 'type-pick-active')}><Icon size={16} strokeWidth={1.9} /><span>{TYPE_META[type].label}</span></button>; })}</div>
+          <form className="simple-entry-form ledger-entry-form" onSubmit={handleQuickSubmit}>
+            <Field inputId="quick-entry-description" label={typeChoice === 'credit' ? 'What did the customer take?' : typeChoice === 'expense' ? 'What did you pay for?' : typeChoice === 'payment' ? 'What was the payment for?' : 'What did you sell?'} value={quickText} onChange={setQuickText} placeholder={typeChoice === 'credit' ? 'e.g. 2 loaves of bread' : typeChoice === 'expense' ? 'e.g. Shop rent' : typeChoice === 'payment' ? 'e.g. Kamau’s debt' : 'e.g. Bread and milk'} required />
+            <Field label="Amount (KES)" value={quickAmount} onChange={setQuickAmount} placeholder="0" type="number" min={1} required inputMode="numeric" />
+            {(typeChoice === 'credit' || typeChoice === 'payment') && <Field label={typeChoice === 'credit' ? 'Customer name' : 'Who paid you?'} value={quickPerson} onChange={setQuickPerson} placeholder="Enter customer name" required />}
+            {typeChoice === 'credit' && <Field label="When should they pay? (optional)" value={quickDueDate} onChange={setQuickDueDate} type="date" />}
+            {(typeChoice === 'sale' || typeChoice === 'payment' || typeChoice === 'expense') && <div className="simple-payment-choice"><span>{typeChoice === 'expense' ? 'Paid using' : 'Paid by'}</span><div><button type="button" onClick={() => setPaymentMethodChoice('cash')} className={paymentMethodChoice === 'cash' ? 'selected' : ''}>Cash</button><button type="button" onClick={() => setPaymentMethodChoice('mpesa')} className={paymentMethodChoice === 'mpesa' ? 'selected' : ''}>M-Pesa</button></div></div>}
+            <div className="simple-form-actions"><Button type="submit" className="flex-1"><Check size={16} />Review entry</Button><button type="button" className="clear-entry" onClick={() => { setQuickText(''); setQuickAmount(''); setQuickPerson(''); setQuickDueDate(''); setPending(null); setTypeChoice('sale'); setPaymentMethodChoice('cash'); }}>Clear</button></div>
+          </form>
+          {pending && <div className="draft-review" aria-live="polite"><div className="simple-review-heading">Review before saving</div><div className="draft-review-grid"><div><span>Type</span><strong>{TYPE_META[pending.type].label}</strong></div><div><span>Amount</span><strong>{money(pending.amount)}</strong></div><div><span>Description</span><strong>{pending.description}</strong></div>{pending.customerName && <div><span>Customer</span><strong>{pending.customerName}</strong></div>}{pending.paymentMethod && <div><span>Payment method</span><strong>{pending.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'}</strong></div>}{pending.dueDate && <div><span>Due date</span><strong>{dateText(pending.dueDate, { day: 'numeric', month: 'short', year: 'numeric' })}</strong></div>}</div>{pending.type === 'credit' && <p className="simple-review-note">This amount has not been received yet. It will be added to the customer’s balance.</p>}{pendingStockExceedsCount && pendingStockItem && <p className="simple-review-warning">Only {pendingStockItem.quantity} {pendingStockItem.unit} are in the stock record. Saving will bring the recorded quantity to zero.</p>}<div className="simple-form-actions"><Button onClick={() => applyTransaction(pending)} className="flex-1"><Check size={15} />Confirm and save</Button><Button variant="outline" onClick={() => setModal({ kind: 'edit-draft' })}>Edit fields</Button><button type="button" className="clear-entry" onClick={() => setPending(null)}>Cancel</button></div></div>}
+          <div className="ledger-entry-footer"><button type="button" className="speak-link" onClick={() => voiceState === 'listening' ? recognitionRef.current?.stop() : startVoice()}><span className="speak-icon"><Mic size={15} /></span>{voiceState === 'listening' ? 'Stop listening' : 'Speak this entry'}</button>{voiceState === 'unsupported' && <p className="simple-review-note">In-app voice may need data and microphone permission. Offline, use the microphone on your phone keyboard if available.</p>}</div>
+        </section>}
+        {(data.customers.some(c => c.balance > 0 && c.dueDate && daysUntil(c.dueDate) < 0) || lowStock.length > 0) && <section className="home-alert-strip">
+          {data.customers.some(c => c.balance > 0 && c.dueDate && daysUntil(c.dueDate) < 0) && <button onClick={() => navigate('debts')}><span className="alert-count">{data.customers.filter(c => c.balance > 0 && c.dueDate && daysUntil(c.dueDate) < 0).length}</span><span>overdue customers</span><ChevronRight size={14} /></button>}
+          {lowStock.length > 0 && <button onClick={() => navigate('stock')}><span className="alert-count">{lowStock.length}</span><span>items need restocking</span><ChevronRight size={14} /></button>}
+        </section>}
+        <section className="surface ledger-book home-recent"><header className="ledger-book-heading"><div><div className="ledger-section-label">LATEST ACTIVITY</div><h2>Recent transactions</h2><p>Your last five entries, newest first.</p></div><button className="ledger-view-all" onClick={() => navigate('ledger')}>Open ledger <ChevronRight size={15} /></button></header>
+          {sortedTransactions.length ? <div className="simple-transaction-list ledger-transaction-list">{sortedTransactions.slice(0,5).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact />)}</div> : <EmptyState title="Your book is ready" detail="Your first sale, expense or customer credit will appear here." action={<Button onClick={() => { setTypeChoice('sale'); setQuickEntryOpen(true); }}><Plus size={15} /> Add first entry</Button>} />}
+        </section>
+        <div className="ledger-privacy-note"><CheckCircle2 size={16} /><span><strong>Saved on this device</strong><small>Your records stay on this device. Keep a separate backup in More.</small></span></div>
+      </div>}
+      {section === 'ledger' && <LedgerSection transactions={sortedTransactions} filter={filterTransactions} setFilter={setFilterTransactions} search={transactionSearch} setSearch={setTransactionSearch} dateFilter={ledgerDateFilter} setDateFilter={setLedgerDateFilter} onTransaction={transaction => setModal({ kind: 'transaction', transactionId: transaction.id })} onDelete={deleteTransaction} />}
+      {section === 'more' && <MoreSection onStock={() => navigate('stock')} appInstalled={appInstalled} installAvailable={Boolean(installPrompt)} installHint={installHint} onInstall={installHesabu} online={online} queuedReportDate={queuedReportDate} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShareReport={shareReport} onCopyReport={copyReport} onPrintReport={() => window.print()} reminders={allReminders} onToggleReminder={toggleReminder} onEditReminder={reminder => setModal({ kind: 'reminder', reminder })} onAddReminder={() => setModal({ kind: 'reminder' })} onOpenRecord={openReminderRecord} customers={data.customers} stock={data.stock} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} onSettings={() => setModal({ kind: 'settings' })} lastBackupAt={lastBackupAt} storageWriteFailed={storageWriteFailed} storageProtection={storageProtection} />}
+      {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const phone = normalizeKenyanWhatsAppNumber(customer.phone); if (!phone) { notify('Please add a valid Kenyan phone number for this customer.'); return; } const message = debtReminderMessage(customer.name, data.shopInfo.name, customer.balance, customer.dueDate); window.open(whatsAppUrl(message, phone), '_blank', 'noopener,noreferrer'); }} onCreateFollowUp={customer => setModal({ kind: 'reminder', link: { customerId: customer.id, label: customer.name, kind: 'customer' } })} />}
+      {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} onReminder={item => setModal({ kind: 'reminder', link: { stockItemId: item.id, label: item.name, kind: 'other' } })} />}
     </main>
 
     <nav className="mobile-nav" aria-label="Primary navigation">{NAV.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => navigate(item.id)} className={cn('mobile-nav-item', section === item.id && 'mobile-nav-active')}><span className="mobile-nav-icon"><Icon size={21} strokeWidth={section === item.id ? 2.2 : 1.8} /></span><span>{item.label}</span>{section === item.id && <span className="mobile-nav-dot" />}</button>; })}</nav>
@@ -601,11 +771,12 @@ function App() {
     {modal?.kind === 'stock' && <StockModal onClose={closeModal} onSave={saveStock} />}
     {modal?.kind === 'stock-update' && data.stock.find(s => s.id === modal.itemId) && <StockUpdateModal item={data.stock.find(s => s.id === modal.itemId)!} mode={modal.mode} onClose={closeModal} onSave={updateStock} />}
     {modal?.kind === 'stock-edit' && data.stock.find(s => s.id === modal.itemId) && <StockEditModal item={data.stock.find(s => s.id === modal.itemId)!} onClose={closeModal} onSave={saveStockDetails} />}
-    {modal?.kind === 'reminder' && <ReminderModal reminder={modal.reminder} onClose={closeModal} onSave={values => saveReminder(values, modal.reminder)} onDelete={deleteReminder} />}
+    {modal?.kind === 'reminder' && <ReminderModal reminder={modal.reminder} link={modal.link ?? (modal.reminder?.customerId ? { customerId: modal.reminder.customerId, label: data.customers.find(customer => customer.id === modal.reminder?.customerId)?.name ?? 'Customer', kind: 'customer' as const } : modal.reminder?.stockItemId ? { stockItemId: modal.reminder.stockItemId, label: data.stock.find(item => item.id === modal.reminder?.stockItemId)?.name ?? 'Stock item', kind: 'other' as const } : undefined)} onClose={closeModal} onSave={values => saveReminder(values, modal.reminder)} onDelete={deleteReminder} />}
     {modal?.kind === 'profile' && <ProfileModal data={data} onClose={closeModal} onSave={updateProfile} />}
-    {modal?.kind === 'settings' && <SettingsModal onClose={closeModal} onReset={resetDemo} onProfile={() => setModal({ kind: 'profile' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} />}
+    {modal?.kind === 'settings' && <SettingsModal shopInfo={data.shopInfo} onSaveTradingHours={(start, end) => { updateData(current => ({ ...current, shopInfo: { ...current.shopInfo, tradingDayStart: start, tradingDayEnd: end } })); notify('Shop hours saved. New entries will use this shop day.'); }} onClose={closeModal} onReset={resetDemo} onProfile={() => setModal({ kind: 'profile' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} lastBackupAt={lastBackupAt} storageProtection={storageProtection} onProtectStorage={protectDeviceStorage} />}
+    {modal?.kind === 'daily-close' && <DailyCloseModal data={data} date={modal.date} existing={data.dailyCloses?.find(close => close.date === modal.date)} onClose={closeModal} onSave={saveDailyClose} />}
     {modal?.kind === 'edit-draft' && pending && <EditDraftModal draft={pending} items={data.stock} onClose={closeModal} onSave={editDraft} />}
-    {modal?.kind === 'transaction' && data.transactions.find(t => t.id === modal.transactionId) && <TransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} customer={data.customers.find(c => c.id === data.transactions.find(t => t.id === modal.transactionId)?.customerId)} onClose={closeModal} onEdit={transaction => setModal({ kind: 'edit-transaction', transactionId: transaction.id })} onDelete={deleteTransaction} />}
+    {modal?.kind === 'transaction' && data.transactions.find(t => t.id === modal.transactionId) && <TransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} customer={data.customers.find(c => c.id === data.transactions.find(t => t.id === modal.transactionId)?.customerId)} onClose={closeModal} onEdit={transaction => setModal({ kind: 'edit-transaction', transactionId: transaction.id })} onDelete={deleteTransaction} onShareReceipt={transaction => shareReceipt(transaction, data.customers.find(c => c.id === transaction.customerId))} />}
     {modal?.kind === 'edit-transaction' && data.transactions.find(t => t.id === modal.transactionId) && <EditTransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} onClose={closeModal} onSave={saveTransactionEdit} />}
     <WelcomeScreen show={showWelcome} onUseDemo={chooseDemo} onCreateShop={createLocalShop} />
     <Toast message={toastMessage} onClose={closeToast} />
@@ -614,103 +785,242 @@ function App() {
 
 interface SpeechRecognitionLike {
   lang: string; interimResults: boolean; maxAlternatives: number;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: (() => void) | null; onend: (() => void) | null;
-  start: () => void;
+  onstart: (() => void) | null;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }> }) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void; stop: () => void; abort: () => void;
 }
 
-function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, onPayment, onReminder }: {
+function OwnerInsightCard({ brief, onAction }: { brief: ReturnType<typeof buildOwnerBrief>; onAction: () => void }) {
+  return <section className="surface owner-insight-card">
+    <div className="owner-card-eyebrow">YOUR SHOP CHECK-IN</div>
+    <h2>{brief.title}</h2>
+    <p>{brief.detail}</p>
+    <div className="owner-check-metrics">
+      <div><span>Collected · 7 days</span><strong>{money(brief.collected)}</strong></div>
+      <div><span>Expenses · 7 days</span><strong>{money(brief.expenses)}</strong></div>
+      <div><span>Customer balances</span><strong>{money(brief.outstanding)}</strong></div>
+    </div>
+    <button className="owner-insight-action" onClick={onAction}>{brief.actionLabel}<ChevronRight size={15} /></button>
+    <small>Based on entries recorded in Hesabu. Missing entries can change this picture; money movement is not profit.</small>
+  </section>;
+}
+
+function ShopGoalCard({ goal, onSave }: { goal: ShopGoal | null; onSave: (goal: ShopGoal | null) => void }) {
+  const [editing, setEditing] = useState(!goal);
+  const [title, setTitle] = useState(goal?.title ?? '');
+  const [target, setTarget] = useState(goal ? String(goal.targetAmount) : '');
+  const [progress, setProgress] = useState(goal ? String(goal.progressAmount) : '0');
+
+  useEffect(() => {
+    setTitle(goal?.title ?? '');
+    setTarget(goal ? String(goal.targetAmount) : '');
+    setProgress(goal ? String(goal.progressAmount) : '0');
+    setEditing(!goal);
+  }, [goal?.title, goal?.targetAmount, goal?.progressAmount, goal?.updatedAt]);
+
+  const save = (event: FormEvent) => {
+    event.preventDefault();
+    const targetAmount = Math.round(Number(target));
+    const progressAmount = Math.round(Number(progress));
+    if (!title.trim() || !Number.isFinite(targetAmount) || targetAmount <= 0
+      || !Number.isFinite(progressAmount) || progressAmount < 0) return;
+    onSave({
+      title: title.trim(),
+      targetAmount,
+      progressAmount: Math.min(targetAmount, progressAmount),
+      updatedAt: new Date().toISOString(),
+    });
+    setEditing(false);
+  };
+
+  if (editing) return <section className="surface owner-goal-card">
+    <div className="owner-card-eyebrow">YOUR NEXT MILESTONE</div>
+    <h2>{goal ? 'Keep your goal in view' : 'What are you building towards?'}</h2>
+    <p>Choose something that matters to your business. You set the pace.</p>
+    <div className="goal-suggestions" aria-label="Suggested business goals">
+      {['Grow my stock', 'Buy a fridge or equipment', 'Open another branch', 'Clear supplier debt', 'Build a cash reserve'].map(item =>
+        <button key={item} type="button" className={title === item ? 'goal-suggestion-active' : ''} onClick={() => setTitle(item)}>{item}</button>
+      )}
+    </div>
+    <form className="owner-goal-form" onSubmit={save}>
+      <label><span>My goal</span><input value={title} onChange={event => setTitle(event.target.value)} placeholder="e.g. Grow my shop stock" maxLength={70} required /></label>
+      <label><span>Target amount (KES)</span><input type="number" min="1" step="1" inputMode="numeric" value={target} onChange={event => setTarget(event.target.value)} placeholder="e.g. 30000" required /></label>
+      <label><span>Progress so far (KES)</span><input type="number" min="0" step="1" inputMode="numeric" value={progress} onChange={event => setProgress(event.target.value)} placeholder="0" /></label>
+      <div className="owner-goal-form-actions">
+        {goal && <button type="button" className="owner-goal-cancel" onClick={() => setEditing(false)}>Cancel</button>}
+        <Button type="submit" size="sm" disabled={!title.trim() || Number(target) <= 0}>Save my goal</Button>
+      </div>
+    </form>
+    <small>This is your own progress update. It does not change till cash, sales or expenses.</small>
+  </section>;
+
+  const percent = Math.min(100, Math.round((goal!.progressAmount / goal!.targetAmount) * 100));
+  return <section className="surface owner-goal-card">
+    <div className="owner-card-eyebrow">YOUR NEXT MILESTONE</div>
+    <h2>{goal!.title}</h2>
+    <div className="goal-amounts"><strong>{money(goal!.progressAmount)}</strong><span>of {money(goal!.targetAmount)}</span></div>
+    <div className="goal-progress-track" role="progressbar" aria-label="Milestone progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: percent + '%' }} /></div>
+    <div className="goal-progress-caption"><strong>{percent}%</strong><span>{percent === 100 ? 'Milestone reached. Choose what comes next.' : 'Progress recorded by you, at your pace.'}</span></div>
+    <button className="owner-insight-action" onClick={() => setEditing(true)}>Update my progress<ChevronRight size={15} /></button>
+    <small>Progress is self-reported and kept separate from your shop’s till balance.</small>
+  </section>;
+}
+
+function LedgerSection({ transactions, filter, setFilter, search, setSearch, dateFilter, setDateFilter, onTransaction, onDelete }: {
+  transactions: Transaction[]; filter: 'all' | 'cash' | 'mpesa' | 'credit' | 'expense'; setFilter: (value: 'all' | 'cash' | 'mpesa' | 'credit' | 'expense') => void;
+  search: string; setSearch: (value: string) => void; dateFilter: string; setDateFilter: (value: string) => void;
+  onTransaction: (transaction: Transaction) => void; onDelete: (transaction: Transaction) => void;
+}) {
+  const filters: { id: typeof filter; label: string }[] = [{id:'all',label:'All'},{id:'cash',label:'Cash'},{id:'mpesa',label:'M-Pesa'},{id:'credit',label:'Credit'},{id:'expense',label:'Expenses'}];
+  const shown = transactions.filter(tx => {
+    const moneyMovement = tx.type === 'sale' || tx.type === 'payment' || tx.type === 'expense';
+    const matches = filter === 'all'
+      || (filter === 'cash' && moneyMovement && tx.paymentMethod !== 'mpesa')
+      || (filter === 'mpesa' && moneyMovement && tx.paymentMethod === 'mpesa')
+      || (filter === 'credit' && tx.type === 'credit')
+      || (filter === 'expense' && tx.type === 'expense');
+    const businessDate = tx.tradingDay ?? tx.date;
+    return matches && `${tx.description} ${tx.customerName ?? ''} ${tx.category ?? ''}`.toLowerCase().includes(search.toLowerCase()) && (!dateFilter || businessDate === dateFilter);
+  });
+  const grouped = shown.reduce<Record<string, Transaction[]>>((result, tx) => { const businessDate = tx.tradingDay ?? tx.date; (result[businessDate] ??= []).push(tx); return result; }, {});
+  const received = shown.filter(tx => tx.type === 'sale' || tx.type === 'payment').reduce((sum, tx) => sum + tx.amount, 0);
+  const spent = shown.filter(tx => tx.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0);
+  return <><SectionTitle eyebrow="THE DAILY BOOK" title="Ledger" detail="Search every entry, check how it was paid and open a record to correct it." />
+    <section className="ledger-overview-strip"><div><span>Money received</span><strong className="money-positive">{money(received)}</strong></div><div><span>Money spent</span><strong className="money-negative">{money(spent)}</strong></div><div><span>Net movement</span><strong>{money(received-spent)}</strong></div></section>
+    <section className="surface ledger-full-panel"><div className="ledger-full-filters"><label className="search-field"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search description or customer" aria-label="Search ledger" /></label><label className="ledger-date-filter"><span>Date</span><input type="date" value={dateFilter} max={today()} onChange={e=>setDateFilter(e.target.value)} /></label></div>
+      <div className="ledger-filter-chips" role="group" aria-label="Filter entries">{filters.map(item=><button key={item.id} className={filter===item.id?'ledger-filter-active':''} onClick={()=>setFilter(item.id)}>{item.label}</button>)}</div>
+      <div className="ledger-full-list">{Object.keys(grouped).length ? Object.entries(grouped).map(([date,items])=><section key={date} className="ledger-date-group"><header className="ledger-date-heading"><strong>{dateText(date,{weekday:'long',day:'numeric',month:'short',year:'numeric'})}</strong><span>{items.length} {items.length===1?'entry':'entries'}</span></header>{items.map(tx=><TransactionRow key={tx.id} transaction={tx} onClick={()=>onTransaction(tx)} onDelete={()=>onDelete(tx)} compact />)}</section>) : <EmptyState title="No entries found" detail="Change the search, date or filter to see other records." />}</div>
+      <div className="ledger-full-foot">{shown.length} {shown.length===1?'entry':'entries'} shown</div>
+    </section>
+  </>;
+}
+
+function MoreSection({ onStock, appInstalled, installAvailable, installHint, onInstall, online, queuedReportDate, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShareReport, onCopyReport, onPrintReport, reminders, onToggleReminder, onEditReminder, onAddReminder, onOpenRecord, customers, stock, onExportBackup, onExportCsv, onImportBackup, onSettings, lastBackupAt, storageWriteFailed, storageProtection }: {
+  onStock: () => void; appInstalled: boolean; installAvailable: boolean; installHint: string; onInstall: () => void; online: boolean; queuedReportDate: string | null;
+  report: ReturnType<typeof buildReport>; reportPeriod: 'daily'|'weekly'|'monthly'; setReportPeriod: (value:'daily'|'weekly'|'monthly')=>void;
+  reportDate:string; setReportDate:(value:string)=>void; onShareReport:()=>void; onCopyReport:()=>void; onPrintReport:()=>void;
+  reminders:Reminder[]; onToggleReminder:(reminder:Reminder)=>void; onEditReminder:(reminder:Reminder)=>void; onAddReminder:()=>void;
+  onOpenRecord:(reminder:Reminder)=>void; customers:Customer[]; stock:StockItem[];
+  onExportBackup:()=>void; onExportCsv:()=>void; onImportBackup:(file:File)=>void; onSettings:()=>void;
+  lastBackupAt:string|null; storageWriteFailed:boolean; storageProtection:'checking'|'protected'|'standard'|'unsupported';
+}) {
+  const open=reminders.filter(r=>!r.done), done=reminders.filter(r=>r.done);
+  return <div className="more-page"><SectionTitle eyebrow="SHOP TOOLS" title="More" detail="Reports, reminders, stock and copies of your shop records." right={<Button size="sm" variant="secondary" onClick={onStock}><Package size={14} /> Stock</Button>} />
+    {!appInstalled && <section className="surface install-app-panel"><div><span className="ledger-section-label">QUICK ACCESS</span><h2>Add Hesabu to this phone</h2><p>Open your shop book from the home screen. It is easier to return to each day.</p><small>{installHint}</small></div><Button size="sm" onClick={onInstall}>{installAvailable ? 'Install Hesabu' : 'Show install steps'}</Button></section>}
+    <ReportsSection online={online} queuedReportDate={queuedReportDate} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={onShareReport} onCopy={onCopyReport} onPrint={onPrintReport} />
+    <div className="more-tools-grid">
+      <section className="surface more-tool-panel"><header className="more-tool-heading"><div><span className="ledger-section-label">FOLLOW THROUGH</span><h2>Reminders</h2><p>Tasks you can tick off when they are done.</p></div><Button size="sm" onClick={onAddReminder}><Plus size={14} /> Add</Button></header>
+        {open.length ? <div className="reminder-task-list">{open.map(reminder=>{const customer=reminder.customerId?customers.find(item=>item.id===reminder.customerId):undefined;const item=reminder.stockItemId?stock.find(stockItem=>stockItem.id===reminder.stockItemId):undefined;return <div key={reminder.id} className="reminder-task"><button className="reminder-task-check" onClick={()=>onToggleReminder(reminder)} aria-label={`Mark ${reminder.title} as done`}><span /></button><button className="reminder-task-copy" onClick={()=>onEditReminder(reminder)}><strong>{reminder.title}</strong><small>{reminder.kind==='customer'?'Customer follow-up':reminder.kind==='supplier'?'Supplier':reminder.kind==='bill'?'Bill / expense':'Task'} · {daysUntil(reminder.dueDate)<0?'Overdue':daysUntil(reminder.dueDate)===0?'Today':daysUntil(reminder.dueDate)===1?'Tomorrow':dateText(reminder.dueDate,{day:'numeric',month:'short'})}</small>{customer&&<small className="reminder-linked-label">Debt · {customer.name}</small>}{item&&<small className="reminder-linked-label">Stock · {item.name}</small>}{reminder.detail&&<small>{reminder.detail}</small>}</button>{(customer||item)&&<button className="reminder-open-record" onClick={()=>onOpenRecord(reminder)}>Open</button>}{reminder.amount!==undefined&&<strong className="reminder-task-amount">{money(reminder.amount)}</strong>}</div>})}</div> : <EmptyState title="No reminders waiting" detail="Add a follow-up or bill so it is easy to find later." />}
+        {done.length>0&&<details className="completed-reminders"><summary>{done.length} completed</summary>{done.map(reminder=><div key={reminder.id} className="completed-reminder"><button onClick={()=>onToggleReminder(reminder)} aria-label={`Reopen ${reminder.title}`}>↶</button><span>{reminder.title}</span><button onClick={()=>onEditReminder(reminder)}>Edit</button></div>)}</details>}
+      </section>
+      <section className="surface more-tool-panel backup-panel"><header className="more-tool-heading"><div><span className="ledger-section-label">DATA SAFETY</span><h2>Backup & restore</h2><p>Your book is stored on this device only.</p></div><span className="backup-shield"><CheckCircle2 size={18} /></span></header>
+        <div className="backup-status-line"><span>Last backup</span><strong>{lastBackupAt?dateText(lastBackupAt.slice(0,10),{day:'numeric',month:'short',year:'numeric'})+' · '+timeText(lastBackupAt.slice(11,16)):'No backup yet'}</strong></div>
+        <div className={`backup-storage-status ${storageWriteFailed?'backup-status-error':''}`}>{storageWriteFailed?'Some recent changes may not have been saved. Download a backup now.':storageProtection==='protected'?'This browser has granted extra protection for local data.':storageProtection==='standard'?'Your records are saved in this browser. A separate backup is still important.':storageProtection==='checking'?'Checking this browser’s local storage settings.':'This browser cannot offer extra storage protection.'}</div>
+        <div className="backup-actions"><Button onClick={onExportBackup}><Download size={15} /> Download backup</Button><Button variant="outline" onClick={onExportCsv}><FileSpreadsheet size={15} /> Export CSV</Button><label className="backup-restore-button"><Upload size={15} /> Restore from file<input type="file" accept="application/json,.json" onChange={event=>{const file=event.currentTarget.files?.[0];if(file)onImportBackup(file);event.currentTarget.value='';}} /></label></div>
+        <p className="backup-reassurance">Your data stays on this device until you choose to export it. Restoring replaces the records in this browser.</p>
+        <button className="more-settings-link" onClick={onSettings}><Settings2 size={15} /> Shop settings and storage options <ChevronRight size={15} /></button>
+      </section>
+    </div>
+  </div>;
+}
+
+function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, onPayment, onReminder, onCreateFollowUp }: {
   data: AppData; query: string; setQuery: (v: string) => void; direction: 'owed-to-us' | 'we-owe'; setDirection: (v: 'owed-to-us' | 'we-owe') => void;
-  onAdd: () => void; onPayment: (id: string) => void; onReminder: (customer: Customer) => void;
+  onAdd: () => void; onPayment: (id: string) => void; onReminder: (customer: Customer) => void; onCreateFollowUp: (customer: Customer) => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const customerList = data.customers.filter(c => direction === 'owed-to-us' ? c.balance > 0 : c.balance < 0).filter(c => `${c.name} ${c.phone}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
   const total = customerList.reduce((sum, c) => sum + Math.abs(c.balance), 0);
   return <>
-    <SectionTitle eyebrow="THE CREDIT BOOK" title="Customer & supplier balances" detail="Know who owes you, who you owe, and what needs following up." right={<Button onClick={onAdd}><Plus size={16} /> Add person</Button>} />
-    <div className="debt-overview"><div><div className="text-[10px] font-bold uppercase tracking-[.12em] text-[#B9D8C2]">{direction === 'owed-to-us' ? 'Owed to your shop' : 'Owed by your shop'}</div><div className="mt-2 font-display text-[28px] font-extrabold tracking-[-.06em] text-white">{money(total)}</div><div className="mt-1 text-[11px] text-[#C0D7C7]">{customerList.length} {customerList.length === 1 ? 'person' : 'people'} on this list</div></div><div className="debt-overview-mark"><HandCoins size={27} strokeWidth={1.6} /></div></div>
-    <div className="section-tabs mt-5" role="tablist"><button role="tab" aria-selected={direction === 'owed-to-us'} className={cn(direction === 'owed-to-us' && 'section-tab-active')} onClick={() => setDirection('owed-to-us')}>Wananidai <span>{data.customers.filter(c => c.balance > 0).length}</span></button><button role="tab" aria-selected={direction === 'we-owe'} className={cn(direction === 'we-owe' && 'section-tab-active')} onClick={() => setDirection('we-owe')}>Ninawadai <span>{data.customers.filter(c => c.balance < 0).length}</span></button></div>
-    <div className="debt-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search a name or phone number" /></label><div className="text-[11px] font-medium text-hesabu-muted">Sorted by amount</div></div>
+    <SectionTitle title="People and balances" detail="See who owes the shop and who the shop needs to pay." right={<Button onClick={onAdd}>Add person</Button>} />
+    <div className="debt-overview"><div><div className="text-[13px] font-medium">{direction === 'owed-to-us' ? 'Customers owe the shop' : 'The shop owes'}</div><div className="mt-2 font-display text-[28px] font-bold">{money(total)}</div><div className="mt-1 text-[12px]">{customerList.length} {customerList.length === 1 ? 'person' : 'people'}</div></div></div>
+    <div className="section-tabs mt-5" role="tablist"><button role="tab" aria-selected={direction === 'owed-to-us'} className={cn(direction === 'owed-to-us' && 'section-tab-active')} onClick={() => setDirection('owed-to-us')}>Owe me <span>{data.customers.filter(c => c.balance > 0).length}</span></button><button role="tab" aria-selected={direction === 'we-owe'} className={cn(direction === 'we-owe' && 'section-tab-active')} onClick={() => setDirection('we-owe')}>I owe <span>{data.customers.filter(c => c.balance < 0).length}</span></button></div>
+    <div className="debt-toolbar"><label className="search-field"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Find a person by name or phone" /></label><div className="text-[12px] text-hesabu-muted">Largest balance first</div></div>
     <section className="surface list-surface">
       {customerList.length === 0 ? <EmptyState title={query ? 'No matching person' : 'No outstanding balances'} detail={query ? 'Try another name or phone number.' : direction === 'owed-to-us' ? 'When someone takes goods on credit, they will appear here.' : 'Any unpaid supplier balances will show up here.'} action={!query ? <Button variant="secondary" onClick={onAdd}><Plus size={15} /> Add a person</Button> : undefined} /> : customerList.map(customer => {
-        const overdue = customer.dueDate && daysUntil(customer.dueDate) < 0;
+        const overdue = customer.balance > 0 && customer.dueDate && daysUntil(customer.dueDate) < 0;
+        const dueSoon = customer.balance > 0 && customer.dueDate && daysUntil(customer.dueDate) >= 0 && daysUntil(customer.dueDate) <= 3;
         const expandedNow = expanded === customer.id;
-        const history = data.transactions.filter(t => t.customerId === customer.id || t.customerName?.toLowerCase() === customer.name.toLowerCase()).sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`)).slice(0, 5);
+        const history = data.transactions.filter(t => t.customerId === customer.id || t.customerName?.toLowerCase() === customer.name.toLowerCase()).sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`));
         return <div key={customer.id} className="person-record">
           <button className="person-main" onClick={() => setExpanded(expandedNow ? null : customer.id)} aria-expanded={expandedNow}>
             <span className={cn('person-avatar', customer.balance < 0 && 'person-avatar-supplier')}>{customer.name.slice(0, 1).toUpperCase()}</span>
-            <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="text-[14px] font-bold text-hesabu-ink">{customer.name}</span>{overdue && <span className="overdue-badge">{Math.abs(daysUntil(customer.dueDate!))}d overdue</span>}</span><span className="mt-1 block text-[11px] text-hesabu-muted">{customer.phone || (customer.balance < 0 ? 'Supplier / business' : 'No phone added')}{customer.dueDate ? ` · Due ${shortDay(customer.dueDate)}` : ''}</span></span>
-            <span className="ml-2 shrink-0 text-right"><span className={cn('block text-[14px] font-bold tabular-nums', customer.balance < 0 ? 'text-[#597B9A]' : 'text-[#B94C46]')}>{money(Math.abs(customer.balance))}</span><span className="mt-1 block text-[10px] text-hesabu-muted">{customer.balance < 0 ? (customer.kind === 'customer' ? 'Customer credit' : 'You owe') : 'Owes you'}</span></span><ChevronDown size={16} className={cn('ml-1 shrink-0 text-[#9AA69D] transition-transform', expandedNow && 'rotate-180')} />
+            <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="text-[14px] font-bold text-hesabu-ink">{customer.name}</span>{overdue && <span className="overdue-badge">{Math.abs(daysUntil(customer.dueDate!))}d overdue</span>}{dueSoon && <span className="due-soon-badge">Due soon</span>}</span><span className="mt-1 block text-[11px] text-hesabu-muted">{customer.phone || (customer.balance < 0 ? 'Supplier / business' : 'No phone added')}{customer.dueDate ? ` · Due ${shortDay(customer.dueDate)}` : ''}</span></span>
+            <span className="ml-2 shrink-0 text-right"><span className={cn('block text-[14px] font-bold tabular-nums', customer.balance < 0 ? 'text-[#597B9A]' : 'text-[#B94C46]')}>{money(Math.abs(customer.balance))}</span><span className="mt-1 block text-[10px] text-hesabu-muted">{customer.balance < 0 ? (customer.kind === 'customer' ? 'Customer credit' : 'You owe') : 'Owes you'}</span></span><span className="ml-2 shrink-0 text-action">{expandedNow ? 'Hide' : 'View'}</span>
           </button>
           {expandedNow && <div className="person-expanded"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[11px] font-semibold text-hesabu-muted">Recent history</span><span className="text-[10px] text-hesabu-muted">{history.length} entries</span></div>{history.length ? <div className="mt-2">{history.map(t => <div key={t.id} className="history-line"><span className="truncate">{t.description}</span><span className={cn(t.type === 'expense' ? 'text-[#B94C46]' : t.type === 'credit' ? 'text-[#A4762A]' : 'text-hesabu-green')}>{money(t.amount)}</span></div>)}</div> : <p className="mt-2 text-xs text-hesabu-muted">No linked transactions yet. This balance was entered manually.</p>}
-            <div className="mt-4 flex flex-wrap gap-2">{customer.balance !== 0 && <Button size="sm" onClick={() => onPayment(customer.id)}><Wallet size={14} /> {customer.balance < 0 ? (customer.kind === 'customer' ? 'Return customer credit' : 'Record payment made') : 'Record payment received'}</Button>}{customer.balance > 0 && customer.phone && <Button size="sm" variant="secondary" onClick={() => onReminder(customer)}><Share2 size={14} /> WhatsApp reminder</Button>}</div>
+            <div className="mt-4 flex flex-wrap gap-2">{customer.balance !== 0 && <Button size="sm" onClick={() => onPayment(customer.id)}><Wallet size={14} /> {customer.balance < 0 ? (customer.kind === 'customer' ? 'Return customer credit' : 'Record payment made') : 'Record payment received'}</Button>}{customer.balance > 0 && <Button size="sm" variant="outline" onClick={() => onCreateFollowUp(customer)}><Bell size={14} /> Remind me</Button>}{customer.balance > 0 && customer.phone && <Button size="sm" variant="secondary" onClick={() => onReminder(customer)}><Share2 size={14} /> WhatsApp reminder</Button>}</div>
           </div>}
         </div>;
       })}
     </section>
-    <p className="mx-auto mt-5 max-w-xl text-center text-[10px] leading-4 text-hesabu-muted">A credit adds to the amount owed. A repayment reduces it. Open a transaction to correct its description, amount or date; delete and re-enter it to change its type or linked person.</p>
+    <p className="mx-auto mt-5 max-w-xl text-center text-[12px] leading-5 text-hesabu-muted">When a customer takes goods and will pay later, add it under “On credit”. When they pay, record a “Debt repayment”.</p>
   </>;
 }
 
-function StockSection({ data, query, setQuery, onAdd, onEdit, onUpdate }: { data: AppData; query: string; setQuery: (v: string) => void; onAdd: () => void; onEdit: (id: string) => void; onUpdate: (id: string, mode: 'restock' | 'adjust') => void }) {
-  const [filter, setFilter] = useState<'all' | 'low'>('all');
-  const shown = data.stock.filter(s => s.name.toLowerCase().includes(query.toLowerCase())).filter(s => filter === 'all' || s.quantity <= s.lowStockAt).sort((a, b) => (a.quantity / Math.max(1, a.lowStockAt)) - (b.quantity / Math.max(1, b.lowStockAt)));
+function StockSection({ data, query, setQuery, onAdd, onEdit, onUpdate, onReminder }: { data: AppData; query: string; setQuery: (v: string) => void; onAdd: () => void; onEdit: (id: string) => void; onUpdate: (id: string, mode: 'restock' | 'adjust') => void; onReminder: (item: StockItem) => void }) {
+  const [filter, setFilter] = useState<'all' | 'low' | 'out'>('all');
+  const shown = data.stock.filter(s => s.name.toLowerCase().includes(query.toLowerCase())).filter(s => filter === 'all' || (filter === 'low' && s.quantity > 0 && s.quantity <= s.lowStockAt) || (filter === 'out' && s.quantity === 0)).sort((a,b)=>Number(a.quantity>a.lowStockAt)-Number(b.quantity>b.lowStockAt)||(a.quantity/Math.max(1,a.lowStockAt))-(b.quantity/Math.max(1,b.lowStockAt)));
   return <>
-    <SectionTitle eyebrow="WHAT’S ON YOUR SHELVES" title="Bidhaa" detail={`${data.stock.length} items on your shelf. Keep an eye on the ones running low.`} right={<Button onClick={onAdd}><Plus size={16} /> Add item</Button>} />
-    <div className="stock-summary-row"><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Items tracked</span><b>{data.stock.length.toString().padStart(2, '0')}</b></div><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Running low</span><b className={lowStockCount(data.stock) ? 'text-[#B8782D]' : 'text-hesabu-green'}>{lowStockCount(data.stock).toString().padStart(2, '0')}</b></div><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Last updated</span><b className="!text-[13px]">Today</b></div></div>
-    <div className="stock-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search your stock" /></label><div className="segmented-control"><button className={cn(filter === 'all' && 'segment-active')} onClick={() => setFilter('all')}>All items</button><button className={cn(filter === 'low' && 'segment-active')} onClick={() => setFilter('low')}>Low stock <span className="count-badge">{lowStockCount(data.stock)}</span></button></div></div>
-    {shown.length === 0 ? <section className="surface"><EmptyState title={filter === 'low' ? 'No stock alerts' : 'No matching item'} detail={filter === 'low' ? 'Your quantities are above their reorder levels.' : 'Try another product name or add the item to your shelf list.'} action={filter === 'all' ? <Button onClick={onAdd}><Plus size={15} /> Add item</Button> : undefined} /></section> : <div className="stock-grid">{shown.map(item => <StockCard key={item.id} item={item} onEdit={() => onEdit(item.id)} onRestock={() => onUpdate(item.id, 'restock')} onAdjust={() => onUpdate(item.id, 'adjust')} />)}</div>}
-    <div className="mt-5 flex items-start gap-2 rounded-xl bg-[#EEF4EF] px-4 py-3.5 text-[11px] leading-5 text-[#5F7465]"><CircleHelp size={15} className="mt-0.5 shrink-0" /><span>When a sale or credit includes a known item, Hesabu can adjust its quantity. You can always correct stock counts manually.</span></div>
+    <SectionTitle title="Stock" detail="See what is on the shelf and what needs buying." right={<Button onClick={onAdd}>Add item</Button>} />
+    <div className="stock-summary-row"><div className="stock-summary-cell"><span>Items tracked</span><b>{data.stock.length}</b></div><div className="stock-summary-cell"><span>Need buying</span><b>{lowStockCount(data.stock)}</b></div></div>
+    <div className="stock-toolbar stock-toolbar-flat"><label className="search-field"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Find an item" /></label><div className="segmented-control"><button className={cn(filter === 'all' && 'segment-active')} onClick={() => setFilter('all')}>All items</button><button className={cn(filter === 'low' && 'segment-active')} onClick={() => setFilter('low')}>Running low <span className="count-badge">{data.stock.filter(s=>s.quantity>0&&s.quantity<=s.lowStockAt).length}</span></button><button className={cn(filter === 'out' && 'segment-active')} onClick={() => setFilter('out')}>Out of stock <span className="count-badge">{data.stock.filter(s=>s.quantity===0).length}</span></button></div></div>
+    {shown.length===0 ? <section className="surface"><EmptyState title={filter==='low'?'No low-stock items':filter==='out'?'No items are out of stock':'No matching item'} detail="There is nothing to show for this stock filter." action={filter==='all'?<Button onClick={onAdd}><Plus size={15}/> Add item</Button>:undefined}/></section> : <section className="surface stock-table">{shown.map(item=><StockRow key={item.id} item={item} onEdit={()=>onEdit(item.id)} onRestock={()=>onUpdate(item.id,'restock')} onAdjust={()=>onUpdate(item.id,'adjust')} onReminder={()=>onReminder(item)}/>)}</section>}
+    <p className="mt-4 text-[12px] leading-5 text-hesabu-muted">When you record a sale, add the item name in the description to reduce its stock count automatically. You can also change the count yourself.</p>
   </>;
 }
 function lowStockCount(items: StockItem[]) { return items.filter(s => s.quantity <= s.lowStockAt).length; }
 
-function StockCard({ item, onEdit, onRestock, onAdjust }: { item: StockItem; onEdit: () => void; onRestock: () => void; onAdjust: () => void }) {
-  const percent = Math.min(100, Math.max(0, item.quantity / Math.max(item.lowStockAt * 2, 1) * 100));
-  const critical = item.quantity <= Math.max(1, Math.floor(item.lowStockAt / 2));
-  const low = item.quantity <= item.lowStockAt;
-  return <section className="surface stock-card">
-    <div className="flex items-start justify-between gap-2"><div className="stock-product-icon"><Package size={19} strokeWidth={1.7} /></div><div className="flex items-center gap-2"><StockStatus item={item} /><button type="button" className="icon-button !h-8 !w-8" onClick={onEdit} aria-label={`Edit ${item.name} details`} title="Edit item details"><Settings2 size={14} /></button></div></div>
-    <h3 className="mt-4 font-display text-[16px] font-extrabold tracking-[-.03em]">{item.name}</h3><div className="mt-1 text-[10px] text-hesabu-muted">Last restocked {dateText(item.lastRestocked)}</div>
-    <div className="mt-5 flex items-end justify-between gap-2"><div><span className={cn('font-display text-[28px] font-extrabold leading-none tracking-[-.06em]', critical ? 'text-[#B94C46]' : low ? 'text-[#A4762A]' : 'text-hesabu-ink')}>{item.quantity}</span><span className="ml-1.5 text-[11px] font-semibold text-hesabu-muted">{item.unit}</span></div><div className="text-right text-[10px] leading-4 text-hesabu-muted">Reorder at<br /><b className="text-hesabu-ink">{item.lowStockAt} {item.unit}</b></div></div>
-    <div className="stock-progress"><span className={cn(critical ? 'progress-critical' : low ? 'progress-low' : 'progress-good')} style={{ width: `${percent}%` }} /></div>
-    <div className="mt-4 grid grid-cols-[1.1fr_.9fr] gap-2"><Button size="sm" onClick={onRestock}><Plus size={14} /> Restock</Button><Button size="sm" variant="secondary" onClick={onAdjust}>Edit quantity</Button></div>
-  </section>;
+function StockRow({ item, onEdit, onRestock, onAdjust, onReminder }: { item: StockItem; onEdit: () => void; onRestock: () => void; onAdjust: () => void; onReminder: () => void }) {
+  return <div className="stock-table-row"><div className="stock-row-name"><span className="stock-row-icon"><Package size={17}/></span><span><strong>{item.name}</strong><small>Reorder at {item.lowStockAt} {item.unit}</small></span></div><div className="stock-row-quantity"><strong>{item.quantity}</strong><small>{item.unit}</small></div><StockStatus item={item}/><div className="stock-row-actions"><button onClick={onRestock}><Plus size={14}/> Restock</button><button onClick={onAdjust}>Adjust</button><button onClick={onReminder}>Remind</button><button onClick={onEdit}>Edit</button></div></div>;
 }
 
-function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onCopy }: {
-  data: AppData; report: ReturnType<typeof buildReport>; reportPeriod: 'daily' | 'weekly' | 'monthly'; setReportPeriod: (v: 'daily' | 'weekly' | 'monthly') => void;
-  reportDate: string; setReportDate: (v: string) => void; onShare: () => void; onCopy: () => void;
+function ReportsSection({ online, queuedReportDate, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onCopy, onPrint }: {
+  online: boolean; queuedReportDate: string | null;
+  report: ReturnType<typeof buildReport>; reportPeriod: 'daily' | 'weekly' | 'monthly'; setReportPeriod: (v: 'daily' | 'weekly' | 'monthly') => void;
+  reportDate: string; setReportDate: (v: string) => void; onShare: () => void; onCopy: () => void; onPrint: () => void;
 }) {
   const periodLabel = reportPeriod === 'daily'
-    ? (reportDate === today() ? 'Today’s report' : `Report for ${dateText(reportDate, { day: 'numeric', month: 'short', year: 'numeric' })}`)
-    : reportPeriod === 'weekly' ? `Week ending ${dateText(reportDate, { day: 'numeric', month: 'short' })}`
-    : `Month to ${dateText(reportDate, { day: 'numeric', month: 'short' })}`;
+    ? (reportDate === today() ? 'Today' : dateText(reportDate, { day: 'numeric', month: 'short', year: 'numeric' }))
+    : reportPeriod === 'weekly' ? 'Week ending ' + dateText(reportDate)
+    : 'Month to ' + dateText(reportDate);
   return <>
-    <SectionTitle eyebrow="KNOW HOW THE DAY WENT" title="Reports" detail="A clear summary you can send to yourself or someone you trust." right={<span className="report-date-chip"><CalendarDays size={14} /> {dateText(reportDate, { day: 'numeric', month: 'short' })}</span>} />
-    <div className="report-workspace">
-      <section className="report-controls surface">
-        <div className="eyebrow">CHOOSE YOUR VIEW</div>
-        <div className="period-tabs">{(['daily', 'weekly', 'monthly'] as const).map(period => <button key={period} className={cn(reportPeriod === period && 'period-tab-active')} onClick={() => setReportPeriod(period)}>{period[0].toUpperCase() + period.slice(1)}</button>)}</div>
-        <label className="field-wrap mt-5 block"><span className="field-label">Report date</span><input type="date" className="field-control" value={reportDate} max={today()} onChange={e => setReportDate(e.target.value)} /></label>
-        <div className="report-mini-stats"><div><span>Cash in</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div><div><span>Cash out</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div><div><span>Net cash</span><b>{money(report.net)}</b></div></div>
-        <div className="mt-4 rounded-xl bg-[#F5F7F4] px-3.5 py-3 text-[10px] leading-5 text-hesabu-muted">Net cash is money in minus money out. It is not profit because cost of goods sold and other accounting adjustments are not calculated here.</div>
-        <Button className="mt-5 w-full" onClick={onShare}><Share2 size={16} /> Share on WhatsApp</Button><Button variant="secondary" className="mt-2 w-full" onClick={onCopy}><ClipboardList size={16} /> Copy report text</Button>
-      </section>
-      <section className="report-preview-wrap"><div className="mb-3 flex items-center justify-between gap-3"><div><div className="eyebrow">MESSAGE PREVIEW</div><h2 className="mt-1 font-display text-[17px] font-extrabold tracking-[-.03em]">{periodLabel}</h2></div><span className="share-ready"><span className="share-ready-dot" /> Ready to share</span></div>
-        <div className="whatsapp-sheet"><div className="wa-header"><span className="wa-avatar"><span className="brand-mark brand-mark-small"><span /><span /><span /></span></span><span><b>Hesabu</b><small>Shop summary</small></span><MoreHorizontal size={18} className="ml-auto text-[#6C8275]" /></div>
-          <div className="wa-date-divider"><span>{dateText(reportDate, { weekday: 'short', day: 'numeric', month: 'short' })}</span></div>
-          <div className="wa-message">
-            <div className="flex items-center gap-2"><span className="report-symbol"><TrendingUp size={16} /></span><div><div className="text-[10px] font-bold uppercase tracking-[.1em] text-[#6B8172]">{data.shopInfo.name}</div><h3 className="mt-0.5 font-display text-[18px] font-extrabold tracking-[-.04em]">{periodLabel}</h3></div></div>
-            <div className="wa-metric-list"><div><span><ArrowDownRight size={14} /> Money received</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div><div><span><ArrowUpRight size={14} /> Expenses</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div><div><span><Wallet size={14} /> Net cash</span><b>{money(report.net)}</b></div><div><span><HandCoins size={14} /> New credit sales</span><b className="text-[#A4762A]">{money(report.credit)}</b></div></div>
-            <div className="wa-divider" /><div className="wa-subhead"><Users size={15} /> New credit sales</div>
-            {report.transactions.filter(t => t.type === 'credit').length ? <div className="wa-list">{report.transactions.filter(t => t.type === 'credit').slice(0, 4).map(t => <div key={t.id}><span>{t.customerName ?? 'Customer'}{t.dueDate ? ` · ${dateText(t.dueDate)}` : ''}</span><b>{money(t.amount)}</b></div>)}</div> : <p className="wa-muted-line">No credit sales in this period.</p>}
-            <div className="wa-divider" /><div className="wa-subhead"><Bell size={15} /> Vitu vya kufuatilia</div>
-            {report.lowStock.length || report.due.length ? <div className="wa-list wa-alert-list">{report.lowStock.slice(0, 3).map(item => <div key={item.id}><span>{item.name} is running low ({item.quantity} {item.unit})</span><b>Restock</b></div>)}{report.due.slice(0, 3).map(rem => <div key={rem.id}><span>{rem.title}{rem.amount ? ` · ${money(rem.amount)}` : ''}</span><b>{daysUntil(rem.dueDate) < 0 ? 'Overdue' : daysUntil(rem.dueDate) === 0 ? 'Today' : dateText(rem.dueDate)}</b></div>)}</div> : <p className="wa-muted-line">Stock na bills ziko sawa.</p>}
-            <div className="mt-4 rounded-lg bg-[#EEF6EF] px-3 py-2.5 text-[11px] leading-5 text-[#55725F]">Your records are up to date. Keep the day moving.</div><div className="mt-2 flex justify-end text-[9px] text-[#8EA496]">Hesabu · preview</div>
-          </div>
-          <div className="wa-composer"><Plus size={17} className="text-[#7D9485]" /><span>Message</span><Headphones size={17} className="text-[#7D9485]" /></div>
+    <SectionTitle title="Reports" detail="See what your shop received, spent and still needs to collect." />
+    <div className="report-simple-layout">
+      <section className="surface report-controls">
+        <div className="report-filters">
+          <div className="period-tabs">{(['daily', 'weekly', 'monthly'] as const).map(period => <button key={period} className={cn(reportPeriod === period && 'period-tab-active')} onClick={() => setReportPeriod(period)}>{period === 'daily' ? 'Day' : period === 'weekly' ? 'Week' : 'Month'}</button>)}</div>
+          <label className="field-wrap"><span className="field-label">Date</span><input type="date" className="field-control" value={reportDate} max={today()} onChange={e => setReportDate(e.target.value)} /></label>
         </div>
+        <h2 className="surface-title report-period-title">{periodLabel}</h2>
+        <div className="report-mini-stats">
+          <div><span>Money received</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div>
+          <div><span>Cash</span><b>{money(report.cashReceived)}</b></div>
+          <div><span>M-Pesa</span><b>{money(report.mpesaReceived)}</b></div>
+          <div><span>Money spent</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div>
+          <div><span>New credit</span><b>{money(report.credit)}</b></div>
+          <div><span>Money left after expenses</span><b>{money(report.net)}</b></div>
+        </div>
+        {report.dailyClose && <section className="report-till-summary"><div><span className="ledger-section-label">CASH COUNT</span><strong>{report.dailyClose.difference === 0 ? 'Till balanced' : report.dailyClose.difference > 0 ? 'Cash over' : 'Cash short'}</strong></div><div><span>Expected</span><b>{money(report.dailyClose.expectedCash)}</b></div><div><span>Counted</span><b>{money(report.dailyClose.countedCash)}</b></div><div><span>Difference</span><b className={report.dailyClose.difference === 0 ? 'till-positive' : 'till-negative'}>{report.dailyClose.difference > 0 ? '+' : report.dailyClose.difference < 0 ? '−' : ''}{money(Math.abs(report.dailyClose.difference))}</b></div></section>}
+        <p className="simple-review-note">Money left is not the same as profit. This report does not calculate the cost of every item sold.</p>
+        <p className="report-connect-note">{!online ? 'You are offline. This report is saved on this phone; connect to the internet before sharing.' : queuedReportDate ? 'Your saved report is ready. Review it, then share it on WhatsApp.' : 'Your records stay on this phone. WhatsApp opens only when you choose to share.'}</p><div className="report-share-actions"><Button onClick={onShare}>{online ? 'Share on WhatsApp' : 'Save to share later'}</Button><Button variant="outline" onClick={onCopy}>Copy report</Button><Button variant="secondary" onClick={onPrint}><FileText size={14}/> Print / save PDF</Button></div>
+      </section>
+
+      <section className="surface report-entry-list">
+        <h2 className="surface-title">Entries in this report</h2>
+        <p className="surface-subtitle">{report.transactions.length} entries recorded.</p>
+        {report.transactions.length ? <div className="simple-list">{report.transactions.map(tx => <div key={tx.id}><span>{tx.description}<small>{dateText(tx.date)} · {TYPE_META[tx.type].label}{tx.customerName ? ' · ' + tx.customerName : ''}{(tx.type === 'sale' || tx.type === 'payment' || tx.type === 'expense') ? ' · ' + (tx.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash') : ''}</small></span><strong>{money(tx.amount)}</strong></div>)}</div> : <p className="simple-empty">No entries for this period.</p>}
+      </section>
+
+      <section className="surface report-entry-list">
+        <h2 className="surface-title">Things to check</h2>
+        <p className="surface-subtitle">Stock and payments that need attention.</p>
+        {report.lowStock.length || report.due.length ? <div className="simple-list">
+          {report.lowStock.map(item => <div key={item.id}><span>{item.name}<small>{item.quantity} {item.unit} left</small></span><strong>Buy more</strong></div>)}
+          {report.due.map(rem => <div key={rem.id}><span>{rem.title}<small>{dateText(rem.dueDate)}{rem.amount ? ' · ' + money(rem.amount) : ''}</small></span><strong>{daysUntil(rem.dueDate) < 0 ? 'Overdue' : daysUntil(rem.dueDate) === 0 ? 'Today' : 'Coming up'}</strong></div>)}
+        </div> : <p className="simple-empty">Nothing needs attention.</p>}
       </section>
     </div>
   </>;
@@ -718,7 +1028,7 @@ function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDat
 
 function CustomerModal({ onClose, onSave }: { onClose: () => void; onSave: (values: { name: string; phone: string; balance: string; direction: 'owed-to-us' | 'we-owe'; kind: 'customer' | 'supplier'; dueDate: string; note: string }) => void }) {
   const [name, setName] = useState(''); const [phone, setPhone] = useState(''); const [balance, setBalance] = useState(''); const [direction, setDirection] = useState<'owed-to-us' | 'we-owe'>('owed-to-us'); const [kind, setKind] = useState<'customer' | 'supplier'>('customer'); const [dueDate, setDueDate] = useState(''); const [note, setNote] = useState('');
-  return <Modal title="Add a person" detail="Customers, suppliers and anyone you keep a balance with." onClose={onClose}>
+  return <Modal title="Add a person" detail="Save customer and supplier names with what is owed." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ name, phone, balance, direction, kind, dueDate, note }); }}>
       <Field label="Name" value={name} onChange={setName} placeholder="e.g. Kamau or Madam Annette" required autoFocus />
       <Field label="Phone number (optional)" value={phone} onChange={setPhone} placeholder="07xx xxx xxx" inputMode="tel" />
@@ -732,27 +1042,30 @@ function CustomerModal({ onClose, onSave }: { onClose: () => void; onSave: (valu
   </Modal>;
 }
 
-function PaymentModal({ customer, onClose, onSave }: { customer: Customer; onClose: () => void; onSave: (customer: Customer, amount: string, note: string) => void }) {
+function PaymentModal({ customer, onClose, onSave }: { customer: Customer; onClose: () => void; onSave: (customer: Customer, amount: string, note: string, paymentMethod: 'cash' | 'mpesa') => void }) {
   const supplierPayment = customer.kind === 'supplier' || (!customer.kind && customer.balance < 0);
   const customerCredit = customer.kind === 'customer' && customer.balance < 0;
   const [amount, setAmount] = useState(String(Math.abs(customer.balance)));
   const [note, setNote] = useState(supplierPayment ? 'Supplier payment' : customerCredit ? 'Customer credit refund' : 'Debt payment received');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mpesa'>('cash');
   const capped = supplierPayment || customerCredit;
   const direction = supplierPayment ? 'paid out' : customerCredit ? 'returned to the customer' : 'received';
   return <Modal title={supplierPayment ? `Record payment to ${customer.name}` : customerCredit ? `Return balance to ${customer.name}` : `Payment from ${customer.name}`} detail={`${customerCredit ? 'Customer credit held' : 'Outstanding balance'}: ${money(Math.abs(customer.balance))}. This entry will be ${direction}.`} onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(customer, amount, note); }}>
+    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(customer, amount, note, paymentMethod); }}>
       <Field label={supplierPayment || customerCredit ? 'Amount paid (KES)' : 'Amount received (KES)'} type="number" min={1} value={amount} onChange={setAmount} required autoFocus inputMode="numeric" />
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-hesabu-line px-3 py-2 text-[11px]"><span className="font-semibold text-hesabu-muted">{supplierPayment || customerCredit ? 'Paid using' : 'Received via'}</span><div className="flex gap-1"><button type="button" onClick={() => setPaymentMethod('cash')} className={cn('rounded-md px-3 py-1.5 font-bold', paymentMethod === 'cash' ? 'bg-hesabu-green text-white' : 'bg-hesabu-surface text-hesabu-muted')}>Cash</button><button type="button" onClick={() => setPaymentMethod('mpesa')} className={cn('rounded-md px-3 py-1.5 font-bold', paymentMethod === 'mpesa' ? 'bg-hesabu-green text-white' : 'bg-hesabu-surface text-hesabu-muted')}>M-Pesa</button></div></div>
       <div className="flex flex-wrap gap-2"><button type="button" className="quick-amount" onClick={() => setAmount(String(Math.min(Math.abs(customer.balance), 100)))}>KES 100</button><button type="button" className="quick-amount" onClick={() => setAmount(String(Math.ceil(Math.abs(customer.balance) / 2)))}>Half balance</button><button type="button" className="quick-amount" onClick={() => setAmount(String(Math.abs(customer.balance)))}>Full balance</button></div>
       <Field label="Description" value={note} onChange={setNote} />
-      {capped && Number(amount) > Math.abs(customer.balance) && <p className="text-[11px] text-[#B94C46]">This amount is higher than the balance and will be capped at {money(Math.abs(customer.balance))}.</p>}
-      {!capped && Number(amount) > customer.balance && <p className="text-[11px] text-[#8A6B32]">The extra will stay on the customer account as credit for their next purchase.</p>}
+      <div className="repayment-preview"><div><span>Balance before</span><strong>{money(Math.abs(customer.balance))}</strong></div><div><span>After this payment</span><strong>{money(capped ? Math.max(0,Math.abs(customer.balance)-Math.min(Math.abs(customer.balance),Number(amount)||0)) : Math.max(0,customer.balance-(Number(amount)||0)))}</strong></div></div>
+      {capped && Number(amount) > Math.abs(customer.balance) && <p className="text-[11px] text-[#B45C4A]">This amount is higher than the balance and will be capped at {money(Math.abs(customer.balance))}.</p>}
+      {!capped && Number(amount) > customer.balance && <p className="text-[11px] text-[#946B2E]">The extra will stay on the customer account as credit for their next purchase.</p>}
       <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={Number(amount) <= 0}><Check size={15} /> {supplierPayment ? 'Record payment' : customerCredit ? 'Record refund' : 'Record payment'}</Button></div>
     </form>
   </Modal>;
 }
 function StockModal({ onClose, onSave }: { onClose: () => void; onSave: (values: { name: string; quantity: string; unit: string; threshold: string; cost: string }) => void }) {
   const [name, setName] = useState(''); const [quantity, setQuantity] = useState('0'); const [unit, setUnit] = useState('pcs'); const [threshold, setThreshold] = useState('5'); const [cost, setCost] = useState('');
-  return <Modal title="Add an item" detail="Start with the quantity on your shelf and when you want a reminder to reorder." onClose={onClose}>
+  return <Modal title="Add an item" detail="Enter the amount you have now and when you want to buy more." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ name, quantity, unit, threshold, cost }); }}>
       <Field label="Product name" value={name} onChange={setName} placeholder="e.g. Maziwa" required autoFocus />
       <div className="grid grid-cols-2 gap-3"><Field label="Current quantity" value={quantity} onChange={setQuantity} type="number" min={0} required /><Field label="Unit" value={unit} onChange={setUnit} placeholder="pcs, kg, packets" required /></div>
@@ -789,10 +1102,11 @@ function StockUpdateModal({ item, mode, onClose, onSave }: { item: StockItem; mo
   </Modal>;
 }
 
-function ReminderModal({ reminder, onClose, onSave, onDelete }: { reminder?: Reminder; onClose: () => void; onSave: (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }) => void; onDelete: (reminder: Reminder) => void }) {
-  const [title, setTitle] = useState(reminder?.title ?? ''); const [detail, setDetail] = useState(reminder?.detail ?? ''); const [amount, setAmount] = useState(reminder?.amount === undefined ? '' : String(reminder.amount)); const [dueDate, setDueDate] = useState(reminder?.dueDate ?? today()); const [kind, setKind] = useState<Reminder['kind']>(reminder?.kind ?? 'bill');
-  return <Modal title={reminder ? 'Edit reminder' : 'Add a reminder'} detail="A bill, supplier follow-up or a customer you need to call." onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ title, detail, amount, dueDate, kind }); }}>
+function ReminderModal({ reminder, link, onClose, onSave, onDelete }: { reminder?: Reminder; link?: { customerId?: string; stockItemId?: string; label: string; kind: Reminder['kind'] }; onClose: () => void; onSave: (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind']; customerId?: string; stockItemId?: string }) => void; onDelete: (reminder: Reminder) => void }) {
+  const [title, setTitle] = useState(reminder?.title ?? (link?.customerId ? `Follow up with ${link.label}` : link?.stockItemId ? `Reorder ${link.label}` : '')); const [detail, setDetail] = useState(reminder?.detail ?? ''); const [amount, setAmount] = useState(reminder?.amount === undefined ? '' : String(reminder.amount)); const [dueDate, setDueDate] = useState(reminder?.dueDate ?? today()); const [kind, setKind] = useState<Reminder['kind']>(reminder?.kind ?? link?.kind ?? 'bill');
+  return <Modal title={reminder ? 'Edit reminder' : 'Add a reminder'} detail="Add a bill to pay or someone to call." onClose={onClose}>
+    {link && <div className="reminder-modal-link">{link.customerId ? 'Debt' : 'Stock'} · {link.label}</div>}
+    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ title, detail, amount, dueDate, kind, customerId: reminder?.customerId ?? link?.customerId, stockItemId: reminder?.stockItemId ?? link?.stockItemId }); }}>
       <Field label="Reminder" value={title} onChange={setTitle} placeholder="e.g. Pay electricity tokens" required autoFocus />
       <SelectField label="Type" value={kind} onChange={v => setKind(v as Reminder['kind'])} options={[{ value: 'bill', label: 'Bill / expense' }, { value: 'supplier', label: 'Supplier' }, { value: 'customer', label: 'Customer follow-up' }, { value: 'other', label: 'Other' }]} />
       <div className="grid grid-cols-2 gap-3"><Field label="Amount (optional)" value={amount} onChange={setAmount} type="number" min={0} placeholder="KES" /><Field label="Due date" value={dueDate} onChange={setDueDate} type="date" required /></div>
@@ -804,7 +1118,7 @@ function ReminderModal({ reminder, onClose, onSave, onDelete }: { reminder?: Rem
 
 function ProfileModal({ data, onClose, onSave }: { data: AppData; onClose: () => void; onSave: (name: string, owner: string, phone: string, businessType: string) => void }) {
   const [name, setName] = useState(data.shopInfo.name); const [owner, setOwner] = useState(data.shopInfo.owner); const [phone, setPhone] = useState(data.shopInfo.phone); const [businessType, setBusinessType] = useState(data.shopInfo.businessType);
-  return <Modal title="Your shop details" detail="These details are used in your reports and shop header." onClose={onClose}>
+  return <Modal title="Your shop details" detail="Change the name and contact details for this shop." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(name, owner, phone, businessType); }}>
       <Field label="Shop name" value={name} onChange={setName} required autoFocus /><Field label="Your name" value={owner} onChange={setOwner} required /><Field label="Phone number" value={phone} onChange={setPhone} inputMode="tel" />
       <SelectField label="Business type" value={businessType} onChange={setBusinessType} options={[{ value: 'General shop', label: 'General shop' }, { value: 'Mama Mboga', label: 'Mama Mboga' }, { value: 'Hardware', label: 'Hardware' }, { value: 'Pharmacy', label: 'Pharmacy' }, { value: 'Other', label: 'Other' }]} />
@@ -813,22 +1127,35 @@ function ProfileModal({ data, onClose, onSave }: { data: AppData; onClose: () =>
   </Modal>;
 }
 
-function SettingsModal({ onClose, onReset, onProfile, onExportBackup, onExportCsv, onImportBackup }: { onClose: () => void; onReset: () => void; onProfile: () => void; onExportBackup: () => void; onExportCsv: () => void; onImportBackup: (file: File) => void }) {
-  return <Modal title="Preferences" detail="Keep your shop details current and protect the records on this device." onClose={onClose}>
+function SettingsModal({ shopInfo, onSaveTradingHours, onClose, onReset, onProfile, onExportBackup, onExportCsv, onImportBackup, lastBackupAt, storageProtection, onProtectStorage }: { shopInfo: AppData['shopInfo']; onSaveTradingHours: (start: string, end: string) => void; onClose: () => void; onReset: () => void; onProfile: () => void; onExportBackup: () => void; onExportCsv: () => void; onImportBackup: (file: File) => void; lastBackupAt: string | null; storageProtection: 'checking' | 'protected' | 'standard' | 'unsupported'; onProtectStorage: () => void }) {
+  const [start, setStart] = useState(shopInfo.tradingDayStart ?? '06:00');
+  const [end, setEnd] = useState(shopInfo.tradingDayEnd ?? '21:00');
+  return <Modal title="Settings" detail="Shop hours, shop details and saved records." onClose={onClose}>
+    <section className="settings-hours-card">
+      <div><strong>Shop hours</strong><p>Choose when a shop day starts and ends. Overnight hours are supported.</p></div>
+      <form onSubmit={event => { event.preventDefault(); onSaveTradingHours(start, end); }}>
+        <label><span>Opens at</span><input type="time" value={start} onChange={event => setStart(event.target.value)} required /></label>
+        <label><span>Closes at</span><input type="time" value={end} onChange={event => setEnd(event.target.value)} required /></label>
+        <Button type="submit" size="sm"><Check size={14} /> Save hours</Button>
+      </form>
+      <small>For example: 6:00 a.m. to 9:00 p.m., or 9:00 p.m. to 6:00 a.m. The day-end report follows these hours.</small>
+    </section>
     <div className="settings-list">
       <button onClick={onProfile}><span className="settings-item-icon"><Store size={17} /></span><span><b>Shop profile</b><small>Name, phone number and business type</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
-      <div className="settings-info"><span className="settings-item-icon"><Settings2 size={17} /></span><span><b>Stored on this device</b><small>Hesabu uses this browser’s local storage. Clearing browser data removes this ledger.</small></span></div>
-      <div className="settings-info"><span className="settings-item-icon"><Bell size={17} /></span><span><b>Reminders</b><small>Shown inside the app. Automatic WhatsApp delivery is not connected in this prototype.</small></span></div>
-      <button onClick={onExportBackup}><span className="settings-item-icon"><Download size={17} /></span><span><b>Download a backup</b><small>Save your shop, transactions, people, stock and reminders as a JSON file.</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
-      <button onClick={onExportCsv}><span className="settings-item-icon"><FileSpreadsheet size={17} /></span><span><b>Export transactions (CSV)</b><small>Open your ledger in Excel, Google Sheets or another spreadsheet.</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
-      <label className="settings-info settings-upload"><span className="settings-item-icon"><Upload size={17} /></span><span><b>Restore from backup</b><small>Choose a Hesabu JSON backup. Your current browser data will be replaced after confirmation.</small><input className="settings-file-input" type="file" accept="application/json,.json" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) onImportBackup(file); e.currentTarget.value = ''; }} /></span></label>
+      <div className="settings-info"><span className="settings-item-icon"><Settings2 size={17} /></span><span><b>Your shop book stays on this device</b><small>It will not appear on another phone. Download a backup so you can restore it if needed.</small></span></div>
+      <div className="settings-info"><span className="settings-item-icon"><Bell size={17} /></span><span><b>Reminders</b><small>Hesabu shows reminders here. It does not send them automatically.</small></span></div>
+      <div className="settings-info"><span className="settings-item-icon"><Download size={17} /></span><span><b>Last backup</b><small>{lastBackupAt ? 'Downloaded ' + dateText(lastBackupAt.slice(0, 10), { day: 'numeric', month: 'short', year: 'numeric' }) + '. Download a new copy at least every 7 days.' : 'No backup date recorded yet. Create your first backup now.'}</small></span></div>
+      <button onClick={onProtectStorage}><span className="settings-item-icon"><Settings2 size={17} /></span><span><b>Keep this device’s data</b><small>{storageProtection === 'protected' ? 'The browser has agreed to keep this data unless you clear it. Keep a separate backup too.' : storageProtection === 'standard' ? 'Ask the browser to keep Hesabu data. It may still clear data under some conditions.' : storageProtection === 'checking' ? 'Checking this browser.' : 'This browser cannot offer extra storage protection. Download backups regularly.'}</small></span><span className="settings-chevron">›</span></button>
+      <button onClick={onExportBackup}><span className="settings-item-icon"><Download size={17} /></span><span><b>Download backup</b><small>Save all your shop records to a file.</small></span><span className="settings-chevron">›</span></button>
+      <button onClick={onExportCsv}><span className="settings-item-icon"><FileSpreadsheet size={17} /></span><span><b>Download transactions for a spreadsheet</b><small>Use the file in Excel or another spreadsheet app.</small></span><span className="settings-chevron">›</span></button>
+      <label className="settings-info settings-upload"><span className="settings-item-icon"><Upload size={17} /></span><span><b>Restore from backup</b><small>Choose a saved Hesabu backup to put your records back.</small><input className="settings-file-input" type="file" accept="application/json,.json" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) onImportBackup(file); e.currentTarget.value = ''; }} /></span></label>
       <button className="settings-danger" onClick={onReset}><span className="settings-item-icon"><RotateCcw size={17} /></span><span><b>Reset demo shop</b><small>Replace saved changes with the original sample ledger.</small></span><ChevronRight size={17} className="ml-auto" /></button>
     </div><div className="modal-actions mt-5"><Button variant="secondary" onClick={onClose}>Close</Button></div>
   </Modal>;
 }
 function EditDraftModal({ draft, items, onClose, onSave }: { draft: TransactionDraft; items: StockItem[]; onClose: () => void; onSave: (values: { type: TransactionType; description: string; amount: string; customerName: string; dueDate: string; stockItemName: string }) => void }) {
   const [type, setType] = useState<TransactionType>(draft.type); const [description, setDescription] = useState(draft.description); const [amount, setAmount] = useState(String(draft.amount)); const [customerName, setCustomerName] = useState(draft.customerName ?? ''); const [dueDate, setDueDate] = useState(draft.dueDate ?? addDays(today(), 7)); const [stockItemName, setStockItemName] = useState(draft.stockItemName ?? '');
-  return <Modal title="Edit transaction" detail="Check the details before they enter your ledger." onClose={onClose}>
+  return <Modal title="Edit transaction" detail="Check these details before saving." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ type, description, amount, customerName, dueDate, stockItemName }); }}>
       <SelectField label="Transaction type" value={type} onChange={v => setType(v as TransactionType)} options={Object.entries(TYPE_META).map(([key, value]) => ({ value: key, label: value.label }))} />
       <Field label="Description" value={description} onChange={setDescription} required />
@@ -847,7 +1174,7 @@ function EditTransactionModal({ transaction, onClose, onSave }: { transaction: T
   const [date, setDate] = useState(transaction.date);
   const [time, setTime] = useState(transaction.time);
   const [dueDate, setDueDate] = useState(transaction.dueDate ?? '');
-  return <Modal title="Correct transaction" detail="The original transaction type, linked person and stock movement stay unchanged. To change those, delete this record and add it again." onClose={onClose}>
+  return <Modal title="Correct transaction" detail="Change the description, amount or date." onClose={onClose}>
     <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(transaction, { description, amount, date, time, dueDate }); }}>
       <Field label="Description" value={description} onChange={setDescription} required autoFocus />
       <Field label="Amount (KES)" value={amount} onChange={setAmount} type="number" min={1} required inputMode="numeric" />
@@ -863,15 +1190,46 @@ function EditTransactionModal({ transaction, onClose, onSave }: { transaction: T
   </Modal>;
 }
 
-function TransactionModal({ transaction, customer, onClose, onEdit, onDelete }: { transaction: Transaction; customer?: Customer; onClose: () => void; onEdit: (tx: Transaction) => void; onDelete: (tx: Transaction) => void }) {
+function TransactionModal({ transaction, customer, onClose, onEdit, onDelete, onShareReceipt }: { transaction: Transaction; customer?: Customer; onClose: () => void; onEdit: (tx: Transaction) => void; onDelete: (tx: Transaction) => void; onShareReceipt: (tx: Transaction) => void }) {
   const Icon = TYPE_META[transaction.type].icon;
   return <Modal title="Transaction details" detail={shortDay(transaction.date)} onClose={onClose}>
     <div className="transaction-detail-card"><div className={cn('transaction-detail-icon', TYPE_TONE[transaction.type])}><Icon size={22} /></div><div className="mt-4 text-[10px] font-bold uppercase tracking-[.14em] text-hesabu-muted">{TYPE_META[transaction.type].label}</div><div className={cn('mt-1 font-display text-[28px] font-extrabold tracking-[-.06em]', `amount-${transaction.type}`)}>{transaction.type === 'expense' ? '−' : transaction.type === 'credit' ? '' : '+'}{money(transaction.amount)}</div><div className="mt-2 text-sm font-bold">{transaction.description}</div><div className="mt-1 text-[11px] text-hesabu-muted">{dateText(transaction.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} at {timeText(transaction.time)}</div></div>
-    <div className="mt-4 space-y-3">{transaction.customerName && <div className="detail-line"><span>Person</span><b>{transaction.customerName}</b></div>}{transaction.dueDate && <div className="detail-line"><span>Due date</span><b>{dateText(transaction.dueDate, { weekday: 'short', day: 'numeric', month: 'short' })}</b></div>}{transaction.category && <div className="detail-line"><span>Category</span><b>{transaction.category}</b></div>}{transaction.stockQuantityDelta !== undefined && <div className="detail-line"><span>Stock adjustment</span><b>{transaction.stockQuantityDelta > 0 ? '+' : ''}{transaction.stockQuantityDelta} item(s)</b></div>}{customer && <div className="detail-line"><span>Remaining balance</span><b>{money(customer.balance)}</b></div>}</div>
-    <div className="mt-5 grid grid-cols-2 gap-2"><Button variant="secondary" onClick={onClose}>Close</Button><Button variant="outline" onClick={() => onEdit(transaction)}><Settings2 size={15} /> Edit details</Button><Button variant="danger" className="col-span-2" onClick={() => onDelete(transaction)}><Trash2 size={15} /> Delete entry</Button></div>
+    <div className="mt-4 space-y-3">{transaction.customerName && <div className="detail-line"><span>Person</span><b>{transaction.customerName}</b></div>}{transaction.dueDate && <div className="detail-line"><span>Due date</span><b>{dateText(transaction.dueDate, { weekday: 'short', day: 'numeric', month: 'short' })}</b></div>}{transaction.category && <div className="detail-line"><span>Category</span><b>{transaction.category}</b></div>}{(transaction.type === 'sale' || transaction.type === 'payment') && <div className="detail-line"><span>Received via</span><b>{transaction.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'}</b></div>}{transaction.type === 'expense' && <div className="detail-line"><span>Paid using</span><b>{transaction.paymentMethod === 'mpesa' ? 'M-Pesa' : 'Cash'}</b></div>}{transaction.stockQuantityDelta !== undefined && <div className="detail-line"><span>Stock adjustment</span><b>{transaction.stockQuantityDelta > 0 ? '+' : ''}{transaction.stockQuantityDelta} item(s)</b></div>}{customer && <div className="detail-line"><span>Remaining balance</span><b>{money(customer.balance)}</b></div>}</div>
+    <div className="mt-5 grid grid-cols-2 gap-2"><Button variant="secondary" onClick={onClose}>Close</Button><Button variant="outline" onClick={() => onEdit(transaction)}><Settings2 size={15} /> Edit details</Button>{(transaction.type === 'sale' || transaction.type === 'credit') && <Button variant="secondary" className="col-span-2" onClick={() => onShareReceipt(transaction)}><Share2 size={15} /> Share receipt on WhatsApp</Button>}<Button variant="danger" className="col-span-2" onClick={() => onDelete(transaction)}><Trash2 size={15} /> Delete entry</Button></div>
   </Modal>;
 }
 
+
+
+function DailyCloseModal({ data, date, existing, onClose, onSave }: {
+  data: AppData; date: string; existing?: DailyClose; onClose: () => void; onSave: (date: string, openingCash: number, countedCash: number) => void;
+}) {
+  const transactions = data.transactions.filter(tx => (tx.tradingDay ?? tx.date) === date);
+  const [openingCash, setOpeningCash] = useState(String(existing?.openingCash ?? suggestedOpeningCash(data.dailyCloses ?? [], date)));
+  const [countedCash, setCountedCash] = useState(existing ? String(existing.countedCash) : '');
+  const expected = expectedDrawerCash(data, date, Math.max(0, Number(openingCash) || 0));
+  const drawerIn = drawerCashIn(transactions);
+  const drawerOut = drawerCashOut(transactions);
+  const difference = countedCash.trim() ? Number(countedCash) - expected : null;
+  return <Modal title="Count the cash" detail={dateText(date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' · Count the notes and coins, then compare with the book.'} onClose={onClose}>
+    <div className="till-close-breakdown">
+      <div><span>Opening cash / float</span><strong>{money(Math.max(0, Number(openingCash) || 0))}</strong></div>
+      <div><span>Cash sales and repayments</span><strong className="till-positive">+{money(drawerIn)}</strong></div>
+      <div><span>Cash expenses</span><strong className="till-negative">−{money(drawerOut)}</strong></div>
+      <div className="till-expected"><span>Expected cash in drawer</span><strong>{money(expected)}</strong></div>
+    </div>
+    <form className="space-y-4" onSubmit={event => { event.preventDefault(); if (countedCash.trim() && Number.isFinite(Number(countedCash)) && Number(countedCash) >= 0) onSave(date, Number(openingCash) || 0, Number(countedCash)); }}>
+      <Field label="Cash at opening (KES)" value={openingCash} onChange={setOpeningCash} type="number" min={0} inputMode="numeric" help="Cash in the drawer when you opened. Change this if money was added or taken out." />
+      <Field label="Cash counted in the drawer (KES)" value={countedCash} onChange={setCountedCash} type="number" min={0} inputMode="numeric" placeholder="Count the notes and coins" required />
+      {difference !== null && Number.isFinite(difference) && <div className={cn('till-difference', difference === 0 ? 'till-balanced' : 'till-unbalanced')}>
+        <span>{difference === 0 ? 'The till balances' : difference > 0 ? 'More cash than expected' : 'Cash is short'}</span>
+        <strong>{difference > 0 ? '+' : difference < 0 ? '−' : ''}{money(Math.abs(difference))}</strong>
+      </div>}
+      <p className="simple-review-note">M-Pesa is not counted as cash in the drawer. This is a cash check, not a profit calculation.</p>
+      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!countedCash.trim() || !Number.isFinite(Number(countedCash)) || Number(countedCash) < 0}><Check size={15} /> Save closing count</Button></div>
+    </form>
+  </Modal>;
+}
 
 function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUseDemo: () => void; onCreateShop: (values: { name: string; owner: string; phone: string; businessType: string }) => void }) {
   const [name, setName] = useState('');
@@ -884,27 +1242,21 @@ function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUse
       <section className="welcome-story">
         <Logo />
         <div className="welcome-copy">
-          <div className="eyebrow">ACCOUNTING FOR EVERYDAY BUSINESS</div>
-          <h1>Know your numbers. Run your business.</h1>
-          <p>Keep sales, expenses, customer debts, stock and reminders together. No accounting lessons. No more hunting through yesterday’s pages.</p>
-        </div>
-        <div className="welcome-points">
-          <div className="welcome-point"><span className="welcome-point-icon"><Wallet size={18} /></span><div><b>Know what came in and went out</b><span>Keep cash sales separate from goods taken on credit.</span></div></div>
-          <div className="welcome-point"><span className="welcome-point-icon"><Users size={18} /></span><div><b>Remember who owes what</b><span>Record repayments and follow-ups without searching the book.</span></div></div>
-          <div className="welcome-point"><span className="welcome-point-icon"><Package size={18} /></span><div><b>See what is running low</b><span>Set reorder levels and keep the shelves in view.</span></div></div>
+          <h1>Your shop book, without the paperwork.</h1>
+          <p>Write down each sale, expense or debt. Hesabu keeps the totals for you.</p>
         </div>
       </section>
       <section className="welcome-setup">
-        <div className="welcome-form-head"><div className="eyebrow">LET’S SET THINGS UP</div><h2>Set up your business.</h2><p>Use your own details to get started, or explore the sample shop first.</p></div>
+        <div className="welcome-form-head"><h2>Start your shop book</h2><p>Add your shop name. You can change the other details later.</p></div>
         <form className="welcome-form" onSubmit={event => { event.preventDefault(); onCreateShop({ name, owner, phone, businessType }); }}>
-          <Field label="Shop name" value={name} onChange={setName} placeholder="e.g. Mwende General Shop" required autoFocus />
-          <Field label="Your name (optional)" value={owner} onChange={setOwner} placeholder="What should Hesabu call you?" />
+          <Field label="Shop name" value={name} onChange={setName} placeholder="e.g. Mwende Shop" required autoFocus />
+          <Field label="Your name (optional)" value={owner} onChange={setOwner} placeholder="Your name" />
           <Field label="Phone number (optional)" value={phone} onChange={setPhone} placeholder="07… or 01…" type="tel" inputMode="tel" />
-          <SelectField label="Type of business" value={businessType} onChange={setBusinessType} options={[{value:'General shop',label:'General shop / duka'},{value:'Kiosk',label:'Kiosk'},{value:'Grocery',label:'Grocery / food shop'},{value:'Hardware',label:'Hardware'},{value:'Clothing',label:'Clothing / boutique'},{value:'Other',label:'Other small business'}]} />
-          <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Start my business ledger <ArrowRight size={16} /></Button>
+          <SelectField label="Type of shop" value={businessType} onChange={setBusinessType} options={[{value:'General shop',label:'General shop / duka'},{value:'Kiosk',label:'Kiosk'},{value:'Grocery',label:'Grocery / food shop'},{value:'Hardware',label:'Hardware'},{value:'Clothing',label:'Clothing / boutique'},{value:'Other',label:'Other'}]} />
+          <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Open my shop</Button>
         </form>
-        <div className="welcome-device-note"><CheckCircle2 size={15} /><span>Device-only setup, not an online account. Download backups until cloud sign-up and sync are connected.</span></div>
-        <div className="welcome-demo-row"><span>Just looking around?</span><button type="button" onClick={onUseDemo}>Explore the sample ledger <ArrowRight size={14} /></button></div>
+        <div className="welcome-device-note"><span>Your book stays on this phone and works offline after its first load. Download a backup every week.</span></div>
+        <div className="welcome-demo-row"><span>Want to see an example first?</span><button type="button" onClick={onUseDemo}>View sample shop</button></div>
       </section>
     </div>
   </main>;

@@ -1,5 +1,6 @@
 export type TransactionType = 'sale' | 'credit' | 'expense' | 'payment';
-export type Section = 'home' | 'debts' | 'stock' | 'reports';
+export type PaymentMethod = 'cash' | 'mpesa';
+export type Section = 'home' | 'ledger' | 'debts' | 'stock' | 'more';
 export type DebtDirection = 'they-owe' | 'we-owe';
 
 export interface ShopInfo {
@@ -7,6 +8,8 @@ export interface ShopInfo {
   owner: string;
   phone: string;
   businessType: string;
+  tradingDayStart?: string;
+  tradingDayEnd?: string;
 }
 
 export interface Transaction {
@@ -15,7 +18,9 @@ export interface Transaction {
   description: string;
   amount: number;
   date: string;
+  tradingDay?: string;
   time: string;
+  paymentMethod?: PaymentMethod;
   customerId?: string;
   customerName?: string;
   dueDate?: string;
@@ -45,6 +50,16 @@ export interface StockItem {
   costPerUnit?: number;
 }
 
+export interface DailyClose {
+  id: string;
+  date: string;
+  openingCash: number;
+  expectedCash: number;
+  countedCash: number;
+  difference: number;
+  closedAt: string;
+}
+
 export interface Reminder {
   id: string;
   title: string;
@@ -52,21 +67,33 @@ export interface Reminder {
   amount?: number;
   dueDate: string;
   kind: 'bill' | 'supplier' | 'customer' | 'other';
+  customerId?: string;
+  stockItemId?: string;
   done: boolean;
+}
+
+export interface ShopGoal {
+  title: string;
+  targetAmount: number;
+  progressAmount: number;
+  updatedAt: string;
 }
 
 export interface AppData {
   shopInfo: ShopInfo;
+  shopGoal?: ShopGoal | null;
   transactions: Transaction[];
   customers: Customer[];
   stock: StockItem[];
   reminders: Reminder[];
+  dailyCloses?: DailyClose[];
 }
 
 export interface TransactionDraft {
   type: TransactionType;
   description: string;
   amount: number;
+  paymentMethod?: PaymentMethod;
   customerName?: string;
   dueDate?: string;
   stockItemName?: string;

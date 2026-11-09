@@ -1,4 +1,4 @@
-const CACHE = 'hesabu-shell-v2';
+const CACHE = 'hesabu-shell-v5';
 const SHELL = ['/', '/manifest.json', '/hesabu-mark.svg'];
 
 self.addEventListener('install', (event) => {
