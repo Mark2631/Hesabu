@@ -11,7 +11,27 @@
     <title>Hesabu — Your shop book</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main id="hesabu-boot" role="status" aria-live="polite">
+        <div class="hesabu-boot-mark">H</div>
+        <strong>Hesabu</strong>
+        <p>Opening your shop book…</p>
+        <small>If this message stays here, refresh the page or open the app again while connected.</small>
+      </main>
+    </div>
+    <noscript>
+      <main style="max-width:420px;margin:15vh auto;padding:24px;font:16px/1.6 system-ui,sans-serif;color:#252B35">
+        <h1>Hesabu needs JavaScript</h1>
+        <p>Turn on JavaScript in your browser, then reload to open your shop book.</p>
+      </main>
+    </noscript>
+    <style>
+      #hesabu-boot{box-sizing:border-box;min-height:100svh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;color:#252B35;background:#F6F4EF;font-family:Inter,"Segoe UI",system-ui,sans-serif}
+      #hesabu-boot .hesabu-boot-mark{display:grid;place-items:center;width:52px;height:52px;margin-bottom:14px;border-radius:12px;background:#285BC5;color:white;font-size:27px;font-weight:800}
+      #hesabu-boot strong{font-size:24px;letter-spacing:-.04em}
+      #hesabu-boot p{margin:9px 0 0;color:#667080;font-size:14px}
+      #hesabu-boot small{max-width:34ch;margin-top:22px;color:#89909A;font-size:11px;line-height:1.5}
+    </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
