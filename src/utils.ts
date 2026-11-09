@@ -304,6 +304,7 @@ export interface OwnerBrief {
   expenses: number;
   netMovement: number;
   outstanding: number;
+  supplierPayables: number;
   overdueCount: number;
   lowStockCount: number;
   activeDays: number;
