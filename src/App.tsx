@@ -5,8 +5,8 @@ import {
   Share2, SlidersHorizontal, Store, Upload, Trash2, Users, Wallet, type LucideIcon,
 } from 'lucide-react';
 import { createBackupEnvelope, hasSavedData, makeDemoData, markBackupAt, parseBackupPayload, readLastBackupAt, readSavedData, saveData } from './data';
-import type { AppData, Customer, DailyClose, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, drawerCashIn, drawerCashOut, expectedDrawerCash, fullDateText, id, invalidateDailyClose, isWithinTradingHours, makeDailyClose, money, normalizeKenyanWhatsAppNumber, normalizeSpokenNumbers, parseTransaction, pendingCloseTradingDate, receiptMessage, shortDay, suggestedOpeningCash, timeText, today, tradingDayFor, transactionLabel, whatsAppUrl } from './utils';
+import type { AppData, Customer, DailyClose, Reminder, Section, ShopGoal, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
+import { addDays, buildOwnerBrief, buildReport, cashIn, cashOut, currentTime, dateText, debtReminderMessage, daysUntil, drawerCashIn, drawerCashOut, expectedDrawerCash, fullDateText, id, invalidateDailyClose, isWithinTradingHours, makeDailyClose, money, normalizeKenyanWhatsAppNumber, normalizeSpokenNumbers, parseTransaction, pendingCloseTradingDate, receiptMessage, shortDay, suggestedOpeningCash, timeText, today, tradingDayFor, transactionLabel, whatsAppUrl } from './utils';
 
 const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'home', label: 'Today', icon: House },
@@ -296,6 +296,7 @@ function App() {
   const outstanding = useMemo(() => data.customers.filter(c => c.balance > 0).reduce((sum, c) => sum + c.balance, 0), [data.customers]);
   const lowStock = useMemo(() => data.stock.filter(s => s.quantity <= s.lowStockAt), [data.stock]);
   const allReminders = useMemo(() => [...data.reminders].sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [data.reminders]);
+  const ownerBrief = useMemo(() => buildOwnerBrief(data, tradingDate), [data, tradingDate]);
   const report = useMemo(() => buildReport(data, reportPeriod, reportDate), [data, reportPeriod, reportDate]);
 
   useEffect(() => {
@@ -711,6 +712,18 @@ function App() {
           <div className="cashflow-breakdown"><div><span className="cashflow-key cashflow-key-in" /><span>Money in</span><strong>{money(todaysIn)}</strong></div><div><span className="cashflow-key cashflow-key-out" /><span>Money out</span><strong>{money(todaysOut)}</strong></div><small>Cash {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod !== 'mpesa').reduce((sum, t) => sum + t.amount, 0))} <i>·</i> M-Pesa {money(todayTransactions.filter(t => (t.type === 'sale' || t.type === 'payment') && t.paymentMethod === 'mpesa').reduce((sum, t) => sum + t.amount, 0))}</small></div>
           <div className="cashflow-collect">Customers who owe you <strong>{money(outstanding)}</strong></div>
         </section>
+        <div className="owner-focus-grid">
+          <OwnerInsightCard brief={ownerBrief} onAction={() => {
+            if (ownerBrief.action === 'debts') navigate('debts');
+            else if (ownerBrief.action === 'stock') navigate('stock');
+            else if (ownerBrief.action === 'weekly-report') { setReportDate(tradingDate); setReportPeriod('weekly'); navigate('more'); }
+            else { setTypeChoice('sale'); setPending(null); setQuickEntryOpen(true); }
+          }} />
+          <ShopGoalCard goal={data.shopGoal ?? null} onSave={goal => {
+            updateData(current => ({ ...current, shopGoal: goal }));
+            notify(goal ? 'Your business milestone has been saved.' : 'Business milestone cleared.');
+          }} />
+        </div>
         <section className="ledger-quick-actions" aria-label="Add a transaction"><div className="ledger-section-label">WHAT HAPPENED?</div><div className="ledger-action-list">
           <button className="ledger-action ledger-action-sale" onClick={() => { setTypeChoice('sale'); setPaymentMethodChoice('cash'); setPending(null); setQuickEntryOpen(true); }}><span className="ledger-action-icon"><Wallet size={18} /></span><span>Sale</span></button>
           <button className="ledger-action ledger-action-expense" onClick={() => { setTypeChoice('expense'); setPaymentMethodChoice('cash'); setPending(null); setQuickEntryOpen(true); }}><span className="ledger-action-icon"><ArrowUpRight size={18} /></span><span>Expense</span></button>
@@ -775,6 +788,82 @@ interface SpeechRecognitionLike {
   onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void; stop: () => void; abort: () => void;
+}
+
+function OwnerInsightCard({ brief, onAction }: { brief: ReturnType<typeof buildOwnerBrief>; onAction: () => void }) {
+  return <section className="surface owner-insight-card">
+    <div className="owner-card-eyebrow">YOUR SHOP CHECK-IN</div>
+    <h2>{brief.title}</h2>
+    <p>{brief.detail}</p>
+    <div className="owner-check-metrics">
+      <div><span>Collected · 7 days</span><strong>{money(brief.collected)}</strong></div>
+      <div><span>Expenses · 7 days</span><strong>{money(brief.expenses)}</strong></div>
+      <div><span>Customer balances</span><strong>{money(brief.outstanding)}</strong></div>
+    </div>
+    <button className="owner-insight-action" onClick={onAction}>{brief.actionLabel}<ChevronRight size={15} /></button>
+    <small>Based on entries recorded in Hesabu. Missing entries can change this picture; money movement is not profit.</small>
+  </section>;
+}
+
+function ShopGoalCard({ goal, onSave }: { goal: ShopGoal | null; onSave: (goal: ShopGoal | null) => void }) {
+  const [editing, setEditing] = useState(!goal);
+  const [title, setTitle] = useState(goal?.title ?? '');
+  const [target, setTarget] = useState(goal ? String(goal.targetAmount) : '');
+  const [progress, setProgress] = useState(goal ? String(goal.progressAmount) : '0');
+
+  useEffect(() => {
+    setTitle(goal?.title ?? '');
+    setTarget(goal ? String(goal.targetAmount) : '');
+    setProgress(goal ? String(goal.progressAmount) : '0');
+    setEditing(!goal);
+  }, [goal?.title, goal?.targetAmount, goal?.progressAmount, goal?.updatedAt]);
+
+  const save = (event: FormEvent) => {
+    event.preventDefault();
+    const targetAmount = Math.round(Number(target));
+    const progressAmount = Math.round(Number(progress));
+    if (!title.trim() || !Number.isFinite(targetAmount) || targetAmount <= 0
+      || !Number.isFinite(progressAmount) || progressAmount < 0) return;
+    onSave({
+      title: title.trim(),
+      targetAmount,
+      progressAmount: Math.min(targetAmount, progressAmount),
+      updatedAt: new Date().toISOString(),
+    });
+    setEditing(false);
+  };
+
+  if (editing) return <section className="surface owner-goal-card">
+    <div className="owner-card-eyebrow">YOUR NEXT MILESTONE</div>
+    <h2>{goal ? 'Keep your goal in view' : 'What are you building towards?'}</h2>
+    <p>Choose something that matters to your business. You set the pace.</p>
+    <div className="goal-suggestions" aria-label="Suggested business goals">
+      {['Grow my stock', 'Buy a fridge or equipment', 'Open another branch', 'Clear supplier debt', 'Build a cash reserve'].map(item =>
+        <button key={item} type="button" className={title === item ? 'goal-suggestion-active' : ''} onClick={() => setTitle(item)}>{item}</button>
+      )}
+    </div>
+    <form className="owner-goal-form" onSubmit={save}>
+      <label><span>My goal</span><input value={title} onChange={event => setTitle(event.target.value)} placeholder="e.g. Grow my shop stock" maxLength={70} required /></label>
+      <label><span>Target amount (KES)</span><input type="number" min="1" step="1" inputMode="numeric" value={target} onChange={event => setTarget(event.target.value)} placeholder="e.g. 30000" required /></label>
+      <label><span>Progress so far (KES)</span><input type="number" min="0" step="1" inputMode="numeric" value={progress} onChange={event => setProgress(event.target.value)} placeholder="0" /></label>
+      <div className="owner-goal-form-actions">
+        {goal && <button type="button" className="owner-goal-cancel" onClick={() => setEditing(false)}>Cancel</button>}
+        <Button type="submit" size="sm" disabled={!title.trim() || Number(target) <= 0}>Save my goal</Button>
+      </div>
+    </form>
+    <small>This is your own progress update. It does not change till cash, sales or expenses.</small>
+  </section>;
+
+  const percent = Math.min(100, Math.round((goal!.progressAmount / goal!.targetAmount) * 100));
+  return <section className="surface owner-goal-card">
+    <div className="owner-card-eyebrow">YOUR NEXT MILESTONE</div>
+    <h2>{goal!.title}</h2>
+    <div className="goal-amounts"><strong>{money(goal!.progressAmount)}</strong><span>of {money(goal!.targetAmount)}</span></div>
+    <div className="goal-progress-track" role="progressbar" aria-label="Milestone progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: percent + '%' }} /></div>
+    <div className="goal-progress-caption"><strong>{percent}%</strong><span>{percent === 100 ? 'Milestone reached. Choose what comes next.' : 'Progress recorded by you, at your pace.'}</span></div>
+    <button className="owner-insight-action" onClick={() => setEditing(true)}>Update my progress<ChevronRight size={15} /></button>
+    <small>Progress is self-reported and kept separate from your shop’s till balance.</small>
+  </section>;
 }
 
 function LedgerSection({ transactions, filter, setFilter, search, setSearch, dateFilter, setDateFilter, onTransaction, onDelete }: {
