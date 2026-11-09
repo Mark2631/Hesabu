@@ -133,8 +133,8 @@ export function parseBackupPayload(value: unknown): AppData | null {
     && typeof row.closedAt === 'string' && Number.isFinite(Date.parse(row.closedAt)));
   const validShopGoal = shopGoal === null || (isRecord(shopGoal)
     && typeof shopGoal.title === 'string' && Boolean(shopGoal.title.trim())
-    && finiteAmount(shopGoal.targetAmount) && shopGoal.targetAmount > 0
-    && finiteAmount(shopGoal.progressAmount) && shopGoal.progressAmount <= shopGoal.targetAmount
+    && typeof shopGoal.targetAmount === 'number' && finiteAmount(shopGoal.targetAmount) && shopGoal.targetAmount > 0
+    && typeof shopGoal.progressAmount === 'number' && finiteAmount(shopGoal.progressAmount) && shopGoal.progressAmount <= shopGoal.targetAmount
     && typeof shopGoal.updatedAt === 'string' && Number.isFinite(Date.parse(shopGoal.updatedAt)));
   if (!validTransactions || !validCustomers || !validStock || !validReminders || !validDailyCloses || !validShopGoal) return null;
 
