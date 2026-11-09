@@ -295,6 +295,103 @@ export function parseTransaction(input: string, data: AppData): TransactionDraft
   };
 }
 
+export interface OwnerBrief {
+  title: string;
+  detail: string;
+  action: 'debts' | 'stock' | 'weekly-report' | 'record';
+  actionLabel: string;
+  collected: number;
+  expenses: number;
+  netMovement: number;
+  outstanding: number;
+  overdueCount: number;
+  lowStockCount: number;
+  activeDays: number;
+  entries: number;
+  rangeStart: string;
+}
+
+export function buildOwnerBrief(data: AppData, reportDate: string): OwnerBrief {
+  const rangeStart = addDays(reportDate, -6);
+  const recent = data.transactions.filter(tx => {
+    const date = tx.tradingDay ?? tx.date;
+    return date >= rangeStart && date <= reportDate;
+  });
+  const collected = cashIn(recent);
+  const expenses = cashOut(recent);
+  const netMovement = collected - expenses;
+  const activeDays = new Set(recent.map(tx => tx.tradingDay ?? tx.date)).size;
+  const outstandingCustomers = data.customers.filter(customer => customer.balance > 0);
+  const outstanding = outstandingCustomers.reduce((sum, customer) => sum + customer.balance, 0);
+  const overdue = outstandingCustomers
+    .filter(customer => customer.dueDate && customer.dueDate <= reportDate)
+    .sort((a, b) => b.balance - a.balance);
+  const lowStock = [...data.stock]
+    .filter(item => item.quantity <= item.lowStockAt)
+    .sort((a, b) => (a.quantity / Math.max(1, a.lowStockAt)) - (b.quantity / Math.max(1, b.lowStockAt)));
+
+  const goalTitle = data.shopGoal?.title.toLowerCase() ?? '';
+  const focusOnStock = /stock|inventory|restock|bidhaa|stock up/.test(goalTitle);
+  const focusOnDebts = /debt|deni|owe|supplier|madeni/.test(goalTitle);
+
+  let title = 'Start with one useful record';
+  let detail = 'Record the next sale, expense or customer credit. Hesabu can only give useful guidance from the activity you enter.';
+  let action: OwnerBrief['action'] = 'record';
+  let actionLabel = 'Record an entry';
+
+  if (focusOnStock && lowStock.length) {
+    const item = lowStock[0];
+    title = 'Protect the stock customers come in for';
+    detail = `${item.name} is at ${item.quantity} ${item.unit}; your restock reminder starts at ${item.lowStockAt}. Review it before buying more stock.`;
+    action = 'stock';
+    actionLabel = 'Review stock';
+  } else if (focusOnDebts && overdue.length) {
+    const customer = overdue[0];
+    title = `${money(customer.balance)} is due from ${customer.name}`;
+    detail = `A respectful follow-up may bring working cash back into the shop. Check the balance and agreed payment date before contacting them.`;
+    action = 'debts';
+    actionLabel = 'Review customer balances';
+  } else if (overdue.length) {
+    const customer = overdue[0];
+    title = `${money(customer.balance)} is due from ${customer.name}`;
+    detail = `${overdue.length} customer ${overdue.length === 1 ? 'balance is' : 'balances are'} due or overdue. Review the records and follow up only where the agreement says payment is due.`;
+    action = 'debts';
+    actionLabel = 'Review customer balances';
+  } else if (focusOnDebts && outstanding > 0) {
+    title = `${money(outstanding)} is still out with customers`;
+    detail = 'These balances are not money in the till yet. Keep their due dates clear and follow up at the time you agreed.';
+    action = 'debts';
+    actionLabel = 'Review customer balances';
+  } else if ((focusOnStock || !focusOnDebts) && lowStock.length) {
+    const item = lowStock[0];
+    title = `${item.name} is running low`;
+    detail = `${item.quantity} ${item.unit} left in the stock record against a restock level of ${item.lowStockAt}. Check what you need before placing the next order.`;
+    action = 'stock';
+    actionLabel = 'Review stock';
+  } else if (recent.length && netMovement < 0) {
+    title = 'Check this week’s outgoings';
+    detail = `You recorded ${money(collected)} collected and ${money(expenses)} in expenses over the last seven trading dates. Recorded expenses are ${money(Math.abs(netMovement))} higher; this is cash movement, not profit.`;
+    action = 'weekly-report';
+    actionLabel = 'Review this week';
+  } else if (activeDays >= 3) {
+    title = `You kept records on ${activeDays} days this week`;
+    detail = `You recorded ${money(collected)} collected and ${money(expenses)} in expenses. Keep the entries accurate and close the till at the end of each trading day.`;
+    action = 'weekly-report';
+    actionLabel = 'See weekly position';
+  } else if (activeDays > 0) {
+    title = 'Build a clearer picture of the week';
+    detail = `There are entries on ${activeDays} of the last seven trading dates. Record the normal activity of the shop; do not add made-up figures to fill gaps.`;
+    action = 'weekly-report';
+    actionLabel = 'Review this week';
+  }
+
+  return {
+    title, detail, action, actionLabel, collected, expenses, netMovement,
+    outstanding, overdueCount: overdue.length, lowStockCount: lowStock.length,
+    activeDays, entries: recent.length, rangeStart,
+  };
+}
+
 export function buildReport(data: AppData, period: 'daily' | 'weekly' | 'monthly', reportDate: string) {
   const from = period === 'daily' ? reportDate : period === 'weekly' ? addDays(reportDate, -6) : `${reportDate.slice(0, 7)}-01`;
   const tx = data.transactions.filter(t => (t.tradingDay ?? t.date) >= from && (t.tradingDay ?? t.date) <= reportDate);
