@@ -9,7 +9,7 @@ import {
   Store, TrendingDown, TrendingUp, Truck, Wallet, X,
   type LucideIcon,
 } from 'lucide-react';
-import { allocateIncomingPayment, buildJournalPair, calculateGrossProfit, isJournalBalanced, outstandingBalance, weightedAverageUnitCost } from './finance';
+import { allocateIncomingPayment, buildJournalPair, calculateGrossProfit, isJournalBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
@@ -26,6 +26,7 @@ type DialogState =
   | { kind: 'expense' }
   | { kind: 'product' }
   | { kind: 'purchase' }
+  | { kind: 'receive-purchase'; purchaseOrderId: string }
   | { kind: 'invoice'; invoiceId: string }
   | { kind: 'supplier-payment'; supplierId: string }
   | { kind: 'adjust'; productId: string }
@@ -528,6 +529,71 @@ function PurchaseDialog({ suppliers, products, onClose, onCreate }: {
   </Modal>;
 }
 
+
+function ReceivePurchaseDialog({ order, onClose, onReceive }: {
+  order: PurchaseOrder;
+  onClose: () => void;
+  onReceive: (items: Array<{ productId: string; quantity: number }>) => void;
+}) {
+  const remainingLines = order.lines.filter(line => line.received < line.quantity);
+  const [quantities, setQuantities] = useState<Record<string, string>>(() =>
+    Object.fromEntries(remainingLines.map(line => [line.productId, String(line.quantity - line.received)])),
+  );
+  const receiptItems = remainingLines.map(line => ({
+    productId: line.productId,
+    quantity: Math.max(0, Number(quantities[line.productId] ?? 0) || 0),
+  }));
+  const total = remainingLines.reduce((value, line) =>
+    value + Math.max(0, Number(quantities[line.productId] ?? 0) || 0) * line.unitCost, 0,
+  );
+  const invalid = remainingLines.some(line => {
+    const value = Number(quantities[line.productId] ?? 0);
+    return !Number.isFinite(value) || value < 0 || value > line.quantity - line.received;
+  });
+  const hasQuantity = receiptItems.some(item => item.quantity > 0);
+  return <Modal title="Receive supplier delivery" detail={order.number + ' · ' + order.supplierName} onClose={onClose} size="lg">
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      if (!invalid && hasQuantity) onReceive(receiptItems);
+    }}>
+      <div className="receipt-match-summary">
+        <div><span className="field-label">Purchase order</span><strong>{order.number}</strong></div>
+        <div><span className="field-label">Order value</span><strong>{money(order.total)}</strong></div>
+        <div><span className="field-label">Already received</span><strong>{numberText(order.lines.reduce((sum, line) => sum + line.received, 0))}</strong></div>
+        <div><span className="field-label">Outstanding</span><strong>{money(order.lines.reduce((sum, line) => sum + (line.quantity - line.received) * line.unitCost, 0))}</strong></div>
+      </div>
+      <div className="subsection-label">Quantities received in this delivery</div>
+      <div className="receive-lines">
+        {remainingLines.map(line => {
+          const remaining = line.quantity - line.received;
+          const entered = Math.max(0, Number(quantities[line.productId] ?? 0) || 0);
+          return <div className="receive-line" key={line.productId}>
+            <div className="receive-line-copy">
+              <strong>{line.name}</strong>
+              <small>{numberText(line.received)} received · {numberText(remaining)} outstanding · {money(line.unitCost)} per unit</small>
+            </div>
+            <Field label="Received now" type="number" min={0} step={0.01} value={quantities[line.productId] ?? '0'}
+              onChange={value => setQuantities(current => ({ ...current, [line.productId]: value }))} />
+            <div className="receive-line-total"><span>Value</span><strong>{money(entered * line.unitCost)}</strong></div>
+          </div>;
+        })}
+      </div>
+      <div className="inline-form-actions">
+        <Button variant="outline" size="sm" onClick={() => setQuantities(Object.fromEntries(remainingLines.map(line => [line.productId, String(line.quantity - line.received)])))}>
+          Receive all remaining
+        </Button>
+        <span className="field-hint">Only entered quantities will increase stock and supplier payables.</span>
+      </div>
+      {invalid && <div className="validation-note"><AlertTriangle size={14} /> A received quantity cannot exceed the outstanding quantity.</div>}
+      <div className="dialog-total"><span className="dialog-total-final"><span>Value of this delivery</span><strong>{money(total)}</strong></span></div>
+      <div className="modal-footer">
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button type="submit" disabled={invalid || !hasQuantity || total <= 0}><Check size={15} /> Post goods received</Button>
+      </div>
+    </form>
+  </Modal>;
+}
+
 function InvoiceDialog({ invoice, onClose, onRequestPayment }: {
   invoice: Invoice; onClose: () => void; onRequestPayment: () => void;
 }) {
@@ -953,7 +1019,7 @@ function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier
       {data.purchaseOrders.length ? <DataTable headers={['Order', 'Supplier', 'Created', 'Expected', 'Items', 'Order value', 'Status', 'Action']}>
         {[...data.purchaseOrders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(order => <tr key={order.id}>
           <td><strong>{order.number}</strong></td><td>{order.supplierName}</td><td>{dateLabel(order.createdAt)}</td>
-          <td>{dateLabel(order.expectedAt)}</td><td>{order.lines.length} lines</td><td className="amount-cell">{money(order.total)}</td>
+          <td>{dateLabel(order.expectedAt)}</td><td>{numberText(order.lines.reduce((sum, line) => sum + line.received, 0))} / {numberText(order.lines.reduce((sum, line) => sum + line.quantity, 0))} units received</td><td className="amount-cell"><strong>{money(order.total)}</strong><small className="cell-sub">{money(sum(order.lines.map(line => line.received * line.unitCost)))} received value</small></td>
           <td><StatusPill status={order.status}>{order.status === 'partially_received' ? 'Part received' : order.status === 'received' ? 'Received' : order.status === 'sent' ? 'Sent to supplier' : order.status}</StatusPill></td>
           <td>{order.status === 'sent' || order.status === 'partially_received' ? <Button size="sm" variant="secondary" onClick={() => onReceiveOrder(order.id)}>Receive goods</Button> : <span className="muted-copy">Complete</span>}</td>
         </tr>)}
@@ -1281,6 +1347,7 @@ function App() {
   const metrics = useMemo(() => getMetrics(data), [data]);
   const selectedInvoice = selectedInvoiceId ? data.invoices.find(invoice => invoice.id === selectedInvoiceId) : undefined;
   const selectedSupplier = dialog?.kind === 'supplier-payment' ? data.suppliers.find(supplier => supplier.id === dialog.supplierId) : undefined;
+  const selectedPurchaseOrder = dialog?.kind === 'receive-purchase' ? data.purchaseOrders.find(order => order.id === dialog.purchaseOrderId) : undefined;
   const selectedReceipt = dialog?.kind === 'match-receipt' ? data.unmatchedReceipts.find(receipt => receipt.id === dialog.receiptId) : undefined;
   const selectedProduct = dialog?.kind === 'adjust' ? data.products.find(product => product.id === dialog.productId) : undefined;
 
@@ -1607,35 +1674,47 @@ function App() {
     notify('Purchase order created', order.number + ' is ready for supplier follow-up.');
   };
 
-  const receivePurchaseOrder = (orderId: string) => {
+  const receivePurchaseOrder = (orderId: string, items: Array<{ productId: string; quantity: number }>) => {
     const order = data.purchaseOrders.find(item => item.id === orderId);
     if (!order || order.status === 'received') return;
-    const value = sum(order.lines.map(line => (line.quantity - line.received) * line.unitCost));
-    let next: AppData = {
+    const receipt = planPurchaseReceipt(order.lines, items);
+    if (!receipt.valid) {
+      notify('Goods receipt not posted', receipt.reason);
+      return;
+    }
+    const next: AppData = {
       ...data,
       products: data.products.map(product => {
-        const line = order.lines.find(item => item.productId === product.id);
-        if (!line) return product;
+        const updatedLine = receipt.lines.find(item => item.productId === product.id);
+        const originalLine = order.lines.find(item => item.productId === product.id);
+        const receivedNow = updatedLine && originalLine ? updatedLine.received - originalLine.received : 0;
+        if (!originalLine || receivedNow <= 0) return product;
         return {
           ...product,
-          quantity: product.quantity + Math.max(0, line.quantity - line.received),
-          costPrice: weightedAverageUnitCost(product.quantity, product.costPrice, Math.max(0, line.quantity - line.received), line.unitCost),
+          quantity: product.quantity + receivedNow,
+          costPrice: weightedAverageUnitCost(product.quantity, product.costPrice, receivedNow, originalLine.unitCost),
           updatedAt: today(),
         };
       }),
       purchaseOrders: data.purchaseOrders.map(item => item.id === orderId ? {
-        ...item, status: 'received', lines: item.lines.map(line => ({ ...line, received: line.quantity })),
+        ...item, status: receipt.status, lines: receipt.lines,
       } : item),
-      suppliers: data.suppliers.map(supplier => supplier.id === order.supplierId ? { ...supplier, balance: supplier.balance + value } : supplier),
-      journal: recordJournal(data, 'Inventory', 'Accounts payable', value, 'Goods received · ' + order.number, order.number),
+      suppliers: data.suppliers.map(supplier => supplier.id === order.supplierId
+        ? { ...supplier, balance: supplier.balance + receipt.totalValue }
+        : supplier),
+      journal: recordJournal(data, 'Inventory', 'Accounts payable', receipt.totalValue,
+        'Goods received · ' + order.number, order.number),
       events: [{
-        id: makeId('EVT'), time: new Date().toISOString(), type: 'purchase_order.received',
+        id: makeId('EVT'), time: new Date().toISOString(),
+        type: receipt.status === 'received' ? 'purchase_order.received' : 'purchase_order.partially_received',
         source: 'Procurement', status: 'delivered', reference: order.number,
-        detail: 'Goods received and supplier payable posted',
+        detail: money(receipt.totalValue) + ' of goods received and posted to inventory and accounts payable',
       }, ...data.events],
     };
     setData(next);
-    notify('Goods received', order.number + ' updated inventory and accounts payable.');
+    setDialog(null);
+    notify(receipt.status === 'received' ? 'Purchase order completed' : 'Partial delivery posted',
+      money(receipt.totalValue) + ' added to inventory and the supplier balance for ' + order.supplierName + '.');
   };
 
   const paySupplier = (supplierId: string, amount: number) => {
@@ -1759,7 +1838,7 @@ function App() {
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} />}
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} />}
-        {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={receivePurchaseOrder} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
+        {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} />}
         {active === 'integrations' && <IntegrationsPage data={data} onCopy={copyText} onNotice={notify} />}
@@ -1788,6 +1867,7 @@ function App() {
     {dialog?.kind === 'expense' && <ExpenseDialog onClose={() => setDialog(null)} onCreate={createExpense} />}
     {dialog?.kind === 'product' && <ProductDialog onClose={() => setDialog(null)} onCreate={createProduct} />}
     {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
+    {dialog?.kind === 'receive-purchase' && selectedPurchaseOrder && <ReceivePurchaseDialog order={selectedPurchaseOrder} onClose={() => setDialog(null)} onReceive={items => receivePurchaseOrder(selectedPurchaseOrder.id, items)} />}
     {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={amount => paySupplier(selectedSupplier.id, amount)} />}
     {dialog?.kind === 'adjust' && selectedProduct && <AdjustStockDialog product={selectedProduct} onClose={() => setDialog(null)} onAdjust={(quantity, reason) => adjustStock(selectedProduct.id, quantity, reason)} />}
     {selectedInvoice && <InvoiceDialog invoice={selectedInvoice} onClose={() => setSelectedInvoiceId(null)} onRequestPayment={() => {
