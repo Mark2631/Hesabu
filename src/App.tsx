@@ -461,6 +461,67 @@ function ProductDialog({ onClose, onCreate }: {
   </Modal>;
 }
 
+function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity, onClose, onCreate }: {
+  suppliers: Supplier[]; products: Product[]; initialProductId?: string; initialQuantity?: number;
+  onClose: () => void; onCreate: (input: NewPurchaseInput) => void;
+}) {
+  const initialProduct = products.find(product => product.id === initialProductId) || products[0];
+  const [supplierId, setSupplierId] = useState(suppliers.find(item => item.id === initialProduct?.supplierId)?.id || suppliers[0]?.id || '');
+  const [expectedAt, setExpectedAt] = useState(addDays(today(), 2));
+  const [items, setItems] = useState(() => initialProduct ? [{
+    productId: initialProduct.id, quantity: Math.max(1, initialQuantity || 10), unitCost: initialProduct.costPrice,
+  }] : []);
+  const updateItem = (index: number, patch: Partial<(typeof items)[number]>) => {
+    setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  };
+  const addItem = () => {
+    const product = products.find(candidate => !items.some(item => item.productId === candidate.id));
+    if (product) setItems(current => [...current, { productId: product.id, quantity: 1, unitCost: product.costPrice }]);
+  };
+  const total = sum(items.map(item => item.quantity * item.unitCost));
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const valid = items.filter(item => item.productId && item.quantity > 0 && item.unitCost > 0);
+    if (supplierId && valid.length) onCreate({ supplierId, expectedAt, items: valid });
+  };
+  return <Modal title="Create purchase order" detail="Build a supplier order with multiple lines. Inventory and accounts payable update when goods are received." onClose={onClose} size="lg">
+    <form className="modal-body" onSubmit={submit}>
+      <SelectField label="Supplier" value={supplierId} onChange={setSupplierId} options={suppliers.map(item => ({ value: item.id, label: item.name }))} />
+      <div className="subsection-label">Order items</div>
+      <div className="sale-items">
+        {items.map((item, index) => {
+          const selected = products.find(product => product.id === item.productId);
+          const available = products.filter(product => product.id === item.productId || !items.some(other => other.productId === product.id));
+          return <div className="purchase-item-row" key={index}>
+            <label className="field purchase-product-field">
+              <span className="field-label">Product</span>
+              <select className="field-input" value={item.productId} onChange={event => {
+                const product = products.find(candidate => candidate.id === event.target.value);
+                if (product) updateItem(index, { productId: product.id, unitCost: product.costPrice });
+              }}>
+                {available.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}
+              </select>
+            </label>
+            <Field label="Qty" type="number" min={1} value={item.quantity} onChange={value => updateItem(index, { quantity: Math.max(1, Number(value) || 1) })} />
+            <Field label="Unit cost" type="number" min={1} value={item.unitCost} onChange={value => updateItem(index, { unitCost: Math.max(0, Number(value) || 0) })} />
+            <div className="sale-line-total"><span>Line total</span><strong>{money(selected ? item.quantity * item.unitCost : 0)}</strong></div>
+            {items.length > 1 && <IconButton label="Remove item" onClick={() => setItems(current => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></IconButton>}
+          </div>;
+        })}
+      </div>
+      <div className="inline-form-actions">
+        <Button variant="outline" size="sm" onClick={addItem} disabled={items.length >= products.length}><Plus size={14} /> Add another item</Button>
+        <span className="field-hint">Each line retains its purchase cost for stock valuation.</span>
+      </div>
+      <Field label="Expected delivery date" type="date" value={expectedAt} onChange={setExpectedAt} />
+      <div className="dialog-total"><span className="dialog-total-final"><span>Purchase order total</span><strong>{money(total)}</strong></span></div>
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!supplierId || !items.length || total <= 0}>Create purchase order</Button></div>
+    </form>
+  </Modal>;
+}
+
+
+
 function ReceivePurchaseDialog({ order, onClose, onReceive }: {
   order: PurchaseOrder;
   onClose: () => void;
@@ -1437,13 +1498,14 @@ function SalesChannelsPage({ data, onCreateDemoOrder }: {
 function MorePage({ allowedModules, onNavigate }: {
   allowedModules: ModuleKey[]; onNavigate: (section: ModuleKey) => void;
 }) {
-  const destinations: Array<{ id: ModuleKey; title: string; description: string; icon: LucideIcon }> = [
+  const allDestinations: Array<{ id: ModuleKey; title: string; description: string; icon: LucideIcon }> = [
     { id: 'reports', title: 'Reports & daily digest', description: 'Business numbers, Excel workbooks and PDF summaries.', icon: BarChart3 },
     { id: 'procurement', title: 'Supplier orders', description: 'Create orders, receive goods and follow supplier balances.', icon: ShoppingCart },
     { id: 'accounts', title: 'Financial records', description: 'Account balances, journals and trial balance.', icon: BookOpen },
     { id: 'integrations', title: 'Sales channels', description: 'Review counter, website and wholesale order flows.', icon: Link2 },
     { id: 'settings', title: 'Team & settings', description: 'Business details, team roles and appearance.', icon: Settings },
-  ].filter(item => allowedModules.includes(item.id));
+  ];
+  const destinations = allDestinations.filter(item => allowedModules.includes(item.id));
   return <div className="page-stack">
     <PageHeader title="More" description="Less frequent tools are kept here so daily work stays simple." />
     <div className="more-destinations">{destinations.map(item => {
