@@ -1037,7 +1037,7 @@ function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier
   const openOrders = data.purchaseOrders.filter(order => order.status === 'sent' || order.status === 'partially_received');
   const payables = sum(data.suppliers.map(supplier => supplier.balance));
   return <div className="page-stack">
-    <PageHeader title="Procurement" description="Manage supplier orders, goods received and the amounts your business still owes." actions={<Button onClick={onCreatePurchase}><Plus size={16} /> New purchase order</Button>} />
+    <PageHeader title="Purchasing" description="Replenish stock, follow supplier deliveries and keep incoming goods on track." actions={<Button onClick={onCreatePurchase}><Plus size={16} /> New purchase order</Button>} />
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Supplier balances" value={money(payables)} note="Recorded accounts payable" icon={Truck} tone="amber" />
       <MetricCard label="Open purchase orders" value={numberText(openOrders.length)} note="Sent or part received" icon={ShoppingCart} tone="blue" />
@@ -1104,7 +1104,7 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
   const controlsPass = journalBalanced && trialBalanceBalanced && subledgersTie;
 
   return <div className="page-stack">
-    <PageHeader title="Accounts" description="The business record behind every invoice, expense and stock movement." actions={
+    <PageHeader title="Financials" description="Understand customer balances, supplier commitments, expenses and profit." actions={
       <span className="accounting-balance"><ShieldCheck size={15} /> {controlsPass ? 'Ledger controls reconciled' : 'Ledger review required'}</span>
     } />
     <div className="metric-grid metric-grid-four compact-metrics">
@@ -1176,6 +1176,16 @@ function ReportsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typ
   const filteredInvoices = data.invoices.filter(invoice => invoice.date >= addDays(today(), -(days - 1)) && invoice.date <= today());
   const sales = sum(filteredInvoices.map(invoice => invoice.total));
   const cogs = sum(filteredInvoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity))));
+  const productPerformance = data.products.map(product => {
+    let unitsSold = 0, netSales = 0, itemCost = 0;
+    filteredInvoices.forEach(invoice => invoice.lines.filter(line => line.productId === product.id).forEach(line => {
+      unitsSold += line.quantity;
+      netSales += invoice.subtotal > 0 ? invoice.total * (line.lineTotal / invoice.subtotal) : 0;
+      itemCost += line.unitCost * line.quantity;
+    }));
+    return { product, unitsSold, netSales, itemCost, grossProfit: netSales - itemCost,
+      marginRate: netSales > 0 ? ((netSales - itemCost) / netSales) * 100 : 0 };
+  }).filter(item => item.unitsSold > 0).sort((a, b) => b.grossProfit - a.grossProfit).slice(0, 10);
   const max = Math.max(1, ...dayRows.map(row => row.sales));
   return <div className="page-stack">
     <PageHeader title="Reports" description="A practical view of sales, margin, cash movement and inventory value." actions={<Button variant="outline" onClick={() => window.print()}><Download size={15} /> Print report</Button>} />
@@ -1198,11 +1208,17 @@ function ReportsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typ
       </div>
     </SectionCard>
     <div className="content-grid content-grid-main">
-      <SectionCard title="Sales by channel" detail="Value according to invoice payment channel">
-        {(['mpesa', 'cash', 'bank', 'card', 'credit'] as PaymentChannel[]).map(channel => {
-          const value = sum(filteredInvoices.filter(invoice => invoice.channel === channel).map(invoice => invoice.total));
-          return <ProgressLine key={channel} label={channelLabel(channel)} value={value} maximum={sales} suffix=" KSh" color={channel === 'mpesa' ? 'green' : channel === 'credit' ? 'amber' : channel === 'bank' ? 'blue' : 'slate'} />;
-        })}
+      <SectionCard title="Product contribution" detail="Net sales, product cost and gross profit by item after allocating invoice discounts.">
+        {productPerformance.length ? <DataTable headers={['Product', 'Units', 'Net sales', 'Item cost', 'Gross profit', 'Margin']}>
+          {productPerformance.map(item => <tr key={item.product.id}>
+            <td><strong>{item.product.name}</strong><small className="cell-sub">{item.product.sku}</small></td>
+            <td>{numberText(item.unitsSold)}</td>
+            <td className="amount-cell">{money(item.netSales)}</td>
+            <td className="amount-cell">{money(item.itemCost)}</td>
+            <td className="amount-cell">{money(item.grossProfit)}</td>
+            <td>{item.marginRate.toFixed(1)}%</td>
+          </tr>)}
+        </DataTable> : <EmptyState title="No product sales in this period" body="Recorded sales will show which products contribute most to gross profit." />}
       </SectionCard>
       <SectionCard title="Working capital" detail="Short-term funds tied up in operations">
         <div className="working-capital-list">

@@ -959,6 +959,5 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .team-role-grid { grid-template-columns:1fr 1fr; }
 }
 @media (max-width:390px) {
-  .topbar-brand-lockup { display:none; }
   .stock-count-summary { gap:8px; }
 }
