@@ -3,7 +3,7 @@
 :root {
   font-family: 'DM Sans', sans-serif;
   color: #18251e;
-  background: #f5f7f5;
+  background: #ffffff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -23,7 +23,7 @@
   --red-pale: #fbefed;
   --line: #e7ece8;
   --surface: #ffffff;
-  --canvas: #f5f7f5;
+  --canvas: #ffffff;
   --shadow: 0 3px 15px rgba(26, 47, 34, .035);
   --radius: 14px;
 }
@@ -825,7 +825,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   --ink: #111827; --ink-soft: #273244; --muted: #687386; --muted-light: #929baa;
   --green: #111827; --green-dark: #080d16; --green-pale: #eef3ff; --green-tint: #f7f9ff;
   --blue: #315bd6; --blue-pale: #edf2ff; --amber: #94651d; --amber-pale: #fbf4e7;
-  --red: #b64d4d; --red-pale: #fff0f0; --line: #e7e9ee; --surface: #fff; --canvas: #f6f7f9;
+  --red: #b64d4d; --red-pale: #fff0f0; --line: #e7e9ee; --surface: #fff; --canvas: #ffffff;
   --shadow: 0 1px 2px rgba(17,24,39,.025); --radius: 11px;
 }
 body { background: var(--canvas); color: var(--ink); }
