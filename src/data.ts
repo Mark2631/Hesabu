@@ -1,4 +1,4 @@
-import type { AppData, Expense, Invoice, JournalLine, Payment, Product } from './types';
+import type { AppData, Expense, Invoice, JournalLine, Payment, Product, Supplier } from './types';
 
 const localDate = (date: Date) => {
   const year = date.getFullYear();
@@ -48,7 +48,13 @@ const makeInvoice = (
 };
 
 
-function buildSeedJournal(invoices: Invoice[], payments: Payment[], expenses: Expense[]): JournalLine[] {
+function buildSeedJournal(
+  invoices: Invoice[],
+  payments: Payment[],
+  expenses: Expense[],
+  openingBalances: AppData['openingBalances'],
+  openingPayables: number,
+): JournalLine[] {
   const journal: JournalLine[] = [];
   let sequence = 1;
   const post = (date: string, debitAccount: string, creditAccount: string, amount: number, description: string, reference: string) => {
@@ -59,6 +65,17 @@ function buildSeedJournal(invoices: Invoice[], payments: Payment[], expenses: Ex
       { id: journalId + '-cr', journalId, date, account: creditAccount, debit: 0, credit: amount, description, reference },
     );
   };
+
+
+  const earliestInvoiceDate = invoices.map(invoice => invoice.date).sort()[0] ?? today();
+  const openingDateValue = new Date(earliestInvoiceDate + 'T12:00:00');
+  openingDateValue.setDate(openingDateValue.getDate() - 1);
+  const openingDate = localDate(openingDateValue);
+  post(openingDate, 'Cash on hand', 'Opening balance equity', openingBalances.cash, 'Opening balance · Cash on hand', 'OPEN-CASH');
+  post(openingDate, 'M-Pesa clearing', 'Opening balance equity', openingBalances.mpesa, 'Opening balance · M-Pesa clearing', 'OPEN-MPESA');
+  post(openingDate, 'Bank account', 'Opening balance equity', openingBalances.bank, 'Opening balance · Bank account', 'OPEN-BANK');
+  post(openingDate, 'Inventory', 'Opening balance equity', openingBalances.inventory, 'Opening balance · Inventory', 'OPEN-STOCK');
+  post(openingDate, 'Opening balance equity', 'Accounts payable', openingPayables, 'Opening supplier liabilities', 'OPEN-AP');
 
   for (const invoice of invoices) {
     post(invoice.date, 'Accounts receivable', 'Sales revenue', invoice.total, 'Invoice issued · ' + invoice.number, invoice.number);
@@ -153,6 +170,30 @@ export function makeDemoData(): AppData {
     { id: 'exp-04', date: offset(-3), category: 'Staff costs', description: 'Weekly wages', amount: 8_500, channel: 'bank', reference: 'EXP-301' },
   ];
 
+
+  const suppliers: Supplier[] = [
+      { id: 'sup-001', name: 'Meru Wholesale Distributors', phone: '+254 700 120 450', email: 'orders@meruwholesale.example', terms: '14 days', balance: 18_400 },
+      { id: 'sup-002', name: 'Eastlands Oils & Foods', phone: '+254 711 445 201', email: 'sales@eastlandsoils.example', terms: '7 days', balance: 7_250 },
+      { id: 'sup-003', name: 'Highland Fresh Limited', phone: '+254 722 560 840', email: 'dispatch@highlandfresh.example', terms: 'Cash on delivery', balance: 0 },
+      { id: 'sup-004', name: 'Maua Homecare Supplies', phone: '+254 733 291 610', email: 'accounts@mauahomecare.example', terms: '30 days', balance: 12_600 },
+      { id: 'sup-005', name: 'Ridgeway Beverages', phone: '+254 701 880 330', email: 'orders@ridgewaybev.example', terms: '7 days', balance: 3_600 },
+    ];
+
+  const currentInventoryValue = products.reduce((total, product) => total + product.quantity * product.costPrice, 0);
+  const seededCostOfGoodsSold = invoices.reduce(
+    (total, invoice) => total + invoice.lines.reduce((lineTotal, line) => lineTotal + line.quantity * line.unitCost, 0),
+    0,
+  );
+  const openingBalances: AppData['openingBalances'] = {
+    cash: 42_800,
+    mpesa: 86_450,
+    bank: 224_700,
+    // Historical sales are already reflected in current quantities. Restore their cost
+    // into the opening journal so the closing stock subledger ties to the general ledger.
+    inventory: currentInventoryValue + seededCostOfGoodsSold,
+  };
+  const openingPayables = suppliers.reduce((total, supplier) => total + supplier.balance, 0);
+
   return {
     profile: {
       name: 'Northstar Market', legalName: 'Northstar Retail Limited',
@@ -170,13 +211,7 @@ export function makeDemoData(): AppData {
     ],
     expenses,
     cashMovements: [],
-    suppliers: [
-      { id: 'sup-001', name: 'Meru Wholesale Distributors', phone: '+254 700 120 450', email: 'orders@meruwholesale.example', terms: '14 days', balance: 18_400 },
-      { id: 'sup-002', name: 'Eastlands Oils & Foods', phone: '+254 711 445 201', email: 'sales@eastlandsoils.example', terms: '7 days', balance: 7_250 },
-      { id: 'sup-003', name: 'Highland Fresh Limited', phone: '+254 722 560 840', email: 'dispatch@highlandfresh.example', terms: 'Cash on delivery', balance: 0 },
-      { id: 'sup-004', name: 'Maua Homecare Supplies', phone: '+254 733 291 610', email: 'accounts@mauahomecare.example', terms: '30 days', balance: 12_600 },
-      { id: 'sup-005', name: 'Ridgeway Beverages', phone: '+254 701 880 330', email: 'orders@ridgewaybev.example', terms: '7 days', balance: 3_600 },
-    ],
+    suppliers,
     purchaseOrders: [
       {
         id: 'po-020', number: 'PO-020', supplierId: 'sup-001',
@@ -208,7 +243,7 @@ export function makeDemoData(): AppData {
         ],
       },
     ],
-    journal: buildSeedJournal(invoices, payments, expenses),
+    journal: buildSeedJournal(invoices, payments, expenses, openingBalances, openingPayables),
     events: [
       { id: 'evt-01', time: timeAgo(17), type: 'payment.confirmed', source: 'M-Pesa collection', status: 'delivered', reference: 'TJL8Q2M4P1', detail: 'Payment matched to HS-1008' },
       { id: 'evt-02', time: timeAgo(34), type: 'invoice.paid', source: 'Hesabu checkout', status: 'delivered', reference: 'HS-1006', detail: 'Invoice status updated to paid' },
@@ -216,7 +251,7 @@ export function makeDemoData(): AppData {
       { id: 'evt-04', time: timeAgo(92), type: 'payment.confirmed', source: 'M-Pesa collection', status: 'delivered', reference: 'TJL7P9K2D6', detail: 'Payment matched to HS-1006' },
       { id: 'evt-05', time: timeAgo(160), type: 'purchase_order.sent', source: 'Procurement', status: 'delivered', reference: 'PO-020', detail: 'Purchase order sent to supplier' },
     ],
-    openingBalances: { cash: 42_800, mpesa: 86_450, bank: 224_700, inventory: 34_276 },
+    openingBalances,
     nextInvoice: 1009,
     nextPurchaseOrder: 21,
   };

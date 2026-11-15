@@ -133,3 +133,34 @@ export function planPurchaseReceipt<T extends {
     status: completed ? 'received' as const : 'partially_received' as const,
   };
 }
+
+
+export interface TrialBalanceRow {
+  account: string;
+  debitBalance: number;
+  creditBalance: number;
+}
+
+export function buildTrialBalance(lines: JournalLine[]): TrialBalanceRow[] {
+  const balances = new Map<string, { debit: number; credit: number }>();
+  for (const line of lines) {
+    const current = balances.get(line.account) ?? { debit: 0, credit: 0 };
+    current.debit += line.debit;
+    current.credit += line.credit;
+    balances.set(line.account, current);
+  }
+  return [...balances.entries()]
+    .map(([account, totals]) => ({
+      account,
+      debitBalance: Math.max(0, Math.round((totals.debit - totals.credit) * 100) / 100),
+      creditBalance: Math.max(0, Math.round((totals.credit - totals.debit) * 100) / 100),
+    }))
+    .filter(row => row.debitBalance > 0 || row.creditBalance > 0)
+    .sort((a, b) => a.account.localeCompare(b.account));
+}
+
+export function isTrialBalanceBalanced(rows: TrialBalanceRow[], tolerance = 0.01): boolean {
+  const debits = rows.reduce((total, row) => total + row.debitBalance, 0);
+  const credits = rows.reduce((total, row) => total + row.creditBalance, 0);
+  return Math.abs(debits - credits) < tolerance;
+}

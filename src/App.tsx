@@ -9,7 +9,7 @@ import {
   Store, TrendingDown, TrendingUp, Truck, Wallet, X,
   type LucideIcon,
 } from 'lucide-react';
-import { allocateIncomingPayment, buildJournalPair, calculateGrossProfit, isJournalBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
+import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
@@ -1039,7 +1039,7 @@ function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier
 }
 
 function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typeof getMetrics> }) {
-  const [tab, setTab] = useState<'balances' | 'journal'>('balances');
+  const [tab, setTab] = useState<'balances' | 'trial-balance' | 'journal'>('balances');
   const accounts = [
     { name: 'Cash on hand', group: 'Current asset', amount: metrics.channelBalances.cash, type: 'asset' },
     { name: 'M-Pesa clearing', group: 'Current asset', amount: metrics.channelBalances.mpesa, type: 'asset' },
@@ -1056,17 +1056,38 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
   const debitTotal = sum(journal.map(line => line.debit));
   const creditTotal = sum(journal.map(line => line.credit));
   const journalBalanced = isJournalBalanced(journal);
+  const trialBalance = buildTrialBalance(journal);
+  const trialDebitTotal = sum(trialBalance.map(line => line.debitBalance));
+  const trialCreditTotal = sum(trialBalance.map(line => line.creditBalance));
+  const trialBalanceBalanced = isTrialBalanceBalanced(trialBalance);
+  const accountNet = (name: string) => {
+    const row = trialBalance.find(item => item.account === name);
+    return row ? row.debitBalance - row.creditBalance : 0;
+  };
+  const subledgersTie =
+    Math.abs(accountNet('Cash on hand') - metrics.channelBalances.cash) < 0.01 &&
+    Math.abs(accountNet('M-Pesa clearing') - metrics.channelBalances.mpesa) < 0.01 &&
+    Math.abs(accountNet('Bank account') - metrics.channelBalances.bank) < 0.01 &&
+    Math.abs(accountNet('Inventory') - metrics.inventoryValue) < 0.01 &&
+    Math.abs(accountNet('Accounts receivable') - metrics.receivables) < 0.01 &&
+    Math.abs(-accountNet('Accounts payable') - metrics.payables) < 0.01 &&
+    Math.abs(-accountNet('Customer advances') - metrics.customerAdvances) < 0.01;
+  const controlsPass = journalBalanced && trialBalanceBalanced && subledgersTie;
+
   return <div className="page-stack">
-    <PageHeader title="Accounts" description="The business record behind every invoice, expense and stock movement." actions={<span className="accounting-balance"><ShieldCheck size={15} /> {journalBalanced ? 'Journal balanced' : 'Journal needs review'}</span>} />
+    <PageHeader title="Accounts" description="The business record behind every invoice, expense and stock movement." actions={
+      <span className="accounting-balance"><ShieldCheck size={15} /> {controlsPass ? 'Ledger controls reconciled' : 'Ledger review required'}</span>
+    } />
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Accounts receivable" value={money(metrics.receivables)} note="Due from customers" icon={ArrowDownLeft} tone="amber" />
       <MetricCard label="Accounts payable" value={money(metrics.payables)} note="Due to suppliers" icon={ArrowUpRight} tone="blue" />
       <MetricCard label="Operating expenses" value={money(metrics.expenses)} note="Recorded expenses" icon={TrendingDown} tone="slate" />
       <MetricCard label="Gross profit · MTD" value={money(metrics.grossProfitMonth)} note="Sales less item cost" icon={TrendingUp} tone="green" />
     </div>
-    <SectionCard title="Accounting register" detail="Account balances are derived from opening balances and posted demo transactions.">
+    <SectionCard title="Accounting register" detail="Account balances, trial balance and the underlying journal all use the same posted ledger entries.">
       <div className="section-tabs">
         <button className={tab === 'balances' ? 'active' : ''} onClick={() => setTab('balances')}>Account balances</button>
+        <button className={tab === 'trial-balance' ? 'active' : ''} onClick={() => setTab('trial-balance')}>Trial balance</button>
         <button className={tab === 'journal' ? 'active' : ''} onClick={() => setTab('journal')}>Journal entries <span>{journal.length}</span></button>
       </div>
       {tab === 'balances' ? <DataTable headers={['Account', 'Classification', 'Balance', '']}>
@@ -1075,11 +1096,32 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
           <td className="amount-cell">{money(account.amount)}</td>
           <td><span className={'account-type account-type-' + account.type}>{account.type}</span></td>
         </tr>)}
-      </DataTable> : <>
+      </DataTable> : tab === 'trial-balance' ? <>
+        <div className="journal-summary">
+          <div><span>Total debit balances</span><strong>{money(trialDebitTotal)}</strong></div>
+          <div><span>Total credit balances</span><strong>{money(trialCreditTotal)}</strong></div>
+          <div><span>Difference</span><strong className={trialBalanceBalanced ? 'positive-text' : 'negative-text'}>{money(Math.abs(trialDebitTotal - trialCreditTotal))}</strong></div>
+        </div>
+        <DataTable headers={['Account', 'Debit balance', 'Credit balance']}>
+          {trialBalance.map(line => <tr key={line.account}>
+            <td><strong>{line.account}</strong></td>
+            <td className="amount-cell">{line.debitBalance ? money(line.debitBalance) : '—'}</td>
+            <td className="amount-cell">{line.creditBalance ? money(line.creditBalance) : '—'}</td>
+          </tr>)}
+          <tr className="table-total-row">
+            <td><strong>Total</strong></td>
+            <td className="amount-cell"><strong>{money(trialDebitTotal)}</strong></td>
+            <td className="amount-cell"><strong>{money(trialCreditTotal)}</strong></td>
+          </tr>
+        </DataTable>
+        <div className="accounting-note"><ShieldCheck size={15} /><span>{subledgersTie
+          ? 'Cash, inventory, receivables and supplier balances agree with their corresponding general-ledger control accounts.'
+          : 'At least one operational balance does not agree with its general-ledger control account. Review the opening position and posting history before relying on this report.'}</span></div>
+      </> : <>
         <div className="journal-summary">
           <div><span>Debits posted</span><strong>{money(debitTotal)}</strong></div>
           <div><span>Credits posted</span><strong>{money(creditTotal)}</strong></div>
-          <div><span>Difference</span><strong className={Math.round(debitTotal - creditTotal) === 0 ? 'positive-text' : 'negative-text'}>{money(Math.abs(debitTotal - creditTotal))}</strong></div>
+          <div><span>Difference</span><strong className={journalBalanced ? 'positive-text' : 'negative-text'}>{money(Math.abs(debitTotal - creditTotal))}</strong></div>
         </div>
         <DataTable headers={['Date', 'Account', 'Description', 'Reference', 'Debit', 'Credit']}>
           {journal.map(line => <tr key={line.id}>

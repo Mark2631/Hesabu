@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeDemoData } from '../src/data.ts';
-import { allocateIncomingPayment, buildJournalPair, calculateGrossProfit, isJournalBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from '../src/finance.ts';
+import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from '../src/finance.ts';
 
 const sum = (values) => values.reduce((total, value) => total + value, 0);
 
@@ -158,6 +158,29 @@ test('purchase receipt rejects over-receiving, unknown products and zero-value r
   assert.match(unknown.reason, /not on this purchase order/);
   const zero = planPurchaseReceipt(lines, [{ productId: 'a', quantity: 0 }]);
   assert.equal(zero.valid, false);
+});
+
+
+test('seeded ledger trial balance ties to operational cash, stock, receivables and payables', () => {
+  const data = makeDemoData();
+  const trialBalance = buildTrialBalance(data.journal);
+  assert.equal(isTrialBalanceBalanced(trialBalance), true);
+  const balance = (account) => {
+    const row = trialBalance.find(item => item.account === account);
+    return (row?.debitBalance ?? 0) - (row?.creditBalance ?? 0);
+  };
+  const close = (left, right) => assert.ok(Math.abs(left - right) < 0.01, String(left) + ' should equal ' + String(right));
+  const expectedCash = (channel) =>
+    data.openingBalances[channel] +
+    sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === channel).map(payment => payment.amount)) -
+    sum(data.expenses.filter(expense => expense.channel === channel).map(expense => expense.amount)) -
+    sum((data.cashMovements ?? []).filter(movement => movement.channel === channel).map(movement => movement.amount));
+  close(balance('Cash on hand'), expectedCash('cash'));
+  close(balance('M-Pesa clearing'), expectedCash('mpesa'));
+  close(balance('Bank account'), expectedCash('bank'));
+  close(balance('Inventory'), sum(data.products.map(product => product.quantity * product.costPrice)));
+  close(balance('Accounts receivable'), sum(data.invoices.map(invoice => Math.max(0, invoice.total - invoice.paid))));
+  close(-balance('Accounts payable'), sum(data.suppliers.map(supplier => supplier.balance)));
 });
 
 test('low stock is measurable from quantity and reorder rules', () => {
