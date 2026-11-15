@@ -1,10 +1,10 @@
 {
-  "name": "Hesabu — Business, in balance",
+  "name": "Hesabu — Run your business clearly",
   "short_name": "Hesabu",
-  "description": "A simple day-to-day ledger for small shops.",
+  "description": "Sales, stock, purchasing and profitability in one workspace.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f7fb",
-  "theme_color": "#172747",
+  "background_color": "#f6f7f9",
+  "theme_color": "#111827",
   "icons": [{ "src": "/hesabu-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }

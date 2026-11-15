@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - build/hesabu-ledger-mvp
+      - build/platform-foundation
   pull_request:
     branches:
       - main

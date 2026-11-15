@@ -1,37 +1,66 @@
 # Hesabu
 
-Hesabu is a mobile-first, voice-friendly micro-ledger for Kenyan small shops. It is designed around the way a shopkeeper actually works: record a cash sale or goods taken on credit, keep a clear balance for each customer or supplier, notice low stock, remember bills and follow-ups, and send a daily summary without doing sums at closing time.
+Hesabu is being built as a connected financial operations platform for Kenyan retailers and service businesses. It is designed to sit behind an existing storefront or website as well as operate as a business workspace in its own right.
 
-## Preview
+## Product model
 
-Open the latest preview at https://hesabu-99jho74ke-marksanchez2631-1753s-projects.vercel.app. It is a preview deployment, not the production release.
+A single operational record connects:
 
-## Run locally
+- **Sales and invoicing** — counter, website, Hesabu checkout and manual sales.
+- **Payments and reconciliation** — cash, M-Pesa, bank and card collection records; payment requests; an unmatched-receipt queue for Till/PayBill, Pochi, Send Money and bank receipts; invoice allocation and exception review.
+- **Inventory** — SKU-level quantities, reorder points, cost and selling prices, stock adjustments, valuation and reorder suggestions.
+- **Production** — reusable material recipes and production runs that transfer stock from components into finished goods at the cost of materials consumed.
+- **Procurement** — suppliers, purchase orders, receiving and accounts payable.
+- **Accounts** — receivables, payables, cash accounts, account balances, a trial balance and a journal register. The seed includes opening balances that reconcile the cash, inventory, receivables and supplier control accounts.
+- **Reports** — sales, gross margin, cash position and working-capital views.
+- **Integrations** — a planned developer API, website embed and webhook event model.
 
-Install Node.js 22 or newer, then run `npm install`, `npm run dev`, `npm test`, and `npm run build`.
+A posted sale is intended to flow through invoice, collection, stock and accounting records rather than requiring the operator to update four disconnected screens.
 
-## What works in this MVP
+## Current preview implementation
 
-- Quick transaction entry in English or Kiswahili with confirm-before-save review.
-- Browser speech recognition where supported, with English (Kenya) and Kiswahili voice-language choices and typed entry as the fallback.
-- Correction of saved transaction descriptions, amounts, dates, times and credit due dates, with linked balance adjustments.
-- Cash sale, credit given, expense, and debt-payment records.
-- Customer and supplier account balances, transaction history, repayment recording, and WhatsApp debt reminders.
-- Stock quantities, editable product details and reorder thresholds, restocking and quantity corrections.
-- Duplicate safeguards for contacts and stock items, plus a warning when a sale exceeds the tracked shelf count.
-- Bill and follow-up reminders inside the app.
-- Daily, weekly and monthly report previews that can be copied or shared through WhatsApp.
-- CSV export, JSON backup and restore, editable shop details, and a resettable Mama Grace demo ledger.
-- Local-first persistence, a mobile bottom navigation bar, responsive desktop layout, and a basic PWA shell.
+The build/platform-foundation branch contains a front-end product preview built on the existing React 18, TypeScript and Vite application.
 
-## Accounting rules
+- Seeded mini-mart workspace with products, suppliers, invoices, payment records and purchase orders.
+- Local interactions for recording sales, creating invoices, requesting and resolving sample payment requests, adding and matching receipts, recording expenses, stock counts, multi-line purchase orders, partial goods receiving, supplier payments, reusable production recipes and production runs.
+- Balanced journal-pair posting, a trial-balance control, weighted-average cost on stock receipts, separate treatment of unapplied customer receipts as customer advances, and ledger entries for opening stock.
+- Supplier settlements reduce bank cash and accounts payable; they are not treated as operating expenses.
+- Derived dashboard and report values.
+- Browser-local persistence under hesabu:platform:v3. The new key intentionally starts a fresh seeded workspace without deleting older local browser records.
+- Responsive desktop, tablet and mobile navigation.
 
-- A credit sale is a receivable, not cash received.
-- A customer repayment counts as cash in and reduces their outstanding balance.
-- Supplier balances are shown separately from money customers owe the shop.
-- “Net cash” means recorded cash in minus recorded cash out. It is not accounting profit and does not include cost of goods sold, tax or other accrual adjustments.
-- A natural-language parse is only a suggestion. The shopkeeper reviews it before saving.
+The preview is deliberately local-first while the production database is not connected. Data only persists in the current browser. It is not yet multi-user, multi-branch, cloud-synchronised or suitable for real financial operations. Seeded values are representative demo figures, not audited opening balances.
 
-## Data and limitations
+## Daraja and settlement design
 
-This is an MVP, not a hosted multi-user product. All ledger data stays in the current browser's local storage. It is not synced across devices; downloading backups regularly is important. Voice capture needs microphone permission and support from the current browser, and may require HTTPS. Report sharing opens WhatsApp with a prepared message; scheduled WhatsApp or email delivery is not connected. The parser uses rules, not an AI model. It can make mistakes, so confirm each draft.
+The payment UI is a **local simulation**. It does not call Safaricom, send an STK prompt, verify a callback, read live statements or move funds. The unmatched-receipt queue demonstrates a manual reconciliation workflow only.
+
+The intended production pattern is to initiate a supported payment request for the merchant's own registered payment destination, receive and authenticate asynchronous payment results on the server, match the receipt to the invoice idempotently, and update the business ledger. A transaction-status query is a secondary reconciliation path where a callback has not arrived.
+
+Hesabu should not take custody of or pool merchant funds in the first implementation. A model where Hesabu collects funds into its own account and subsequently pays merchants is a materially different payments business and must be assessed with licensed payment partners and qualified regulatory advice before it is built.
+
+Pochi la Biashara, Send Money and Till/PayBill are not interchangeable rails. Their supported integration and reconciliation methods must be verified individually; an STK-capable merchant shortcode should not be assumed to provide a feed for every other channel.
+
+## Kenya tax integration
+
+KRA documents system-to-system eTIMS integration through OSCU and VSCU and requires integrators to undergo testing, vetting and certification. Hesabu is not currently eTIMS-certified and must not represent invoices from this preview as KRA-compliant tax invoices. Certification and the correct integration route belong on the production roadmap.
+
+## Production work still required
+
+1. Connect a secure multi-tenant database and enforce business-level authorization.
+2. Replace browser-only state with server-side posting and immutable, balanced journal transactions.
+3. Add idempotency, webhook signature verification, retries, reconciliation exceptions and audit logs.
+4. Complete inventory costing, production labour and overhead allocation, waste/by-product handling, returns, credit notes, tax handling, period close and accountant-reviewed reports.
+5. Connect and test supported Daraja merchant flows with production credentials and callback infrastructure.
+6. Evaluate KRA eTIMS certification, supported bank feeds and other third-party integrations.
+7. Add staff roles, branch/location permissions, backups, observability and security review.
+
+## Development
+
+- npm install
+- npm run dev
+- npm run typecheck
+- npm test
+- npm run build
+
+No secrets or payment credentials should be placed in the browser application.
