@@ -9,12 +9,12 @@ import {
   Store, TrendingDown, TrendingUp, Truck, Wallet, X,
   type LucideIcon,
 } from 'lucide-react';
-import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
+import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planProductionRun, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
   NewPaymentInput, NewPurchaseInput, NewUnmatchedReceiptInput, Payment, PaymentChannel, Product,
-  PurchaseOrder, ReceiptRail, Supplier, TeamMember, TeamRole, UnmatchedReceipt,
+  PurchaseOrder, ReceiptRail, Supplier, TeamMember, TeamRole, UnmatchedReceipt, ProductionRecipe, ProductionRun,
 } from './types';
 
 type Notice = { title: string; detail?: string } | null;
@@ -26,6 +26,8 @@ type DialogState =
   | { kind: 'expense' }
   | { kind: 'product' }
   | { kind: 'purchase'; productId?: string; quantity?: number }
+  | { kind: 'production-recipe' }
+  | { kind: 'production-run'; recipeId: string }
   | { kind: 'receive-purchase'; purchaseOrderId: string }
   | { kind: 'invoice'; invoiceId: string }
   | { kind: 'supplier-payment'; supplierId: string }
@@ -39,6 +41,7 @@ const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: st
     { id: 'sales', label: 'Sales & invoices', icon: Receipt },
     { id: 'payments', label: 'Payments', icon: CircleDollarSign },
     { id: 'inventory', label: 'Inventory', icon: Package },
+    { id: 'production', label: 'Production', icon: Boxes },
     { id: 'procurement', label: 'Purchasing', icon: ShoppingCart },
   ] },
   { title: 'BUSINESS', items: [
@@ -58,6 +61,7 @@ const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
   payments: { title: 'Payments', description: 'See what customers have paid and what still needs attention.' },
   inventory: { title: 'Inventory', description: 'Know what is on hand, what is moving and what needs to be reordered.' },
   procurement: { title: 'Purchasing', description: 'Replenish stock, manage suppliers and follow deliveries.' },
+  production: { title: 'Production', description: 'Turn stocked materials into finished goods using repeatable recipes.' },
   accounts: { title: 'Financials', description: 'Understand cash, customer balances, supplier commitments and profit.' },
   reports: { title: 'Reports', description: 'Understand trading performance, cash movement and working capital.' },
   integrations: { title: 'Sales channels', description: 'Bring in-store, online and wholesale orders into one business view.' },
@@ -66,10 +70,10 @@ const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
 };
 
 const roleAccess: Record<TeamRole, ModuleKey[]> = {
-  Owner: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'settings'],
-  Manager: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations'],
+  Owner: ['overview', 'sales', 'payments', 'inventory', 'production', 'procurement', 'accounts', 'reports', 'integrations', 'settings'],
+  Manager: ['overview', 'sales', 'payments', 'inventory', 'production', 'procurement', 'accounts', 'reports', 'integrations'],
   Sales: ['overview', 'sales', 'payments'],
-  Inventory: ['overview', 'inventory', 'procurement'],
+  Inventory: ['overview', 'inventory', 'production', 'procurement'],
   Finance: ['overview', 'sales', 'payments', 'accounts', 'reports'],
 };
 
@@ -464,6 +468,92 @@ function ProductDialog({ onClose, onCreate }: {
         <Field label="Selling price (KSh)" type="number" min={1} value={price} onChange={setPrice} required />
       </div>
       <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || Number(price) <= 0}>Add item</Button></div>
+    </form>
+  </Modal>;
+}
+
+function ProductionRecipeDialog({ products, onClose, onCreate }: {
+  products: Product[];
+  onClose: () => void;
+  onCreate: (input: { name: string; outputProductId: string; ingredients: Array<{ productId: string; quantityPerUnit: number }> }) => void;
+}) {
+  const [name, setName] = useState('');
+  const [outputProductId, setOutputProductId] = useState(products.find(product => product.category === 'Finished goods')?.id || products[0]?.id || '');
+  const ingredientChoices = products.filter(product => product.id !== outputProductId);
+  const [ingredients, setIngredients] = useState(() => {
+    const first = products.find(product => product.id !== outputProductId);
+    return first ? [{ productId: first.id, quantityPerUnit: 1 }] : [];
+  });
+  const updateIngredient = (index: number, patch: Partial<(typeof ingredients)[number]>) => {
+    setIngredients(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  };
+  const addIngredient = () => {
+    const next = ingredientChoices.find(product => !ingredients.some(item => item.productId === product.id));
+    if (next) setIngredients(current => [...current, { productId: next.id, quantityPerUnit: 1 }]);
+  };
+  const usedIds = new Set(ingredients.map(item => item.productId));
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const valid = ingredients.filter(item => item.productId && Number.isFinite(item.quantityPerUnit) && item.quantityPerUnit > 0);
+    if (!name.trim() || !outputProductId || !valid.length || new Set(valid.map(item => item.productId)).size !== valid.length) return;
+    onCreate({ name: name.trim(), outputProductId, ingredients: valid });
+  };
+  return <Modal title="Create production recipe" detail="Define the materials required to make one finished unit. The recipe can be reused for future runs." onClose={onClose} size="lg">
+    <form className="modal-body" onSubmit={submit}>
+      <Field label="Recipe name" value={name} onChange={setName} placeholder="e.g. Soda six-pack assembly" required />
+      <SelectField label="Finished product" value={outputProductId} onChange={value => {
+        setOutputProductId(value);
+        setIngredients(current => current.filter(item => item.productId !== value));
+      }} options={products.map(product => ({ value: product.id, label: product.name + ' · ' + product.sku }))} />
+      <div className="subsection-label">Materials for one finished unit</div>
+      <div className="production-recipe-lines">
+        {ingredients.map((item, index) => {
+          const selected = products.find(product => product.id === item.productId);
+          const options = products.filter(product => product.id === item.productId || (product.id !== outputProductId && !usedIds.has(product.id)));
+          return <div className="production-recipe-line" key={index}>
+            <label className="field">
+              <span className="field-label">Material</span>
+              <select className="field-input" value={item.productId} onChange={event => updateIngredient(index, { productId: event.target.value })}>
+                {options.map(product => <option key={product.id} value={product.id}>{product.name} · {product.unit}</option>)}
+              </select>
+            </label>
+            <Field label={'Quantity per ' + (products.find(product => product.id === outputProductId)?.unit || 'unit')} type="number" min={0.001} step={0.001} value={item.quantityPerUnit} onChange={value => updateIngredient(index, { quantityPerUnit: Math.max(0, Number(value) || 0) })} />
+            <span className="production-line-cost">{money((selected?.costPrice || 0) * item.quantityPerUnit)}</span>
+            {ingredients.length > 1 && <IconButton label="Remove material" onClick={() => setIngredients(current => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></IconButton>}
+          </div>;
+        })}
+      </div>
+      <div className="inline-form-actions">
+        <Button variant="outline" size="sm" onClick={addIngredient} disabled={ingredients.length >= Math.max(0, products.length - 1)}><Plus size={14} /> Add material</Button>
+        <span className="field-hint">Cost is based on the current average cost of each material.</span>
+      </div>
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || !outputProductId || !ingredients.length || ingredients.some(item => !item.productId || item.quantityPerUnit <= 0)}>Save recipe</Button></div>
+    </form>
+  </Modal>;
+}
+
+function ProductionRunDialog({ recipe, products, onClose, onRun }: {
+  recipe: ProductionRecipe; products: Product[]; onClose: () => void; onRun: (quantity: number) => void;
+}) {
+  const [quantity, setQuantity] = useState('1');
+  const output = products.find(product => product.id === recipe.outputProductId);
+  const outputQuantity = Math.max(0, Number(quantity) || 0);
+  const plan = planProductionRun(recipe, products, outputQuantity);
+  return <Modal title="Record production run" detail={'Recipe · ' + recipe.name} onClose={onClose} size="lg">
+    <form className="modal-body" onSubmit={event => { event.preventDefault(); if (plan.valid) onRun(outputQuantity); }}>
+      <div className="production-output-summary">
+        <div><span>Finished product</span><strong>{output?.name || 'Product unavailable'}</strong></div>
+        <div><span>Available now</span><strong>{numberText(output?.quantity || 0)} {output?.unit || ''}</strong></div>
+      </div>
+      <Field label="Finished quantity to produce" type="number" min={0.01} step={0.01} value={quantity} onChange={setQuantity} required />
+      <div className="subsection-label">Materials that will be consumed</div>
+      {plan.valid ? <div className="production-preview-lines">
+        {plan.materials.map(item => <div key={item.productId}><span>{item.name}<small>{numberText(item.quantity)} required · {money(item.unitCost)} per unit</small></span><strong>{money(item.totalCost)}</strong></div>)}
+        <div className="production-preview-total"><span>Total material cost</span><strong>{money(plan.materialCost)}</strong></div>
+        <div className="production-preview-total"><span>Estimated cost per finished unit</span><strong>{money(plan.unitCost)}</strong></div>
+      </div> : <div className="validation-note"><AlertTriangle size={15} /> {plan.reason}</div>}
+      <div className="field-hint">Only materials are costed in this preview. Labour, energy, waste and by-products are not yet included.</div>
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!plan.valid}>Post production</Button></div>
     </form>
   </Modal>;
 }
@@ -1030,6 +1120,50 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
   </div>;
 }
 
+function ProductionPage({ data, onCreateRecipe, onRun }: {
+  data: AppData; onCreateRecipe: () => void; onRun: (recipeId: string) => void;
+}) {
+  const finishedUnits = sum(data.productionRuns.map(run => run.outputQuantity));
+  const materialValue = sum(data.productionRuns.map(run => run.materialCost));
+  return <div className="page-stack">
+    <PageHeader title="Production" description="Turn stocked materials into finished goods. Build a recipe once, then record each production run." actions={<Button onClick={onCreateRecipe}><Plus size={15} /> Create recipe</Button>} />
+    <div className="metric-grid metric-grid-four compact-metrics">
+      <MetricCard label="Saved recipes" value={numberText(data.productionRecipes.length)} note="Repeatable material lists" icon={Boxes} tone="slate" />
+      <MetricCard label="Production runs" value={numberText(data.productionRuns.length)} note="Completed stock conversions" icon={Activity} tone="blue" />
+      <MetricCard label="Finished units" value={numberText(finishedUnits)} note="Added to available stock" icon={Package} tone="green" />
+      <MetricCard label="Materials consumed" value={money(materialValue)} note="Recorded production cost" icon={Receipt} tone="amber" />
+    </div>
+    <SectionCard title="Production recipes" detail="Each recipe states the quantity of materials needed for one finished unit.">
+      {data.productionRecipes.length ? <DataTable headers={['Recipe', 'Finished product', 'Materials per unit', 'Estimated material cost', '']}>
+        {data.productionRecipes.map(recipe => {
+          const output = data.products.find(product => product.id === recipe.outputProductId);
+          const cost = sum(recipe.ingredients.map(item => item.quantityPerUnit * (data.products.find(product => product.id === item.productId)?.costPrice || 0)));
+          return <tr key={recipe.id}>
+            <td><strong>{recipe.name}</strong></td>
+            <td>{output?.name || 'Product removed'}<small className="cell-sub">{output?.sku || ''}</small></td>
+            <td>{recipe.ingredients.map(item => {
+              const product = data.products.find(candidate => candidate.id === item.productId);
+              return product ? numberText(item.quantityPerUnit) + ' ' + product.unit + ' ' + product.name : 'Missing item';
+            }).join(' · ')}</td>
+            <td className="amount-cell">{money(cost)}</td>
+            <td><Button size="sm" variant="outline" onClick={() => onRun(recipe.id)} disabled={!output || !recipe.ingredients.every(item => data.products.some(product => product.id === item.productId))}>Run production</Button></td>
+          </tr>;
+        })}
+      </DataTable> : <EmptyState title="No recipes yet" body="Create a recipe to define the materials used to make a finished product." action={<Button onClick={onCreateRecipe}>Create first recipe</Button>} />}
+    </SectionCard>
+    <SectionCard title="Recent production runs" detail="Completed runs reduce material stock and increase finished product stock.">
+      {data.productionRuns.length ? <DataTable headers={['Run', 'Recipe', 'Date', 'Finished product', 'Quantity', 'Material cost', 'Cost per unit']}>
+        {[...data.productionRuns].sort((a, b) => b.date.localeCompare(a.date)).map(run => <tr key={run.id}>
+          <td><strong>{run.number}</strong></td><td>{run.recipeName}</td><td>{dateLabel(run.date)}</td>
+          <td>{run.outputProductName}</td><td>{numberText(run.outputQuantity)}</td>
+          <td className="amount-cell">{money(run.materialCost)}</td><td className="amount-cell">{money(run.unitCost)}</td>
+        </tr>)}
+      </DataTable> : <EmptyState title="No production runs recorded" body="Run a saved recipe to move stock from materials into finished goods." />}
+    </SectionCard>
+    <div className="accounting-note"><ShieldCheck size={15} /><span>Material costs use the current average cost of the items consumed. This preview does not yet include labour, energy, production waste, by-products or batch-level quality checks.</span></div>
+  </div>;
+}
+
 function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier }: {
   data: AppData; onCreatePurchase: () => void; onReceiveOrder: (id: string) => void; onPaySupplier: (id: string) => void;
 }) {
@@ -1345,7 +1479,7 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
     Owner: 'Business profile, all records and team administration',
     Manager: 'Sales, stock, purchasing and business reports',
     Sales: 'Counter sales, invoices and customer balances',
-    Inventory: 'Product catalogue, stock counts and deliveries',
+    Inventory: 'Product catalogue, production runs, stock counts and deliveries',
     Finance: 'Payments, account balances and financial reports',
   };
   const submitMember = (event: FormEvent) => {
@@ -1846,6 +1980,69 @@ function App() {
     notify('Purchase order created', order.number + ' is ready for supplier follow-up.');
   };
 
+  const createProductionRecipe = (input: { name: string; outputProductId: string; ingredients: Array<{ productId: string; quantityPerUnit: number }> }) => {
+    const output = data.products.find(product => product.id === input.outputProductId);
+    const ingredientIds = new Set(input.ingredients.map(item => item.productId));
+    if (!output || !input.name.trim() || !input.ingredients.length ||
+      input.ingredients.some(item => !data.products.some(product => product.id === item.productId) || item.quantityPerUnit <= 0) ||
+      ingredientIds.size !== input.ingredients.length || ingredientIds.has(input.outputProductId)) {
+      notify('Recipe not saved', 'Choose one finished product and unique materials with quantities greater than zero.');
+      return;
+    }
+    if (data.productionRecipes.some(recipe => recipe.outputProductId === input.outputProductId)) {
+      notify('Recipe already exists', 'This finished product already has a saved recipe in this workspace.');
+      return;
+    }
+    const recipe: ProductionRecipe = { id: makeId('REC'), ...input };
+    setData(current => ({ ...current, productionRecipes: [recipe, ...current.productionRecipes] }));
+    setDialog(null);
+    notify('Production recipe saved', recipe.name + ' is ready for production.');
+  };
+
+  const runProduction = (recipeId: string, outputQuantity: number) => {
+    const recipe = data.productionRecipes.find(item => item.id === recipeId);
+    if (!recipe) return;
+    const plan = planProductionRun(recipe, data.products, outputQuantity);
+    if (!plan.valid) {
+      notify('Production not posted', plan.reason);
+      return;
+    }
+    const runNumber = 'MAKE-' + String(data.nextProductionRun).padStart(3, '0');
+    const run: ProductionRun = {
+      id: makeId('RUN'), number: runNumber, date: today(), recipeId: recipe.id, recipeName: recipe.name,
+      outputProductId: plan.outputProduct.id, outputProductName: plan.outputProduct.name,
+      outputQuantity: plan.outputQuantity, materials: plan.materials,
+      materialCost: plan.materialCost, unitCost: plan.unitCost,
+    };
+    const nextProducts = data.products.map(product => {
+      const consumed = plan.materials.find(item => item.productId === product.id);
+      if (product.id === plan.outputProduct.id) {
+        return {
+          ...product, quantity: product.quantity + plan.outputQuantity,
+          costPrice: weightedAverageUnitCost(product.quantity, product.costPrice, plan.outputQuantity, plan.unitCost),
+          updatedAt: today(),
+        };
+      }
+      if (consumed) return { ...product, quantity: Math.max(0, product.quantity - consumed.quantity), updatedAt: today() };
+      return product;
+    });
+    const next: AppData = {
+      ...data, products: nextProducts,
+      productionRuns: [run, ...data.productionRuns],
+      nextProductionRun: data.nextProductionRun + 1,
+      journal: recordJournal(data, 'Inventory', 'Inventory', plan.materialCost,
+        'Production conversion · ' + run.number, run.number),
+      events: [{
+        id: makeId('EVT'), time: new Date().toISOString(), type: 'production.completed',
+        source: 'Production', status: 'delivered', reference: run.number,
+        detail: numberText(run.outputQuantity) + ' ' + run.outputProductName + ' produced using ' + money(run.materialCost) + ' of materials',
+      }, ...data.events],
+    };
+    setData(next);
+    setDialog(null);
+    notify('Production posted', numberText(run.outputQuantity) + ' ' + run.outputProductName + ' added to stock.');
+  };
+
   const receivePurchaseOrder = (orderId: string, items: Array<{ productId: string; quantity: number }>) => {
     const order = data.purchaseOrders.find(item => item.id === orderId);
     if (!order || order.status === 'received') return;
@@ -2026,6 +2223,7 @@ function App() {
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} />}
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
+        {active === 'production' && <ProductionPage data={data} onCreateRecipe={() => setDialog({ kind: 'production-recipe' })} onRun={recipeId => setDialog({ kind: 'production-run', recipeId })} />}
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} />}
@@ -2041,6 +2239,7 @@ function App() {
         { id: 'sales' as ModuleKey, label: 'Sales', icon: Receipt },
         { id: 'payments' as ModuleKey, label: 'Money', icon: Wallet },
         { id: 'inventory' as ModuleKey, label: 'Stock', icon: Package },
+        { id: 'production' as ModuleKey, label: 'Make', icon: Boxes },
         { id: 'procurement' as ModuleKey, label: 'Orders', icon: ShoppingCart },
       ].filter(item => allowedModules.includes(item.id)).map(item => {
         const Icon = item.icon;
@@ -2054,6 +2253,8 @@ function App() {
     {dialog?.kind === 'match-receipt' && selectedReceipt && <MatchReceiptDialog receipt={selectedReceipt} invoices={data.invoices} onClose={() => setDialog(null)} onMatch={invoiceId => matchUnmatchedReceipt(selectedReceipt.id, invoiceId)} />}
     {dialog?.kind === 'expense' && <ExpenseDialog onClose={() => setDialog(null)} onCreate={createExpense} />}
     {dialog?.kind === 'product' && <ProductDialog onClose={() => setDialog(null)} onCreate={createProduct} />}
+    {dialog?.kind === 'production-recipe' && <ProductionRecipeDialog products={data.products} onClose={() => setDialog(null)} onCreate={createProductionRecipe} />}
+    {dialog?.kind === 'production-run' && data.productionRecipes.find(recipe => recipe.id === dialog.recipeId) && <ProductionRunDialog recipe={data.productionRecipes.find(recipe => recipe.id === dialog.recipeId)!} products={data.products} onClose={() => setDialog(null)} onRun={quantity => runProduction(dialog.recipeId, quantity)} />}
     {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} initialProductId={dialog.productId} initialQuantity={dialog.quantity} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
     {dialog?.kind === 'receive-purchase' && selectedPurchaseOrder && <ReceivePurchaseDialog order={selectedPurchaseOrder} onClose={() => setDialog(null)} onReceive={items => receivePurchaseOrder(selectedPurchaseOrder.id, items)} />}
     {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={amount => paySupplier(selectedSupplier.id, amount)} />}
