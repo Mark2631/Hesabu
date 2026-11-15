@@ -1,21 +1,3 @@
-const roleAccess: Record<TeamRole, ModuleKey[]> = {
-  Owner: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'settings', 'more'],
-  Manager: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'more'],
-  Sales: ['overview', 'sales', 'payments', 'reports', 'more'],
-  Inventory: ['overview', 'inventory', 'procurement', 'more'],
-  Finance: ['overview', 'sales', 'payments', 'accounts', 'reports', 'more'],
-};
-
-const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: string; icon: LucideIcon }> }> = [
-  { title: 'WORKSPACE', items: [
-    { id: 'overview', label: 'Home', icon: LayoutDashboard },
-    { id: 'sales', label: 'Sales', icon: Receipt },
-    { id: 'payments', label: 'Money', icon: Wallet },
-    { id: 'inventory', label: 'Stock', icon: Package },
-    { id: 'more', label: 'More', icon: MoreHorizontal },
-  ] },
-];
-
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   Activity, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, BookOpen,
@@ -52,6 +34,16 @@ type DialogState =
   | { kind: 'profile' }
   | null;
 
+const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: string; icon: LucideIcon }> }> = [
+  { title: 'WORKSPACE', items: [
+    { id: 'overview', label: 'Home', icon: LayoutDashboard },
+    { id: 'sales', label: 'Sales', icon: Receipt },
+    { id: 'payments', label: 'Money', icon: Wallet },
+    { id: 'inventory', label: 'Stock', icon: Package },
+    { id: 'more', label: 'More', icon: MoreHorizontal },
+  ] },
+];
+
 const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
   overview: { title: 'Business overview', description: 'A live view of the money, stock and obligations moving through your business.' },
   sales: { title: 'Sales & invoices', description: 'Every sale, invoice and outstanding customer balance in one register.' },
@@ -64,6 +56,14 @@ const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
   settings: { title: 'Team & settings', description: 'Manage your business profile and the people who run it.' },
   more: { title: 'More', description: 'Supplier orders, reports, financial records and workspace preferences.' },
 
+};
+
+const roleAccess: Record<TeamRole, ModuleKey[]> = {
+  Owner: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'settings', 'more'],
+  Manager: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'more'],
+  Sales: ['overview', 'sales', 'payments', 'reports', 'more'],
+  Inventory: ['overview', 'inventory', 'procurement', 'more'],
+  Finance: ['overview', 'sales', 'payments', 'accounts', 'reports', 'more'],
 };
 
 const money = (value: number) => new Intl.NumberFormat('en-KE', {
