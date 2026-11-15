@@ -16,6 +16,11 @@ test('demo workspace has a complete operating record', () => {
   assert.ok(data.unmatchedReceipts.every((receipt) => receipt.amount > 0 && receipt.reference.length > 0));
   assert.ok(data.purchaseOrders.length >= 2);
   assert.ok(Array.isArray(data.cashMovements));
+  assert.ok(data.productionRecipes.length >= 1);
+  for (const recipe of data.productionRecipes) {
+    assert.ok(data.products.some(product => product.id === recipe.outputProductId));
+    assert.ok(recipe.ingredients.every(item => data.products.some(product => product.id === item.productId)));
+  }
 });
 
 test('invoice totals reconcile to the underlying item lines', () => {
