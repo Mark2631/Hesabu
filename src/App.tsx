@@ -1632,10 +1632,10 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
         </DataTable>
       </> : <div className="settings-preferences">
         <section className="preference-block">
-          <div><strong>Appearance</strong><p>Dark is the default. Change to light mode for this browser.</p></div>
+          <div><strong>Appearance</strong><p>White is the default. Choose dark mode if you prefer a darker workspace.</p></div>
           <div className="theme-choice-group">
-            <button type="button" className={theme === 'dark' ? 'theme-choice theme-choice-active' : 'theme-choice'} onClick={() => onThemeChange('dark')}><Moon size={19} /><span><strong>Dark</strong><small>Default</small></span></button>
-            <button type="button" className={theme === 'light' ? 'theme-choice theme-choice-active' : 'theme-choice'} onClick={() => onThemeChange('light')}><Sun size={19} /><span><strong>Light</strong><small>Bright workspace</small></span></button>
+            <button type="button" className={theme === 'dark' ? 'theme-choice theme-choice-active' : 'theme-choice'} onClick={() => onThemeChange('dark')}><Moon size={19} /><span><strong>Dark</strong><small>Dark workspace</small></span></button>
+            <button type="button" className={theme === 'light' ? 'theme-choice theme-choice-active' : 'theme-choice'} onClick={() => onThemeChange('light')}><Sun size={19} /><span><strong>Light</strong><small>Default</small></span></button>
           </div>
         </section>
         <section className="preference-block">
@@ -1701,8 +1701,8 @@ function recordJournal(
 function App() {
   const [data, setData] = useState<AppData>(() => readWorkspace());
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    try { return localStorage.getItem('hesabu:theme') === 'light' ? 'light' : 'dark'; }
-    catch { return 'dark'; }
+    try { return localStorage.getItem('hesabu:theme:v2') === 'dark' ? 'dark' : 'light'; }
+    catch { return 'light'; }
   });
   const [activeMemberId, setActiveMemberId] = useState('team-001');
   const [userSwitcherOpen, setUserSwitcherOpen] = useState(false);
@@ -1718,7 +1718,7 @@ function App() {
   useEffect(() => { saveWorkspace(data); }, [data]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('hesabu:theme', theme); } catch { /* Keep this session's theme. */ }
+    try { localStorage.setItem('hesabu:theme:v2', theme); } catch { /* Keep this session's theme. */ }
   }, [theme]);
 
   const metrics = useMemo(() => getMetrics(data), [data]);
