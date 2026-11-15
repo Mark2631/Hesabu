@@ -898,7 +898,7 @@ function getWorkspaceAnswer(data: AppData, question: string) {
     '. Ask about stock, unpaid customer balances, expenses or best-selling products for a more specific view.';
 }
 
-function FloatingAssistant({ data }: { data: AppData }) {
+function FloatingAssistant({ data, onRecordSale, onRecordExpense, onUpdateStock }: { data: AppData; onRecordSale: () => void; onRecordExpense: () => void; onUpdateStock: () => void }) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
@@ -919,6 +919,14 @@ function FloatingAssistant({ data }: { data: AppData }) {
       <div className="assistant-drawer-body">
         <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>I can summarise the sales, balances and stock records currently saved in this browser.</p></div>
         <div className="assistant-suggestions">{suggestions.map(item => <button key={item} type="button" onClick={() => ask(item)}>{item}<ArrowRight size={13} /></button>)}</div>
+        <div className="assistant-quick-actions">
+          <span>Record something</span>
+          <div>
+            <button type="button" onClick={() => { setOpen(false); onRecordSale(); }}><Receipt size={14} /> Sale</button>
+            <button type="button" onClick={() => { setOpen(false); onRecordExpense(); }}><TrendingDown size={14} /> Expense</button>
+            <button type="button" onClick={() => { setOpen(false); onUpdateStock(); }}><Package size={14} /> Stock</button>
+          </div>
+        </div>
         {question && <div className="assistant-answer" aria-live="polite"><span className="assistant-question">{question}</span><p>{answer}</p></div>}
       </div>
       <form className="assistant-drawer-entry" onSubmit={event => { event.preventDefault(); ask(question); }}>
@@ -2454,7 +2462,12 @@ function App() {
       })}
     </nav>
 
-    <FloatingAssistant data={data} />
+    <FloatingAssistant
+      data={data}
+      onRecordSale={() => setDialog({ kind: 'sale' })}
+      onRecordExpense={() => setDialog({ kind: 'expense' })}
+      onUpdateStock={() => setDialog({ kind: 'stock-picker' })}
+    />
 
     {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} />}
     {dialog?.kind === 'stk' && <StkDialog invoices={data.invoices} initialInvoiceId={dialog.invoiceId} onClose={() => setDialog(null)} onCreate={createPaymentRequest} />}
