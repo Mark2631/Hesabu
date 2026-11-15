@@ -25,11 +25,14 @@ The build/platform-foundation branch contains a front-end product preview built 
 - Local interactions for recording sales, creating invoices, requesting and resolving sample payment requests, adding and matching receipts, recording expenses, stock counts, multi-line purchase orders, partial goods receiving, supplier payments, reusable production recipes and production runs.
 - Balanced journal-pair posting, a trial-balance control, weighted-average cost on stock receipts, separate treatment of unapplied customer receipts as customer advances, and ledger entries for opening stock.
 - Supplier settlements reduce bank cash and accounts payable; they are not treated as operating expenses.
-- Derived dashboard and report values.
+- Derived dashboard and report values, including period sales, average daily sales, average sale value, gross profit, margin rate and units sold.
 - Browser-local persistence under hesabu:platform:v3. The new key intentionally starts a fresh seeded workspace without deleting older local browser records.
-- Responsive desktop, tablet and mobile navigation.
+- Responsive desktop, tablet and mobile navigation, with value sizes that adapt to card width rather than truncating long currency amounts.
+- A quill-inspired Hesabu brand mark and a sign-in / account-creation entry screen. The entry screen is currently presentation-only; preview access is local and does not authenticate or create a cloud account.
+- A floating workspace assistant with record-based answers for sales, stock, expenses and customer balances, plus shortcuts to the existing sale, expense and stock-entry forms. Generative AI, voice capture and automatic record posting are not connected.
+- A configurable WhatsApp destination for a prepared daily digest. This uses WhatsApp click-to-chat; the operator must review and send the message. Automatic scheduled sending requires a WhatsApp Business API integration and a secure server-side sender.
 
-The preview is deliberately local-first while the production database is not connected. Data only persists in the current browser. It is not yet multi-user, multi-branch, cloud-synchronised or suitable for real financial operations. Seeded values are representative demo figures, not audited opening balances.
+The preview is deliberately local-first while the production database and identity provider are not connected. Data only persists in the current browser. It is not yet multi-user, multi-branch, cloud-synchronised or suitable for real financial operations. Seeded values are representative demo figures, not audited opening balances.
 
 ## Daraja and settlement design
 
