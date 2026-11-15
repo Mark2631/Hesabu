@@ -1014,12 +1014,12 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
         <span className="table-count">{list.length} products</span>
       </div>
       {list.length ? <DataTable headers={['Product', 'On hand', 'Sold · 30d', 'On order', 'Days cover', 'Cost', 'Selling price', 'Unit margin', 'Status', 'Action']}>
-        {list.map(({ product, unitsSold, daysCover, onOrder, suggestedOrder, needsAttention, slowMoving }) => {
+        {list.map(({ product, unitsSold, daysCover, onOrder: incomingUnits, suggestedOrder, needsAttention, slowMoving }) => {
           const status = product.quantity === 0 ? 'Out of stock' : needsAttention ? 'Reorder soon' : slowMoving ? 'Slow moving' : 'In stock';
           return <tr key={product.id}>
             <td><strong>{product.name}</strong><small className="cell-sub mono-text">{product.sku}</small></td>
             <td><strong>{numberText(product.quantity)}</strong> <small>{product.unit}</small></td><td>{numberText(unitsSold)}</td>
-            <td>{numberText(onOrder)}</td><td>{daysCover === null ? 'No history' : Math.floor(daysCover) + ' days'}</td>
+            <td>{numberText(incomingUnits)}</td><td>{daysCover === null ? 'No history' : Math.floor(daysCover) + ' days'}</td>
             <td>{money(product.costPrice)}</td><td>{money(product.sellingPrice)}</td>
             <td className="amount-cell">{money(product.sellingPrice - product.costPrice)}</td>
             <td><StatusPill status={product.quantity === 0 ? 'failed' : needsAttention ? 'pending' : slowMoving ? 'draft' : 'delivered'}>{status}</StatusPill></td>
