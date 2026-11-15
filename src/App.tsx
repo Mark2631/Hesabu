@@ -1,20 +1,38 @@
+const roleAccess: Record<TeamRole, ModuleKey[]> = {
+  Owner: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'settings', 'more'],
+  Manager: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'more'],
+  Sales: ['overview', 'sales', 'payments', 'reports', 'more'],
+  Inventory: ['overview', 'inventory', 'procurement', 'more'],
+  Finance: ['overview', 'sales', 'payments', 'accounts', 'reports', 'more'],
+};
+
+const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: string; icon: LucideIcon }> }> = [
+  { title: 'WORKSPACE', items: [
+    { id: 'overview', label: 'Home', icon: LayoutDashboard },
+    { id: 'sales', label: 'Sales', icon: Receipt },
+    { id: 'payments', label: 'Money', icon: Wallet },
+    { id: 'inventory', label: 'Stock', icon: Package },
+    { id: 'more', label: 'More', icon: MoreHorizontal },
+  ] },
+];
+
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   Activity, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, BookOpen,
   Bell, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown,
   ChevronRight, CircleDollarSign, Clock3, Download,
-  FileCheck2, FileText, Filter, LayoutDashboard, Link2,
+  FileCheck2, FileSpreadsheet, FileText, Filter, LayoutDashboard, Link2, MessageCircle, Moon, Sun, Sparkles,
   Menu, MoreHorizontal, Package, PanelLeftClose, Plus, Receipt,
   Search, Send, Settings, ShieldCheck, ShoppingCart, Smartphone,
   Store, TrendingDown, TrendingUp, Truck, Wallet, X,
   type LucideIcon,
 } from 'lucide-react';
-import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planProductionRun, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
+import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
   NewPaymentInput, NewPurchaseInput, NewUnmatchedReceiptInput, Payment, PaymentChannel, Product,
-  PurchaseOrder, ReceiptRail, Supplier, TeamMember, TeamRole, UnmatchedReceipt, ProductionRecipe, ProductionRun,
+  PurchaseOrder, ReceiptRail, Supplier, TeamMember, TeamRole, UnmatchedReceipt,
 } from './types';
 
 type Notice = { title: string; detail?: string } | null;
@@ -26,34 +44,13 @@ type DialogState =
   | { kind: 'expense' }
   | { kind: 'product' }
   | { kind: 'purchase'; productId?: string; quantity?: number }
-  | { kind: 'production-recipe' }
-  | { kind: 'production-run'; recipeId: string }
   | { kind: 'receive-purchase'; purchaseOrderId: string }
   | { kind: 'invoice'; invoiceId: string }
   | { kind: 'supplier-payment'; supplierId: string }
   | { kind: 'adjust'; productId: string }
+  | { kind: 'stock-picker' }
   | { kind: 'profile' }
   | null;
-
-const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: string; icon: LucideIcon }> }> = [
-  { title: 'WORKSPACE', items: [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'sales', label: 'Sales & invoices', icon: Receipt },
-    { id: 'payments', label: 'Payments', icon: CircleDollarSign },
-    { id: 'inventory', label: 'Inventory', icon: Package },
-    { id: 'production', label: 'Production', icon: Boxes },
-    { id: 'procurement', label: 'Purchasing', icon: ShoppingCart },
-  ] },
-  { title: 'BUSINESS', items: [
-    { id: 'accounts', label: 'Financials', icon: BookOpen },
-    { id: 'reports', label: 'Reports', icon: BarChart3 },
-  ] },
-  { title: 'ADMIN', items: [
-    { id: 'integrations', label: 'Sales channels', icon: Link2 },
-    { id: 'settings', label: 'Team & settings', icon: Settings },
-  ] },
-];
-
 
 const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
   overview: { title: 'Business overview', description: 'A live view of the money, stock and obligations moving through your business.' },
@@ -61,20 +58,12 @@ const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
   payments: { title: 'Payments', description: 'See what customers have paid and what still needs attention.' },
   inventory: { title: 'Inventory', description: 'Know what is on hand, what is moving and what needs to be reordered.' },
   procurement: { title: 'Purchasing', description: 'Replenish stock, manage suppliers and follow deliveries.' },
-  production: { title: 'Production', description: 'Turn stocked materials into finished goods using repeatable recipes.' },
   accounts: { title: 'Financials', description: 'Understand cash, customer balances, supplier commitments and profit.' },
   reports: { title: 'Reports', description: 'Understand trading performance, cash movement and working capital.' },
   integrations: { title: 'Sales channels', description: 'Bring in-store, online and wholesale orders into one business view.' },
   settings: { title: 'Team & settings', description: 'Manage your business profile and the people who run it.' },
+  more: { title: 'More', description: 'Supplier orders, reports, financial records and workspace preferences.' },
 
-};
-
-const roleAccess: Record<TeamRole, ModuleKey[]> = {
-  Owner: ['overview', 'sales', 'payments', 'inventory', 'production', 'procurement', 'accounts', 'reports', 'integrations', 'settings'],
-  Manager: ['overview', 'sales', 'payments', 'inventory', 'production', 'procurement', 'accounts', 'reports', 'integrations'],
-  Sales: ['overview', 'sales', 'payments'],
-  Inventory: ['overview', 'inventory', 'production', 'procurement'],
-  Finance: ['overview', 'sales', 'payments', 'accounts', 'reports'],
 };
 
 const money = (value: number) => new Intl.NumberFormat('en-KE', {
@@ -472,152 +461,6 @@ function ProductDialog({ onClose, onCreate }: {
   </Modal>;
 }
 
-function ProductionRecipeDialog({ products, onClose, onCreate }: {
-  products: Product[];
-  onClose: () => void;
-  onCreate: (input: { name: string; outputProductId: string; ingredients: Array<{ productId: string; quantityPerUnit: number }> }) => void;
-}) {
-  const [name, setName] = useState('');
-  const [outputProductId, setOutputProductId] = useState(products.find(product => product.category === 'Finished goods')?.id || products[0]?.id || '');
-  const ingredientChoices = products.filter(product => product.id !== outputProductId);
-  const [ingredients, setIngredients] = useState(() => {
-    const first = products.find(product => product.id !== outputProductId);
-    return first ? [{ productId: first.id, quantityPerUnit: 1 }] : [];
-  });
-  const updateIngredient = (index: number, patch: Partial<(typeof ingredients)[number]>) => {
-    setIngredients(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
-  };
-  const addIngredient = () => {
-    const next = ingredientChoices.find(product => !ingredients.some(item => item.productId === product.id));
-    if (next) setIngredients(current => [...current, { productId: next.id, quantityPerUnit: 1 }]);
-  };
-  const usedIds = new Set(ingredients.map(item => item.productId));
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const valid = ingredients.filter(item => item.productId && Number.isFinite(item.quantityPerUnit) && item.quantityPerUnit > 0);
-    if (!name.trim() || !outputProductId || !valid.length || new Set(valid.map(item => item.productId)).size !== valid.length) return;
-    onCreate({ name: name.trim(), outputProductId, ingredients: valid });
-  };
-  return <Modal title="Create production recipe" detail="Define the materials required to make one finished unit. The recipe can be reused for future runs." onClose={onClose} size="lg">
-    <form className="modal-body" onSubmit={submit}>
-      <Field label="Recipe name" value={name} onChange={setName} placeholder="e.g. Soda six-pack assembly" required />
-      <SelectField label="Finished product" value={outputProductId} onChange={value => {
-        setOutputProductId(value);
-        setIngredients(current => current.filter(item => item.productId !== value));
-      }} options={products.map(product => ({ value: product.id, label: product.name + ' · ' + product.sku }))} />
-      <div className="subsection-label">Materials for one finished unit</div>
-      <div className="production-recipe-lines">
-        {ingredients.map((item, index) => {
-          const selected = products.find(product => product.id === item.productId);
-          const options = products.filter(product => product.id === item.productId || (product.id !== outputProductId && !usedIds.has(product.id)));
-          return <div className="production-recipe-line" key={index}>
-            <label className="field">
-              <span className="field-label">Material</span>
-              <select className="field-input" value={item.productId} onChange={event => updateIngredient(index, { productId: event.target.value })}>
-                {options.map(product => <option key={product.id} value={product.id}>{product.name} · {product.unit}</option>)}
-              </select>
-            </label>
-            <Field label={'Quantity per ' + (products.find(product => product.id === outputProductId)?.unit || 'unit')} type="number" min={0.001} step={0.001} value={item.quantityPerUnit} onChange={value => updateIngredient(index, { quantityPerUnit: Math.max(0, Number(value) || 0) })} />
-            <span className="production-line-cost">{money((selected?.costPrice || 0) * item.quantityPerUnit)}</span>
-            {ingredients.length > 1 && <IconButton label="Remove material" onClick={() => setIngredients(current => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></IconButton>}
-          </div>;
-        })}
-      </div>
-      <div className="inline-form-actions">
-        <Button variant="outline" size="sm" onClick={addIngredient} disabled={ingredients.length >= Math.max(0, products.length - 1)}><Plus size={14} /> Add material</Button>
-        <span className="field-hint">Cost is based on the current average cost of each material.</span>
-      </div>
-      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || !outputProductId || !ingredients.length || ingredients.some(item => !item.productId || item.quantityPerUnit <= 0)}>Save recipe</Button></div>
-    </form>
-  </Modal>;
-}
-
-function ProductionRunDialog({ recipe, products, onClose, onRun }: {
-  recipe: ProductionRecipe; products: Product[]; onClose: () => void; onRun: (quantity: number) => void;
-}) {
-  const [quantity, setQuantity] = useState('1');
-  const output = products.find(product => product.id === recipe.outputProductId);
-  const outputQuantity = Math.max(0, Number(quantity) || 0);
-  const plan = planProductionRun(recipe, products, outputQuantity);
-  return <Modal title="Record production run" detail={'Recipe · ' + recipe.name} onClose={onClose} size="lg">
-    <form className="modal-body" onSubmit={event => { event.preventDefault(); if (plan.valid) onRun(outputQuantity); }}>
-      <div className="production-output-summary">
-        <div><span>Finished product</span><strong>{output?.name || 'Product unavailable'}</strong></div>
-        <div><span>Available now</span><strong>{numberText(output?.quantity || 0)} {output?.unit || ''}</strong></div>
-      </div>
-      <Field label="Finished quantity to produce" type="number" min={0.01} step={0.01} value={quantity} onChange={setQuantity} required />
-      <div className="subsection-label">Materials that will be consumed</div>
-      {plan.valid ? <div className="production-preview-lines">
-        {plan.materials.map(item => <div key={item.productId}><span>{item.name}<small>{numberText(item.quantity)} required · {money(item.unitCost)} per unit</small></span><strong>{money(item.totalCost)}</strong></div>)}
-        <div className="production-preview-total"><span>Total material cost</span><strong>{money(plan.materialCost)}</strong></div>
-        <div className="production-preview-total"><span>Estimated cost per finished unit</span><strong>{money(plan.unitCost)}</strong></div>
-      </div> : <div className="validation-note"><AlertTriangle size={15} /> {plan.reason}</div>}
-      <div className="field-hint">Only materials are costed in this preview. Labour, energy, waste and by-products are not yet included.</div>
-      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!plan.valid}>Post production</Button></div>
-    </form>
-  </Modal>;
-}
-
-function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity, onClose, onCreate }: {
-  suppliers: Supplier[]; products: Product[]; initialProductId?: string; initialQuantity?: number;
-  onClose: () => void; onCreate: (input: NewPurchaseInput) => void;
-}) {
-  const initialProduct = products.find(product => product.id === initialProductId) || products[0];
-  const [supplierId, setSupplierId] = useState(suppliers.find(item => item.id === initialProduct?.supplierId)?.id || suppliers[0]?.id || '');
-  const [expectedAt, setExpectedAt] = useState(addDays(today(), 2));
-  const [items, setItems] = useState(() => initialProduct ? [{
-    productId: initialProduct.id, quantity: Math.max(1, initialQuantity || 10), unitCost: initialProduct.costPrice,
-  }] : []);
-  const updateItem = (index: number, patch: Partial<(typeof items)[number]>) => {
-    setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
-  };
-  const addItem = () => {
-    const product = products.find(candidate => !items.some(item => item.productId === candidate.id));
-    if (product) setItems(current => [...current, { productId: product.id, quantity: 1, unitCost: product.costPrice }]);
-  };
-  const total = sum(items.map(item => item.quantity * item.unitCost));
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const valid = items.filter(item => item.productId && item.quantity > 0 && item.unitCost > 0);
-    if (supplierId && valid.length) onCreate({ supplierId, expectedAt, items: valid });
-  };
-  return <Modal title="Create purchase order" detail="Build a supplier order with multiple lines. Inventory and accounts payable update when goods are received." onClose={onClose} size="lg">
-    <form className="modal-body" onSubmit={submit}>
-      <SelectField label="Supplier" value={supplierId} onChange={setSupplierId} options={suppliers.map(item => ({ value: item.id, label: item.name }))} />
-      <div className="subsection-label">Order items</div>
-      <div className="sale-items">
-        {items.map((item, index) => {
-          const selected = products.find(product => product.id === item.productId);
-          const available = products.filter(product => product.id === item.productId || !items.some(other => other.productId === product.id));
-          return <div className="purchase-item-row" key={index}>
-            <label className="field purchase-product-field">
-              <span className="field-label">Product</span>
-              <select className="field-input" value={item.productId} onChange={event => {
-                const product = products.find(candidate => candidate.id === event.target.value);
-                if (product) updateItem(index, { productId: product.id, unitCost: product.costPrice });
-              }}>
-                {available.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}
-              </select>
-            </label>
-            <Field label="Qty" type="number" min={1} value={item.quantity} onChange={value => updateItem(index, { quantity: Math.max(1, Number(value) || 1) })} />
-            <Field label="Unit cost" type="number" min={1} value={item.unitCost} onChange={value => updateItem(index, { unitCost: Math.max(0, Number(value) || 0) })} />
-            <div className="sale-line-total"><span>Line total</span><strong>{money(selected ? item.quantity * item.unitCost : 0)}</strong></div>
-            {items.length > 1 && <IconButton label="Remove item" onClick={() => setItems(current => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></IconButton>}
-          </div>;
-        })}
-      </div>
-      <div className="inline-form-actions">
-        <Button variant="outline" size="sm" onClick={addItem} disabled={items.length >= products.length}><Plus size={14} /> Add another item</Button>
-        <span className="field-hint">Each line retains its purchase cost for stock valuation.</span>
-      </div>
-      <Field label="Expected delivery date" type="date" value={expectedAt} onChange={setExpectedAt} />
-      <div className="dialog-total"><span className="dialog-total-final"><span>Purchase order total</span><strong>{money(total)}</strong></span></div>
-      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!supplierId || !items.length || total <= 0}>Create purchase order</Button></div>
-    </form>
-  </Modal>;
-}
-
-
 function ReceivePurchaseDialog({ order, onClose, onReceive }: {
   order: PurchaseOrder;
   onClose: () => void;
@@ -848,9 +691,47 @@ function AdjustStockDialog({ product, onClose, onAdjust }: {
   </Modal>;
 }
 
-function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice, onRecordExpense }: {
+function StockPickerDialog({ products, onClose, onSelect }: {
+  products: Product[]; onClose: () => void; onSelect: (productId: string) => void;
+}) {
+  const [productId, setProductId] = useState(products[0]?.id || '');
+  const product = products.find(item => item.id === productId);
+  return <Modal title="Update stock" detail="Choose the item you have counted or received." onClose={onClose}>
+    <div className="modal-body">
+      <SelectField label="Product" value={productId} onChange={setProductId} options={products.map(item => ({
+        value: item.id, label: item.name + ' · ' + numberText(item.quantity) + ' ' + item.unit,
+      }))} />
+      {product && <div className="stock-picker-current"><span>Current recorded quantity</span><strong>{numberText(product.quantity)} {product.unit}</strong></div>}
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={() => product && onSelect(product.id)} disabled={!product}>Continue</Button></div>
+    </div>
+  </Modal>;
+}
+
+function AssistantPanel() {
+  const [request, setRequest] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const examples = ['Sold 3 packets of sugar for KSh 525 via M-Pesa', 'Paid KSh 900 for transport in cash'];
+  return <section className="assistant-panel">
+    <div className="assistant-panel-heading">
+      <div className="assistant-title"><span className="assistant-mark"><Sparkles size={18} /></span><div><strong>Hesabu assistant</strong><small>Record business activity in everyday language</small></div></div>
+      <span className="assistant-status">AI connection pending</span>
+    </div>
+    <form className="assistant-entry" onSubmit={event => { event.preventDefault(); if (request.trim()) setSubmitted(true); }}>
+      <textarea value={request} onChange={event => { setRequest(event.target.value); setSubmitted(false); }} rows={2}
+        placeholder="For example: Sold 2 crates of soda for KSh 2,400, paid by M-Pesa…" />
+      <Button type="submit" disabled={!request.trim()}><Sparkles size={15} /> Prepare action</Button>
+    </form>
+    <div className="assistant-examples"><span>Try an example</span>
+      {examples.map(example => <button type="button" key={example} onClick={() => { setRequest(example); setSubmitted(false); }}>{example}</button>)}
+    </div>
+    {submitted && <p className="assistant-feedback" role="status">Request captured in this preview. AI processing is not connected yet, so no sale, expense or stock record has been changed.</p>}
+  </section>;
+}
+
+function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice, onRecordExpense, onRecordPayment, onCreatePurchase, onQuickStock }: {
   data: AppData; metrics: ReturnType<typeof getMetrics>; onCreateSale: () => void;
   onNavigate: (section: ModuleKey) => void; onSelectInvoice: (id: string) => void; onRecordExpense: () => void;
+  onRecordPayment: () => void; onCreatePurchase: () => void; onQuickStock: () => void;
 }) {
   const chartDays = Array.from({ length: 7 }, (_, index) => addDays(today(), index - 6));
   const chartValues = chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
@@ -869,7 +750,6 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
       <div><div className="eyebrow">BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Here is what needs your attention today.</p></div>
       <div className="overview-welcome-actions">
         <span className="date-chip"><CalendarDays size={14} /> {dateLabel(today())}</span>
-        <Button variant="outline" onClick={onRecordExpense}>Record expense</Button>
         <Button onClick={onCreateSale}><Plus size={15} /> Record sale</Button>
       </div>
     </div>
@@ -879,6 +759,17 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
       <MetricCard label="Stock at cost" value={money(metrics.inventoryValue)} note={lowStock.length + ' products need attention'} icon={Boxes} tone="slate" />
       <MetricCard label="Customer balances" value={money(metrics.receivables)} note={metrics.unpaidInvoices + ' unpaid invoices'} icon={ArrowDownLeft} tone="amber" />
     </div>
+    <section className="quick-actions-section">
+      <div className="quick-actions-heading"><strong>Quick actions</strong><span>Common records, one tap away</span></div>
+      <div className="quick-action-grid">
+        <button type="button" className="quick-action-card" onClick={onCreateSale}><span><Receipt size={20} /></span><strong>New sale</strong><small>Record items sold</small></button>
+        <button type="button" className="quick-action-card" onClick={onRecordExpense}><span><TrendingDown size={20} /></span><strong>Add expense</strong><small>Record money spent</small></button>
+        <button type="button" className="quick-action-card" onClick={onRecordPayment}><span><Wallet size={20} /></span><strong>Record payment</strong><small>Capture money received</small></button>
+        <button type="button" className="quick-action-card" onClick={onCreatePurchase}><span><ShoppingCart size={20} /></span><strong>Supplier order</strong><small>Order stock quickly</small></button>
+        <button type="button" className="quick-action-card" onClick={onQuickStock}><span><Package size={20} /></span><strong>Update stock</strong><small>Correct a product count</small></button>
+      </div>
+    </section>
+    <AssistantPanel />
     <div className="content-grid content-grid-main">
       <SectionCard title="Sales trend" detail="Recorded sales over the last seven days.">
         <div className="chart-summary"><strong>{money(sum(chartValues))}</strong><span>Last 7 days</span></div>
@@ -1120,50 +1011,6 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
   </div>;
 }
 
-function ProductionPage({ data, onCreateRecipe, onRun }: {
-  data: AppData; onCreateRecipe: () => void; onRun: (recipeId: string) => void;
-}) {
-  const finishedUnits = sum(data.productionRuns.map(run => run.outputQuantity));
-  const materialValue = sum(data.productionRuns.map(run => run.materialCost));
-  return <div className="page-stack">
-    <PageHeader title="Production" description="Turn stocked materials into finished goods. Build a recipe once, then record each production run." actions={<Button onClick={onCreateRecipe}><Plus size={15} /> Create recipe</Button>} />
-    <div className="metric-grid metric-grid-four compact-metrics">
-      <MetricCard label="Saved recipes" value={numberText(data.productionRecipes.length)} note="Repeatable material lists" icon={Boxes} tone="slate" />
-      <MetricCard label="Production runs" value={numberText(data.productionRuns.length)} note="Completed stock conversions" icon={Activity} tone="blue" />
-      <MetricCard label="Finished units" value={numberText(finishedUnits)} note="Added to available stock" icon={Package} tone="green" />
-      <MetricCard label="Materials consumed" value={money(materialValue)} note="Recorded production cost" icon={Receipt} tone="amber" />
-    </div>
-    <SectionCard title="Production recipes" detail="Each recipe states the quantity of materials needed for one finished unit.">
-      {data.productionRecipes.length ? <DataTable headers={['Recipe', 'Finished product', 'Materials per unit', 'Estimated material cost', '']}>
-        {data.productionRecipes.map(recipe => {
-          const output = data.products.find(product => product.id === recipe.outputProductId);
-          const cost = sum(recipe.ingredients.map(item => item.quantityPerUnit * (data.products.find(product => product.id === item.productId)?.costPrice || 0)));
-          return <tr key={recipe.id}>
-            <td><strong>{recipe.name}</strong></td>
-            <td>{output?.name || 'Product removed'}<small className="cell-sub">{output?.sku || ''}</small></td>
-            <td>{recipe.ingredients.map(item => {
-              const product = data.products.find(candidate => candidate.id === item.productId);
-              return product ? numberText(item.quantityPerUnit) + ' ' + product.unit + ' ' + product.name : 'Missing item';
-            }).join(' · ')}</td>
-            <td className="amount-cell">{money(cost)}</td>
-            <td><Button size="sm" variant="outline" onClick={() => onRun(recipe.id)} disabled={!output || !recipe.ingredients.every(item => data.products.some(product => product.id === item.productId))}>Run production</Button></td>
-          </tr>;
-        })}
-      </DataTable> : <EmptyState title="No recipes yet" body="Create a recipe to define the materials used to make a finished product." action={<Button onClick={onCreateRecipe}>Create first recipe</Button>} />}
-    </SectionCard>
-    <SectionCard title="Recent production runs" detail="Completed runs reduce material stock and increase finished product stock.">
-      {data.productionRuns.length ? <DataTable headers={['Run', 'Recipe', 'Date', 'Finished product', 'Quantity', 'Material cost', 'Cost per unit']}>
-        {[...data.productionRuns].sort((a, b) => b.date.localeCompare(a.date)).map(run => <tr key={run.id}>
-          <td><strong>{run.number}</strong></td><td>{run.recipeName}</td><td>{dateLabel(run.date)}</td>
-          <td>{run.outputProductName}</td><td>{numberText(run.outputQuantity)}</td>
-          <td className="amount-cell">{money(run.materialCost)}</td><td className="amount-cell">{money(run.unitCost)}</td>
-        </tr>)}
-      </DataTable> : <EmptyState title="No production runs recorded" body="Run a saved recipe to move stock from materials into finished goods." />}
-    </SectionCard>
-    <div className="accounting-note"><ShieldCheck size={15} /><span>Material costs use the current average cost of the items consumed. This preview does not yet include labour, energy, production waste, by-products or batch-level quality checks.</span></div>
-  </div>;
-}
-
 function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier }: {
   data: AppData; onCreatePurchase: () => void; onReceiveOrder: (id: string) => void; onPaySupplier: (id: string) => void;
 }) {
@@ -1294,8 +1141,116 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
         </DataTable>
       </>}
     </SectionCard>
-    <div className="accounting-note"><ShieldCheck size={16} /><span>Journal entries in this preview demonstrate the accounting model. Before production, account mappings, tax treatment, inventory costing and period-close controls need formal validation by an accountant.</span></div>
+    <div className="accounting-note"><ShieldCheck size={16} /><span>Journal entries in this preview demonstrate the accounting model. Before relying on these records, account mappings, tax treatment, inventory costing and period-close controls need formal validation by an accountant.</span></div>
   </div>;
+}
+
+const DAILY_DIGEST_WHATSAPP = '254745706087';
+
+function getDailyDigest(data: AppData) {
+  const date = today();
+  const sales = data.invoices.filter(invoice => invoice.date === date);
+  const payments = data.payments.filter(payment => payment.status === 'succeeded' && dateKey(new Date(payment.createdAt)) === date);
+  const unmatchedReceipts = data.unmatchedReceipts.filter(receipt => dateKey(new Date(receipt.receivedAt)) === date);
+  const expenses = data.expenses.filter(expense => expense.date === date);
+  const supplierPayments = (data.cashMovements ?? []).filter(movement => movement.date === date && movement.source === 'supplier_payment');
+  const purchaseOrders = data.purchaseOrders.filter(order => order.createdAt === date);
+  const inventoryActivity = data.events.filter(event => dateKey(new Date(event.time)) === date && event.type.startsWith('inventory.'));
+  const salesTotal = sum(sales.map(invoice => invoice.total));
+  const receivedTotal = sum(payments.map(payment => payment.amount)) + sum(unmatchedReceipts.map(receipt => receipt.amount));
+  const expenseTotal = sum(expenses.map(expense => expense.amount));
+  const supplierPaymentTotal = sum(supplierPayments.map(payment => payment.amount));
+  const grossProfit = sum(sales.map(marginValue));
+  const unitsSold = sum(sales.flatMap(invoice => invoice.lines.map(line => line.quantity)));
+  const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
+  return { date, sales, payments, unmatchedReceipts, expenses, supplierPayments, purchaseOrders, inventoryActivity, salesTotal, receivedTotal, expenseTotal, supplierPaymentTotal, grossProfit, unitsSold, lowStock };
+}
+
+function buildDailyDigestMessage(data: AppData) {
+  const digest = getDailyDigest(data);
+  return [
+    data.profile.name + ' · Daily business summary', dateLabel(digest.date), '',
+    'Sales: ' + money(digest.salesTotal) + ' (' + digest.sales.length + ' sales)',
+    'Payments received: ' + money(digest.receivedTotal),
+    'Expenses: ' + money(digest.expenseTotal),
+    'Supplier payments: ' + money(digest.supplierPaymentTotal),
+    'Gross profit: ' + money(digest.grossProfit),
+    'Units sold: ' + numberText(digest.unitsSold),
+    'Supplier orders raised: ' + numberText(digest.purchaseOrders.length),
+    'Stock updates: ' + numberText(digest.inventoryActivity.length),
+    'Low-stock items: ' + numberText(digest.lowStock.length), '',
+    'Prepared from the Hesabu workspace records.',
+  ].join('\n');
+}
+
+function openDailyDigestWhatsApp(data: AppData) {
+  const url = 'https://wa.me/' + DAILY_DIGEST_WHATSAPP + '?text=' + encodeURIComponent(buildDailyDigestMessage(data));
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function downloadDailyWorkbook(data: AppData) {
+  const digest = getDailyDigest(data);
+  const sheets: Array<{ name: string; rows: Array<Array<string | number>> }> = [
+    { name: 'Summary', rows: [
+      ['Hesabu daily business report'], ['Business', data.profile.name], ['Date', digest.date], [],
+      ['Measure', 'Value'], ['Sales invoiced', digest.salesTotal], ['Payments received', digest.receivedTotal],
+      ['Expenses recorded', digest.expenseTotal], ['Supplier payments', digest.supplierPaymentTotal],
+      ['Gross profit', digest.grossProfit], ['Sales count', digest.sales.length],
+      ['Units sold', digest.unitsSold], ['Supplier orders raised', digest.purchaseOrders.length],
+      ['Stock updates', digest.inventoryActivity.length], ['Low-stock products', digest.lowStock.length],
+    ]},
+    { name: 'Sales', rows: [
+      ['Invoice', 'Customer', 'Date', 'Status', 'Payment method', 'Total (KSh)', 'Paid (KSh)', 'Balance (KSh)'],
+      ...digest.sales.map(invoice => [invoice.number, invoice.customer, invoice.date, statusLabel(invoice.status), channelLabel(invoice.channel), invoice.total, invoice.paid, invoiceBalance(invoice)]),
+    ]},
+    { name: 'Payments', rows: [
+      ['Reference', 'Customer', 'Received at', 'Method', 'Amount (KSh)', 'Invoice'],
+      ...digest.payments.map(payment => [payment.reference, payment.customer, dateTimeLabel(payment.createdAt), channelLabel(payment.channel), payment.amount, payment.invoiceNumber]),
+    ]},
+    { name: 'Unmatched receipts', rows: [
+      ['Reference', 'Payer', 'Received at', 'Rail', 'Amount (KSh)'],
+      ...digest.unmatchedReceipts.map(receipt => [receipt.reference, receipt.payer, dateTimeLabel(receipt.receivedAt), receipt.rail, receipt.amount]),
+    ]},
+    { name: 'Expenses', rows: [
+      ['Category', 'Description', 'Paid from', 'Amount (KSh)', 'Reference'],
+      ...digest.expenses.map(expense => [expense.category, expense.description, channelLabel(expense.channel), expense.amount, expense.reference]),
+    ]},
+    { name: 'Supplier payments', rows: [
+      ['Description', 'Date', 'Method', 'Amount (KSh)', 'Reference'],
+      ...digest.supplierPayments.map(payment => [payment.description, payment.date, channelLabel(payment.channel), payment.amount, payment.reference]),
+    ]},
+    { name: 'Stock on hand', rows: [
+      ['Product', 'SKU', 'Quantity on hand', 'Unit', 'Cost per unit (KSh)', 'Stock value (KSh)', 'Reorder level', 'Status'],
+      ...data.products.map(product => [product.name, product.sku, product.quantity, product.unit, product.costPrice, productValue(product), product.reorderLevel, product.quantity <= product.reorderLevel ? 'Reorder' : 'In stock']),
+    ]},
+    { name: 'Stock activity', rows: [
+      ['Time', 'Activity', 'Source', 'Reference', 'Details', 'Status'],
+      ...digest.inventoryActivity.map(event => [dateTimeLabel(event.time), event.type, event.source, event.reference, event.detail, event.status]),
+    ]},
+    { name: 'Supplier orders', rows: [
+      ['Order', 'Supplier', 'Created', 'Expected', 'Status', 'Order value (KSh)'],
+      ...digest.purchaseOrders.map(order => [order.number, order.supplierName, order.createdAt, order.expectedAt, order.status, order.total]),
+    ]},
+  ];
+  const escapeXml = (value: string) => value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  const xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>' +
+    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
+    '<Styles><Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#172033" ss:Pattern="Solid"/></Style></Styles>' +
+    sheets.map(sheet => '<Worksheet ss:Name="' + escapeXml(sheet.name) + '"><Table>' +
+      sheet.rows.map((row,index) => '<Row>' + row.map(value => {
+        const type = typeof value === 'number' ? 'Number' : 'String';
+        const style = index === 0 ? ' ss:StyleID="Header"' : '';
+        return '<Cell' + style + '><Data ss:Type="' + type + '">' + escapeXml(String(value ?? '')) + '</Data></Cell>';
+      }).join('') + '</Row>').join('') + '</Table></Worksheet>').join('') + '</Workbook>';
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'hesabu-daily-report-' + digest.date + '.xls';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function ReportsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typeof getMetrics> }) {
@@ -1322,6 +1277,27 @@ function ReportsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typ
   const max = Math.max(1, ...dayRows.map(row => row.sales));
   return <div className="page-stack">
     <PageHeader title="Reports" description="A practical view of sales, margin, cash movement and inventory value." actions={<Button variant="outline" onClick={() => window.print()}><Download size={15} /> Print report</Button>} />
+    <SectionCard title="Today's business digest" detail="Daily operations, with clear numbers and downloadable records." className="daily-digest-print">
+      <div className="daily-digest-metrics">
+        <div><span>Sales today</span><strong>{money(getDailyDigest(data).salesTotal)}</strong><small>{getDailyDigest(data).sales.length} sales recorded</small></div>
+        <div><span>Payments received</span><strong>{money(getDailyDigest(data).receivedTotal)}</strong><small>Matched and unmatched receipts</small></div>
+        <div><span>Expenses</span><strong>{money(getDailyDigest(data).expenseTotal)}</strong><small>Operating expenses recorded</small></div>
+        <div><span>Gross profit</span><strong>{money(getDailyDigest(data).grossProfit)}</strong><small>After recorded product cost</small></div>
+      </div>
+      <div className="daily-digest-lower">
+        <span>{money(getDailyDigest(data).supplierPaymentTotal)} supplier payments</span>
+        <span>{numberText(getDailyDigest(data).unitsSold)} units sold</span>
+        <span>{numberText(getDailyDigest(data).purchaseOrders.length)} supplier orders raised</span>
+        <span>{numberText(getDailyDigest(data).inventoryActivity.length)} stock updates</span>
+        <span>{numberText(getDailyDigest(data).lowStock.length)} products at reorder level</span>
+      </div>
+      <div className="daily-digest-actions">
+        <Button variant="outline" onClick={() => downloadDailyWorkbook(data)}><FileSpreadsheet size={16} /> Download Excel workbook</Button>
+        <Button variant="outline" onClick={() => window.print()}><FileText size={16} /> Save as PDF</Button>
+        <Button onClick={() => openDailyDigestWhatsApp(data)}><MessageCircle size={16} /> Prepare WhatsApp summary</Button>
+      </div>
+      <p className="daily-digest-note">The workbook is generated from the latest records in this browser. WhatsApp opens a prepared summary to +254 745 706 087; scheduled sending and file attachments require the business database and WhatsApp Business connection.</p>
+    </SectionCard>
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Sales recorded" value={money(sales)} note={period === 'week' ? 'Last seven days' : 'Last 30 days'} icon={TrendingUp} tone="green" />
       <MetricCard label="Gross margin" value={money(sales - cogs)} note="Sales value less recorded product cost" icon={Activity} tone="blue" />
@@ -1458,14 +1434,37 @@ function SalesChannelsPage({ data, onCreateDemoOrder }: {
   </div>;
 }
 
-function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMember, onReset }: {
+function MorePage({ allowedModules, onNavigate }: {
+  allowedModules: ModuleKey[]; onNavigate: (section: ModuleKey) => void;
+}) {
+  const destinations: Array<{ id: ModuleKey; title: string; description: string; icon: LucideIcon }> = [
+    { id: 'reports', title: 'Reports & daily digest', description: 'Business numbers, Excel workbooks and PDF summaries.', icon: BarChart3 },
+    { id: 'procurement', title: 'Supplier orders', description: 'Create orders, receive goods and follow supplier balances.', icon: ShoppingCart },
+    { id: 'accounts', title: 'Financial records', description: 'Account balances, journals and trial balance.', icon: BookOpen },
+    { id: 'integrations', title: 'Sales channels', description: 'Review counter, website and wholesale order flows.', icon: Link2 },
+    { id: 'settings', title: 'Team & settings', description: 'Business details, team roles and appearance.', icon: Settings },
+  ].filter(item => allowedModules.includes(item.id));
+  return <div className="page-stack">
+    <PageHeader title="More" description="Less frequent tools are kept here so daily work stays simple." />
+    <div className="more-destinations">{destinations.map(item => {
+      const Icon = item.icon;
+      return <button type="button" className="more-destination" key={item.id} onClick={() => onNavigate(item.id)}>
+        <span className="more-destination-icon"><Icon size={21} /></span>
+        <span className="more-destination-copy"><strong>{item.title}</strong><small>{item.description}</small></span>
+        <ChevronRight size={18} />
+      </button>;
+    })}</div>
+  </div>;
+}
+
+function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMember, onReset, theme, onThemeChange, onOpenReports }: {
   profile: BusinessProfile; teamMembers: TeamMember[];
   onSave: (profile: BusinessProfile) => void;
   onAddMember: (input: { name: string; email: string; role: TeamRole }) => void;
   onUpdateMember: (id: string, patch: Partial<TeamMember>) => void;
-  onReset: () => void;
+  onReset: () => void; theme: 'dark' | 'light'; onThemeChange: (theme: 'dark' | 'light') => void; onOpenReports: () => void;
 }) {
-  const [tab, setTab] = useState<'profile' | 'team'>('profile');
+  const [tab, setTab] = useState<'profile' | 'team' | 'preferences'>('profile');
   const [form, setForm] = useState(profile);
   const [saved, setSaved] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -1479,7 +1478,7 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
     Owner: 'Business profile, all records and team administration',
     Manager: 'Sales, stock, purchasing and business reports',
     Sales: 'Counter sales, invoices and customer balances',
-    Inventory: 'Product catalogue, production runs, stock counts and deliveries',
+    Inventory: 'Product catalogue, stock counts and deliveries',
     Finance: 'Payments, account balances and financial reports',
   };
   const submitMember = (event: FormEvent) => {
@@ -1494,6 +1493,7 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
       <div className="section-tabs">
         <button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}>Business profile</button>
         <button className={tab === 'team' ? 'active' : ''} onClick={() => setTab('team')}>Team <span>{teamMembers.length}</span></button>
+        <button className={tab === 'preferences' ? 'active' : ''} onClick={() => setTab('preferences')}>Preferences</button>
       </div>
       {tab === 'profile' ? <form className="settings-form" onSubmit={event => {
         event.preventDefault(); onSave(form); setSaved(true);
@@ -1511,7 +1511,7 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
           <Field label="Business type" value={form.industry} onChange={value => update('industry', value)} />
         </div>
         <div className="settings-form-footer">{saved && <span className="saved-inline"><CheckCircle2 size={14} /> Saved</span>}<Button type="submit">Save changes</Button></div>
-      </form> : <>
+      </form> : tab === 'team' ? <>
         <div className="team-header-row">
           <div><strong>{teamMembers.filter(member => member.status === 'active').length} people in this workspace</strong><p>Assign each team member only the responsibility they need.</p></div>
           <Button onClick={() => setShowAdd(value => !value)}><Plus size={15} /> Add member</Button>
@@ -1541,7 +1541,20 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
             <td>{member.role === 'Owner' ? <span className="muted-copy">Owner</span> : <button className="table-action" onClick={() => onUpdateMember(member.id, { status: member.status === 'active' ? 'suspended' : 'active' })}>{member.status === 'active' ? 'Suspend' : 'Activate'}</button>}</td>
           </tr>)}
         </DataTable>
-      </>}
+      </> : <div className="settings-preferences">
+        <section className="preference-block">
+          <div><strong>Appearance</strong><p>Dark is the default. Change to light mode for this browser.</p></div>
+          <div className="theme-choice-group">
+            <button type="button" className={theme === 'dark' ? 'theme-choice theme-choice-active' : 'theme-choice'} onClick={() => onThemeChange('dark')}><Moon size={19} /><span><strong>Dark</strong><small>Default</small></span></button>
+            <button type="button" className={theme === 'light' ? 'theme-choice theme-choice-active' : 'theme-choice'} onClick={() => onThemeChange('light')}><Sun size={19} /><span><strong>Light</strong><small>Bright workspace</small></span></button>
+          </div>
+        </section>
+        <section className="preference-block">
+          <div><strong>WhatsApp daily digest</strong><p>Daily summaries are prepared for this destination. Scheduled delivery and file attachments require the business database and WhatsApp Business connection.</p></div>
+          <div className="digest-recipient"><MessageCircle size={18} /><strong>+254 745 706 087</strong><span>Current digest destination</span></div>
+          <Button variant="outline" onClick={onOpenReports}>Open daily digest</Button>
+        </section>
+      </div>}
     </SectionCard>
     <div className="settings-reset-row">
       <div><strong>Reset sample workspace</strong><small>Restore the original example business and sample activity.</small></div>
@@ -1598,6 +1611,10 @@ function recordJournal(
 
 function App() {
   const [data, setData] = useState<AppData>(() => readWorkspace());
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try { return localStorage.getItem('hesabu:theme') === 'light' ? 'light' : 'dark'; }
+    catch { return 'dark'; }
+  });
   const [activeMemberId, setActiveMemberId] = useState('team-001');
   const [userSwitcherOpen, setUserSwitcherOpen] = useState(false);
   const [active, setActive] = useState<ModuleKey>('overview');
@@ -1610,6 +1627,10 @@ function App() {
   const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => { saveWorkspace(data); }, [data]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('hesabu:theme', theme); } catch { /* Keep this session's theme. */ }
+  }, [theme]);
 
   const metrics = useMemo(() => getMetrics(data), [data]);
   const activeMember = data.teamMembers.find(member => member.id === activeMemberId && member.status === 'active')
@@ -1980,69 +2001,6 @@ function App() {
     notify('Purchase order created', order.number + ' is ready for supplier follow-up.');
   };
 
-  const createProductionRecipe = (input: { name: string; outputProductId: string; ingredients: Array<{ productId: string; quantityPerUnit: number }> }) => {
-    const output = data.products.find(product => product.id === input.outputProductId);
-    const ingredientIds = new Set(input.ingredients.map(item => item.productId));
-    if (!output || !input.name.trim() || !input.ingredients.length ||
-      input.ingredients.some(item => !data.products.some(product => product.id === item.productId) || item.quantityPerUnit <= 0) ||
-      ingredientIds.size !== input.ingredients.length || ingredientIds.has(input.outputProductId)) {
-      notify('Recipe not saved', 'Choose one finished product and unique materials with quantities greater than zero.');
-      return;
-    }
-    if (data.productionRecipes.some(recipe => recipe.outputProductId === input.outputProductId)) {
-      notify('Recipe already exists', 'This finished product already has a saved recipe in this workspace.');
-      return;
-    }
-    const recipe: ProductionRecipe = { id: makeId('REC'), ...input };
-    setData(current => ({ ...current, productionRecipes: [recipe, ...current.productionRecipes] }));
-    setDialog(null);
-    notify('Production recipe saved', recipe.name + ' is ready for production.');
-  };
-
-  const runProduction = (recipeId: string, outputQuantity: number) => {
-    const recipe = data.productionRecipes.find(item => item.id === recipeId);
-    if (!recipe) return;
-    const plan = planProductionRun(recipe, data.products, outputQuantity);
-    if (!plan.valid) {
-      notify('Production not posted', plan.reason);
-      return;
-    }
-    const runNumber = 'MAKE-' + String(data.nextProductionRun).padStart(3, '0');
-    const run: ProductionRun = {
-      id: makeId('RUN'), number: runNumber, date: today(), recipeId: recipe.id, recipeName: recipe.name,
-      outputProductId: plan.outputProduct.id, outputProductName: plan.outputProduct.name,
-      outputQuantity: plan.outputQuantity, materials: plan.materials,
-      materialCost: plan.materialCost, unitCost: plan.unitCost,
-    };
-    const nextProducts = data.products.map(product => {
-      const consumed = plan.materials.find(item => item.productId === product.id);
-      if (product.id === plan.outputProduct.id) {
-        return {
-          ...product, quantity: product.quantity + plan.outputQuantity,
-          costPrice: weightedAverageUnitCost(product.quantity, product.costPrice, plan.outputQuantity, plan.unitCost),
-          updatedAt: today(),
-        };
-      }
-      if (consumed) return { ...product, quantity: Math.max(0, product.quantity - consumed.quantity), updatedAt: today() };
-      return product;
-    });
-    const next: AppData = {
-      ...data, products: nextProducts,
-      productionRuns: [run, ...data.productionRuns],
-      nextProductionRun: data.nextProductionRun + 1,
-      journal: recordJournal(data, 'Inventory', 'Inventory', plan.materialCost,
-        'Production conversion · ' + run.number, run.number),
-      events: [{
-        id: makeId('EVT'), time: new Date().toISOString(), type: 'production.completed',
-        source: 'Production', status: 'delivered', reference: run.number,
-        detail: numberText(run.outputQuantity) + ' ' + run.outputProductName + ' produced using ' + money(run.materialCost) + ' of materials',
-      }, ...data.events],
-    };
-    setData(next);
-    setDialog(null);
-    notify('Production posted', numberText(run.outputQuantity) + ' ' + run.outputProductName + ' added to stock.');
-  };
-
   const receivePurchaseOrder = (orderId: string, items: Array<{ productId: string; quantity: number }>) => {
     const order = data.purchaseOrders.find(item => item.id === orderId);
     if (!order || order.status === 'received') return;
@@ -2168,7 +2126,7 @@ function App() {
   };
 
   const activeMeta = moduleMeta[active];
-  return <div className={'app-shell ' + (sidebarCollapsed ? 'sidebar-is-collapsed' : '')}>
+  return <div className={'app-shell theme-' + theme + ' ' + (sidebarCollapsed ? 'sidebar-is-collapsed' : '')}>
     <aside className={'sidebar ' + (mobileMenuOpen ? 'sidebar-mobile-open' : '')}>
       <div className="brand-row">
         <div className="brand-mark">H</div>
@@ -2219,16 +2177,16 @@ function App() {
       </header>
 
       <div className="page-container">
-        {active === 'overview' && <OverviewPage data={data} metrics={metrics} onCreateSale={() => setDialog({ kind: 'sale' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} />}
+        {active === 'overview' && <OverviewPage data={data} metrics={metrics} onCreateSale={() => setDialog({ kind: 'sale' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} />}
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
-        {active === 'production' && <ProductionPage data={data} onCreateRecipe={() => setDialog({ kind: 'production-recipe' })} onRun={recipeId => setDialog({ kind: 'production-run', recipeId })} />}
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} />}
         {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} />}
-        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={resetDemo} />}
+        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} />}
+        {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
       </div>
       <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Preview workspace · Saved in this browser</span></footer>
     </main>
@@ -2239,8 +2197,7 @@ function App() {
         { id: 'sales' as ModuleKey, label: 'Sales', icon: Receipt },
         { id: 'payments' as ModuleKey, label: 'Money', icon: Wallet },
         { id: 'inventory' as ModuleKey, label: 'Stock', icon: Package },
-        { id: 'production' as ModuleKey, label: 'Make', icon: Boxes },
-        { id: 'procurement' as ModuleKey, label: 'Orders', icon: ShoppingCart },
+        { id: 'more' as ModuleKey, label: 'More', icon: MoreHorizontal },
       ].filter(item => allowedModules.includes(item.id)).map(item => {
         const Icon = item.icon;
         return <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>;
@@ -2253,11 +2210,10 @@ function App() {
     {dialog?.kind === 'match-receipt' && selectedReceipt && <MatchReceiptDialog receipt={selectedReceipt} invoices={data.invoices} onClose={() => setDialog(null)} onMatch={invoiceId => matchUnmatchedReceipt(selectedReceipt.id, invoiceId)} />}
     {dialog?.kind === 'expense' && <ExpenseDialog onClose={() => setDialog(null)} onCreate={createExpense} />}
     {dialog?.kind === 'product' && <ProductDialog onClose={() => setDialog(null)} onCreate={createProduct} />}
-    {dialog?.kind === 'production-recipe' && <ProductionRecipeDialog products={data.products} onClose={() => setDialog(null)} onCreate={createProductionRecipe} />}
-    {dialog?.kind === 'production-run' && data.productionRecipes.find(recipe => recipe.id === dialog.recipeId) && <ProductionRunDialog recipe={data.productionRecipes.find(recipe => recipe.id === dialog.recipeId)!} products={data.products} onClose={() => setDialog(null)} onRun={quantity => runProduction(dialog.recipeId, quantity)} />}
     {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} initialProductId={dialog.productId} initialQuantity={dialog.quantity} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
     {dialog?.kind === 'receive-purchase' && selectedPurchaseOrder && <ReceivePurchaseDialog order={selectedPurchaseOrder} onClose={() => setDialog(null)} onReceive={items => receivePurchaseOrder(selectedPurchaseOrder.id, items)} />}
     {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={amount => paySupplier(selectedSupplier.id, amount)} />}
+    {dialog?.kind === 'stock-picker' && <StockPickerDialog products={data.products} onClose={() => setDialog(null)} onSelect={productId => setDialog({ kind: 'adjust', productId })} />}
     {dialog?.kind === 'adjust' && selectedProduct && <AdjustStockDialog product={selectedProduct} onClose={() => setDialog(null)} onAdjust={(quantity, reason) => adjustStock(selectedProduct.id, quantity, reason)} />}
     {selectedInvoice && <InvoiceDialog invoice={selectedInvoice} onClose={() => setSelectedInvoiceId(null)} onRequestPayment={() => {
       setSelectedInvoiceId(null);

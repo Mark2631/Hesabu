@@ -1,4 +1,4 @@
-export type ModuleKey = 'overview' | 'sales' | 'payments' | 'inventory' | 'production' | 'procurement' | 'accounts' | 'reports' | 'integrations' | 'settings';
+export type ModuleKey = 'overview' | 'sales' | 'payments' | 'inventory' | 'procurement' | 'accounts' | 'reports' | 'integrations' | 'settings' | 'more';
 export type PaymentChannel = 'mpesa' | 'cash' | 'bank' | 'card' | 'credit';
 export type PaymentStatus = 'pending' | 'succeeded' | 'failed' | 'reversed';
 export type InvoiceStatus = 'draft' | 'sent' | 'partial' | 'paid' | 'overdue';
@@ -51,36 +51,6 @@ export interface PurchaseOrder {
   id: string; number: string; supplierId: string; supplierName: string;
   createdAt: string; expectedAt: string; lines: PurchaseLine[]; total: number; status: PurchaseStatus;
 }
-export interface ProductionRecipeLine {
-  productId: string;
-  quantityPerUnit: number;
-}
-export interface ProductionRecipe {
-  id: string;
-  name: string;
-  outputProductId: string;
-  ingredients: ProductionRecipeLine[];
-}
-export interface ProductionRunLine {
-  productId: string;
-  name: string;
-  quantity: number;
-  unitCost: number;
-  totalCost: number;
-}
-export interface ProductionRun {
-  id: string;
-  number: string;
-  date: string;
-  recipeId: string;
-  recipeName: string;
-  outputProductId: string;
-  outputProductName: string;
-  outputQuantity: number;
-  materials: ProductionRunLine[];
-  materialCost: number;
-  unitCost: number;
-}
 export interface JournalLine {
   id: string; journalId: string; date: string; account: string;
   debit: number; credit: number; description: string; reference: string;
@@ -106,10 +76,10 @@ export interface CashMovement {
 }
 export interface AppData {
   profile: BusinessProfile; products: Product[]; invoices: Invoice[]; payments: Payment[];
-  unmatchedReceipts: UnmatchedReceipt[]; expenses: Expense[]; cashMovements: CashMovement[]; suppliers: Supplier[]; purchaseOrders: PurchaseOrder[]; teamMembers: TeamMember[]; productionRecipes: ProductionRecipe[]; productionRuns: ProductionRun[];
+  unmatchedReceipts: UnmatchedReceipt[]; expenses: Expense[]; cashMovements: CashMovement[]; suppliers: Supplier[]; purchaseOrders: PurchaseOrder[]; teamMembers: TeamMember[];
   journal: JournalLine[]; events: IntegrationEvent[];
   openingBalances: { cash: number; mpesa: number; bank: number; inventory: number };
-  nextInvoice: number; nextPurchaseOrder: number; nextProductionRun: number;
+  nextInvoice: number; nextPurchaseOrder: number;
 }
 export interface NewInvoiceInput {
   customer: string; phone: string; dueDate: string; discount: number; channel: PaymentChannel;
