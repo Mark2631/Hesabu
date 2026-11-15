@@ -966,22 +966,25 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
         <Button onClick={onCreateSale}><Plus size={15} /> Record sale</Button>
       </div>
     </div>
-    <section className="business-overview-panel" aria-label="Business overview">
+    <section className="business-overview-panel" aria-label="Quick actions">
       <div className="business-overview-top">
-        <div><span className="business-overview-kicker">BUSINESS OVERVIEW</span><h3>At a glance</h3></div>
-        <div className="business-quick-actions" aria-label="Quick actions">
-          <button type="button" onClick={onCreateSale}><Plus size={15} /> New sale</button>
-          <button type="button" onClick={onRecordExpense}><Plus size={15} /> Expense</button>
-          <button type="button" onClick={onRecordPayment}><Wallet size={15} /> Payment</button>
-          <button type="button" onClick={onCreatePurchase}><ShoppingCart size={15} /> Order stock</button>
-          <button type="button" onClick={onQuickStock}><Package size={15} /> Update stock</button>
-        </div>
+        <div><span className="business-overview-kicker">YOUR BUSINESS</span><h3>Quick actions</h3><p>Keep your daily work moving.</p></div>
       </div>
-      <div className="business-overview-metrics">
-        <div className="business-overview-metric"><span><TrendingUp size={15} /> Sales today</span><strong>{money(metrics.salesToday)}</strong><small>Today's recorded sales</small></div>
-        <div className="business-overview-metric"><span><TrendingDown size={15} /> Expenses this month</span><strong>{money(sum(data.expenses.filter(expense => expense.date.slice(0, 7) === today().slice(0, 7)).map(expense => expense.amount)))}</strong><small>Operating expenses recorded</small></div>
-        <div className="business-overview-metric"><span><Boxes size={15} /> Inventory at cost</span><strong>{money(metrics.inventoryValue)}</strong><small>{lowStock.length} products at reorder level</small></div>
-        <div className="business-overview-metric"><span><FileText size={15} /> Pending bills</span><strong>{money(metrics.payables)}</strong><small>{data.suppliers.filter(supplier => supplier.balance > 0).length} supplier balances outstanding</small></div>
+      <div className="business-quick-actions" aria-label="Quick actions">
+        <button type="button" onClick={onCreateSale}><span className="quick-action-icon"><Receipt size={19} /></span><strong>Record a sale</strong><small>Enter items sold</small></button>
+        <button type="button" onClick={onRecordExpense}><span className="quick-action-icon"><TrendingDown size={19} /></span><strong>Add expense</strong><small>Record money spent</small></button>
+        <button type="button" onClick={onRecordPayment}><span className="quick-action-icon"><Wallet size={19} /></span><strong>Receive payment</strong><small>Update a balance</small></button>
+        <button type="button" onClick={onCreatePurchase}><span className="quick-action-icon"><ShoppingCart size={19} /></span><strong>Buy stock</strong><small>Record stock bought</small></button>
+        <button type="button" onClick={onQuickStock}><span className="quick-action-icon"><Package size={19} /></span><strong>Update inventory</strong><small>Change stock levels</small></button>
+      </div>
+    </section>
+    <section className="daily-summary-section" aria-label="Daily business figures">
+      <div className="daily-summary-heading"><h3>Business at a glance</h3><span>Today's figures</span></div>
+      <div className="daily-summary-grid">
+        <div className="daily-summary-item"><span>Sales today</span><strong>{money(metrics.salesToday)}</strong></div>
+        <div className="daily-summary-item"><span>Expenses today</span><strong>{money(sum(data.expenses.filter(expense => expense.date === today()).map(expense => expense.amount)))}</strong></div>
+        <div className="daily-summary-item"><span>Items in stock</span><strong>{data.products.reduce((total, product) => total + product.quantity, 0).toLocaleString('en-KE')}</strong><small>Across {data.products.length} products</small></div>
+        <div className="daily-summary-item"><span>Bills to pay</span><strong>{money(metrics.payables)}</strong><small>Unpaid supplier bills</small></div>
       </div>
     </section>
     <div className="content-grid content-grid-main">
