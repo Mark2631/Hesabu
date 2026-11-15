@@ -12,14 +12,16 @@ import {
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
-  NewPaymentInput, NewPurchaseInput, Payment, PaymentChannel, Product,
-  PurchaseOrder, Supplier,
+  NewPaymentInput, NewPurchaseInput, NewUnmatchedReceiptInput, Payment, PaymentChannel, Product,
+  PurchaseOrder, ReceiptRail, Supplier, UnmatchedReceipt,
 } from './types';
 
 type Notice = { title: string; detail?: string } | null;
 type DialogState =
   | { kind: 'sale' }
   | { kind: 'stk'; invoiceId?: string }
+  | { kind: 'receipt' }
+  | { kind: 'match-receipt'; receiptId: string }
   | { kind: 'expense' }
   | { kind: 'product' }
   | { kind: 'purchase' }
@@ -558,6 +560,79 @@ function SupplierPaymentDialog({ supplier, onClose, onPay }: {
   </Modal>;
 }
 
+
+function ReceiptDialog({ onClose, onCreate }: {
+  onClose: () => void; onCreate: (input: NewUnmatchedReceiptInput) => void;
+}) {
+  const [rail, setRail] = useState<ReceiptRail>('Till / PayBill');
+  const [payer, setPayer] = useState('');
+  const [phone, setPhone] = useState('');
+  const [reference, setReference] = useState('');
+  const [amount, setAmount] = useState('');
+  return <Modal title="Add an unmatched receipt" detail="Capture a payment that reached the business but has not yet been linked to an invoice." onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      const value = Number(amount);
+      if (value > 0 && reference.trim()) onCreate({
+        rail, payer: payer.trim() || 'Unknown payer', phone: phone.trim(),
+        reference: reference.trim().toUpperCase(), amount: value,
+      });
+    }}>
+      <SelectField label="Received through" value={rail} onChange={value => setRail(value as ReceiptRail)} options={[
+        { value: 'Till / PayBill', label: 'M-Pesa Till / PayBill' },
+        { value: 'Pochi la Biashara', label: 'Pochi la Biashara' },
+        { value: 'Send Money to business', label: 'Send Money to business phone' },
+        { value: 'Bank transfer', label: 'Bank transfer' },
+        { value: 'Manual M-Pesa receipt', label: 'Other M-Pesa receipt' },
+      ]} />
+      <div className="form-grid form-grid-two">
+        <Field label="Receipt / transaction reference" value={reference} onChange={setReference} placeholder="e.g. QKH72F9M3" required />
+        <Field label="Amount received (KSh)" type="number" min={1} value={amount} onChange={setAmount} required />
+      </div>
+      <div className="form-grid form-grid-two">
+        <Field label="Payer name" value={payer} onChange={setPayer} placeholder="Name shown on the receipt" />
+        <Field label="Payer phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
+      </div>
+      <div className="demo-notice"><ShieldCheck size={16} /><span><strong>Receipt capture only</strong><small>This adds a local reconciliation item. It does not verify the payment against Safaricom or a bank.</small></span></div>
+      <div className="modal-footer">
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button type="submit" disabled={!reference.trim() || Number(amount) <= 0}><Plus size={15} /> Add to matching queue</Button>
+      </div>
+    </form>
+  </Modal>;
+}
+
+function MatchReceiptDialog({ receipt, invoices, onClose, onMatch }: {
+  receipt: UnmatchedReceipt; invoices: Invoice[]; onClose: () => void; onMatch: (invoiceId: string) => void;
+}) {
+  const eligible = invoices.filter(invoice => invoiceBalance(invoice) >= receipt.amount);
+  const likely = eligible.find(invoice => invoice.customer.toLowerCase() === receipt.payer.toLowerCase());
+  const [invoiceId, setInvoiceId] = useState(likely?.id || eligible[0]?.id || '');
+  const invoice = eligible.find(item => item.id === invoiceId);
+  return <Modal title="Match payment to invoice" detail="Apply this receipt once. Hesabu will update the invoice balance and reconciliation ledger together." onClose={onClose}>
+    <div className="modal-body">
+      <div className="receipt-match-summary">
+        <div><span className="field-label">Amount received</span><strong>{money(receipt.amount)}</strong></div>
+        <div><span className="field-label">Payer</span><strong>{receipt.payer}</strong></div>
+        <div><span className="field-label">Receipt</span><strong className="mono-text">{receipt.reference}</strong></div>
+        <div><span className="field-label">Rail</span><strong>{receipt.rail}</strong></div>
+      </div>
+      {eligible.length ? <>
+        <SelectField label="Apply to invoice" value={invoiceId} onChange={setInvoiceId} options={eligible.map(item => ({
+          value: item.id,
+          label: item.number + ' · ' + item.customer + ' · balance ' + money(invoiceBalance(item)),
+        }))} />
+        {invoice && <div className="balance-hint"><span>Invoice balance after matching</span><strong>{money(invoiceBalance(invoice) - receipt.amount)}</strong></div>}
+        <div className="field-hint">The receipt amount cannot exceed the selected invoice's outstanding balance. Split allocations can be added as a later reconciliation workflow.</div>
+        <div className="modal-footer">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => onMatch(invoiceId)} disabled={!invoiceId}><Check size={15} /> Confirm match</Button>
+        </div>
+      </> : <EmptyState title="No eligible invoice" body="No open invoice has a balance large enough for this receipt. Create or review the invoice before allocating this payment." />}
+    </div>
+  </Modal>;
+}
+
 function AdjustStockDialog({ product, onClose, onAdjust }: {
   product: Product; onClose: () => void; onAdjust: (quantity: number, reason: string) => void;
 }) {
@@ -711,48 +786,65 @@ function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
   </div>;
 }
 
-function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onResolvePayment }: {
+function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onResolvePayment, onAddReceipt, onMatchReceipt }: {
   data: AppData; metrics: ReturnType<typeof getMetrics>; search: string; onSearch: (value: string) => void;
   onRequestPayment: () => void; onResolvePayment: (id: string, success: boolean) => void;
+  onAddReceipt: () => void; onMatchReceipt: (receiptId: string) => void;
 }) {
   const list = [...data.payments].filter(payment =>
-    (payment.invoiceNumber + ' ' + payment.customer + ' ' + payment.reference).toLowerCase().includes(search.toLowerCase()),
+    (payment.invoiceNumber + ' ' + payment.customer + ' ' + payment.reference + ' ' + (payment.rail || '')).toLowerCase().includes(search.toLowerCase()),
   ).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const pending = data.payments.filter(payment => payment.status === 'pending').length;
   const failed = data.payments.filter(payment => payment.status === 'failed').length;
+  const unmatched = [...data.unmatchedReceipts].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+  const unmatchedValue = sum(unmatched.map(receipt => receipt.amount));
   return <div className="page-stack">
-    <PageHeader title="Payments" description="Collection records across payment channels, with a clear path from payment request to reconciliation." actions={<Button onClick={onRequestPayment}><Send size={15} /> Request payment</Button>} />
-    <div className="metric-grid metric-grid-four compact-metrics">
+    <PageHeader title="Payments" description="Collect, reconcile and trace receipts across merchant payment methods — without relying on a customer SMS as the only record." actions={<>
+      <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Add receipt</Button>
+      <Button onClick={onRequestPayment}><Send size={15} /> Request payment</Button>
+    </>} />
+    <div className="metric-grid metric-grid-five compact-metrics">
       <MetricCard label="Collected today" value={money(metrics.collectedToday)} note="Confirmed receipts" icon={CircleDollarSign} tone="green" />
       <MetricCard label="Awaiting confirmation" value={numberText(pending)} note="Requests not yet resolved" icon={Clock3} tone="amber" />
-      <MetricCard label="Failed requests" value={numberText(failed)} note="Requests not confirmed" icon={AlertTriangle} tone="blue" />
-      <MetricCard label="Collection channels" value="4" note="M-Pesa, cash, bank and card" icon={CreditCard} tone="slate" />
+      <MetricCard label="Unmatched receipts" value={numberText(unmatched.length)} note={money(unmatchedValue) + ' waiting to be allocated'} icon={AlertTriangle} tone="amber" />
+      <MetricCard label="Failed requests" value={numberText(failed)} note="Requests not confirmed" icon={Activity} tone="blue" />
+      <MetricCard label="Payment rails" value="Multi-channel" note="M-Pesa, Pochi, bank and more" icon={CreditCard} tone="slate" />
     </div>
     <div className="content-grid content-grid-main">
-      <SectionCard title="Payment activity" detail="A payment only changes an invoice after it is confirmed.">
+      <SectionCard title="Money by account" detail="Recorded balances from posted receipts and expenses.">
         <div className="channel-balances payment-channel-balances">
-          <div><span className="channel-icon channel-icon-mpesa"><Smartphone size={15} /></span><span>M-Pesa</span><strong>{money(metrics.channelBalances.mpesa)}</strong></div>
-          <div><span className="channel-icon channel-icon-cash"><Wallet size={15} /></span><span>Cash</span><strong>{money(metrics.channelBalances.cash)}</strong></div>
-          <div><span className="channel-icon channel-icon-bank"><Building2 size={15} /></span><span>Bank</span><strong>{money(metrics.channelBalances.bank)}</strong></div>
-          <div><span className="channel-icon channel-icon-card"><CreditCard size={15} /></span><span>Card</span><strong>{money(metrics.channelBalances.card)}</strong></div>
+          <div><span className="channel-icon channel-icon-mpesa"><Smartphone size={15} /></span><span>M-Pesa clearing</span><strong>{money(metrics.channelBalances.mpesa)}</strong></div>
+          <div><span className="channel-icon channel-icon-cash"><Wallet size={15} /></span><span>Cash on hand</span><strong>{money(metrics.channelBalances.cash)}</strong></div>
+          <div><span className="channel-icon channel-icon-bank"><Building2 size={15} /></span><span>Bank account</span><strong>{money(metrics.channelBalances.bank)}</strong></div>
+          <div><span className="channel-icon channel-icon-card"><CreditCard size={15} /></span><span>Card clearing</span><strong>{money(metrics.channelBalances.card)}</strong></div>
         </div>
       </SectionCard>
       <SectionCard title="Collection controls" detail="Payment handling status">
         <div className="control-list">
-          <div><span className="control-led control-led-green" /><span><strong>Invoice matching</strong><small>Match by invoice, amount and receipt reference</small></span><StatusPill status="delivered">Enabled</StatusPill></div>
+          <div><span className="control-led control-led-green" /><span><strong>Invoice matching</strong><small>Match by receipt reference, amount and invoice</small></span><StatusPill status="delivered">Available</StatusPill></div>
           <div><span className="control-led control-led-amber" /><span><strong>Daraja connection</strong><small>Preview simulator only</small></span><StatusPill status="pending">Not connected</StatusPill></div>
-          <div><span className="control-led control-led-blue" /><span><strong>Reconciliation checks</strong><small>Callback + manual exception review</small></span><StatusPill status="delivered">Preview</StatusPill></div>
+          <div><span className="control-led control-led-blue" /><span><strong>Statement intake</strong><small>Manual receipt capture in this preview</small></span><StatusPill status="pending">Manual</StatusPill></div>
         </div>
       </SectionCard>
     </div>
-    <SectionCard title="Payment register" detail="Pending payments can be resolved with the preview simulator to demonstrate a callback.">
+    <SectionCard title="Unmatched receipt queue" detail="Money received by the business but not yet allocated to a customer invoice.">
+      {unmatched.length ? <DataTable headers={['Received', 'Payment rail', 'Payer', 'Phone', 'Receipt reference', 'Amount', 'Action']}>
+        {unmatched.map(receipt => <tr key={receipt.id}>
+          <td>{dateTimeLabel(receipt.receivedAt)}<small className="cell-sub">{receipt.source === 'statement' ? 'Statement import' : receipt.source === 'callback' ? 'Provider callback' : 'Manual capture'}</small></td>
+          <td>{receipt.rail}</td><td><strong>{receipt.payer}</strong></td><td>{receipt.phone || '—'}</td>
+          <td className="mono-text">{receipt.reference}</td><td className="amount-cell">{money(receipt.amount)}</td>
+          <td><Button size="sm" variant="secondary" onClick={() => onMatchReceipt(receipt.id)}>Match invoice</Button></td>
+        </tr>)}
+      </DataTable> : <EmptyState title="No unmatched receipts" body="Incoming receipts that cannot be linked automatically will appear here for review." />}
+    </SectionCard>
+    <SectionCard title="Payment register" detail="Pending STK requests can be resolved with the preview simulator to demonstrate an asynchronous callback.">
       <div className="table-toolbar">
         <div className="table-search"><Search size={15} /><input value={search} onChange={event => onSearch(event.target.value)} placeholder="Search payment, invoice or receipt…" /></div>
         <span className="table-count">{list.length} records</span>
       </div>
       {list.length ? <DataTable headers={['Payment', 'Customer', 'Invoice', 'Channel', 'Reference', 'Time', 'Amount', 'Status', 'Action']}>
         {list.map(payment => <tr key={payment.id}>
-          <td><strong>{payment.id.toUpperCase()}</strong><small className="cell-sub">{payment.origin === 'daraja_demo' ? 'STK simulation' : payment.origin === 'integration' ? 'Website integration' : 'Manual record'}</small></td>
+          <td><strong>{payment.id.toUpperCase()}</strong><small className="cell-sub">{payment.origin === 'daraja_demo' ? 'STK simulation' : payment.origin === 'integration' ? 'Website integration' : payment.origin === 'reconciliation' ? 'Matched receipt · ' + (payment.rail || 'Imported') : 'Manual record'}</small></td>
           <td>{payment.customer}<small className="cell-sub">{payment.phone}</small></td>
           <td>{payment.invoiceNumber}</td><td><span className={channelClass(payment.channel)}>{channelLabel(payment.channel)}</span></td>
           <td className="mono-text">{shortRef(payment.reference)}</td><td>{dateTimeLabel(payment.createdAt)}</td>
@@ -1152,6 +1244,7 @@ function App() {
   const metrics = useMemo(() => getMetrics(data), [data]);
   const selectedInvoice = selectedInvoiceId ? data.invoices.find(invoice => invoice.id === selectedInvoiceId) : undefined;
   const selectedSupplier = dialog?.kind === 'supplier-payment' ? data.suppliers.find(supplier => supplier.id === dialog.supplierId) : undefined;
+  const selectedReceipt = dialog?.kind === 'match-receipt' ? data.unmatchedReceipts.find(receipt => receipt.id === dialog.receiptId) : undefined;
   const selectedProduct = dialog?.kind === 'adjust' ? data.products.find(product => product.id === dialog.productId) : undefined;
 
   const notify = (title: string, detail?: string) => setNotice({ title, detail });
@@ -1260,6 +1353,58 @@ function App() {
     setDialog(null);
     setActive('payments');
     notify('Payment request created', 'The payment is pending. Use Approve or Fail in the register to simulate the callback.');
+  };
+
+  const addUnmatchedReceipt = (input: NewUnmatchedReceiptInput) => {
+    const receipt: UnmatchedReceipt = {
+      id: makeId('RCPT'), reference: input.reference, payer: input.payer, phone: input.phone,
+      amount: input.amount, rail: input.rail, receivedAt: new Date().toISOString(), source: 'manual',
+    };
+    setData(current => ({
+      ...current,
+      unmatchedReceipts: [receipt, ...current.unmatchedReceipts],
+      events: [{
+        id: makeId('EVT'), time: new Date().toISOString(), type: 'receipt.unmatched',
+        source: receipt.rail, status: 'pending', reference: receipt.reference,
+        detail: money(receipt.amount) + ' receipt added for invoice matching',
+      }, ...current.events],
+    }));
+    setDialog(null);
+    notify('Receipt added to queue', 'The receipt has not changed any invoice balance yet.');
+  };
+
+  const matchUnmatchedReceipt = (receiptId: string, invoiceId: string) => {
+    const receipt = data.unmatchedReceipts.find(item => item.id === receiptId);
+    const invoice = data.invoices.find(item => item.id === invoiceId);
+    if (!receipt || !invoice || receipt.amount <= 0 || receipt.amount > invoiceBalance(invoice)) return;
+    const now = new Date().toISOString();
+    const channel: PaymentChannel = receipt.rail === 'Bank transfer' ? 'bank' : 'mpesa';
+    const payment: Payment = {
+      id: makeId('PAY'), invoiceId: invoice.id, invoiceNumber: invoice.number,
+      customer: invoice.customer, phone: receipt.phone, amount: receipt.amount,
+      channel, status: 'succeeded', reference: receipt.reference,
+      createdAt: receipt.receivedAt, confirmedAt: now, rail: receipt.rail,
+      note: 'Manually matched from unmatched receipt queue.',
+      origin: 'reconciliation',
+    };
+    const paid = Math.min(invoice.total, invoice.paid + receipt.amount);
+    const debitAccount = channel === 'bank' ? 'Bank account' : 'M-Pesa clearing';
+    setData(current => ({
+      ...current,
+      unmatchedReceipts: current.unmatchedReceipts.filter(item => item.id !== receiptId),
+      payments: [payment, ...current.payments],
+      invoices: current.invoices.map(item => item.id === invoice.id ? {
+        ...item, paid, status: paid >= item.total ? 'paid' : 'partial',
+      } : item),
+      journal: recordJournal(current, debitAccount, 'Accounts receivable', receipt.amount, 'Matched receipt · ' + invoice.number, receipt.reference),
+      events: [{
+        id: makeId('EVT'), time: now, type: 'payment.reconciled',
+        source: receipt.rail, status: 'delivered', reference: receipt.reference,
+        detail: money(receipt.amount) + ' matched to ' + invoice.number,
+      }, ...current.events],
+    }));
+    setDialog(null);
+    notify('Receipt matched', money(receipt.amount) + ' allocated to ' + invoice.number + '. The invoice balance has been updated.');
   };
 
   const resolvePayment = (paymentId: string, success: boolean) => {
@@ -1501,7 +1646,7 @@ function App() {
       <div className="page-container">
         {active === 'overview' && <OverviewPage data={data} metrics={metrics} onCreateSale={() => setDialog({ kind: 'sale' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
-        {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} />}
+        {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} />}
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} />}
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={receivePurchaseOrder} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
@@ -1527,6 +1672,8 @@ function App() {
 
     {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} />}
     {dialog?.kind === 'stk' && <StkDialog invoices={data.invoices} initialInvoiceId={dialog.invoiceId} onClose={() => setDialog(null)} onCreate={createPaymentRequest} />}
+    {dialog?.kind === 'receipt' && <ReceiptDialog onClose={() => setDialog(null)} onCreate={addUnmatchedReceipt} />}
+    {dialog?.kind === 'match-receipt' && selectedReceipt && <MatchReceiptDialog receipt={selectedReceipt} invoices={data.invoices} onClose={() => setDialog(null)} onMatch={invoiceId => matchUnmatchedReceipt(selectedReceipt.id, invoiceId)} />}
     {dialog?.kind === 'expense' && <ExpenseDialog onClose={() => setDialog(null)} onCreate={createExpense} />}
     {dialog?.kind === 'product' && <ProductDialog onClose={() => setDialog(null)} onCreate={createProduct} />}
     {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}

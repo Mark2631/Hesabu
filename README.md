@@ -7,7 +7,7 @@ Hesabu is being built as a connected financial operations platform for Kenyan re
 A single operational record connects:
 
 - **Sales and invoicing** — counter, website, Hesabu checkout and manual sales.
-- **Payments and reconciliation** — cash, M-Pesa, bank and card collection records; payment requests; invoice matching; exception review.
+- **Payments and reconciliation** — cash, M-Pesa, bank and card collection records; payment requests; an unmatched-receipt queue for Till/PayBill, Pochi, Send Money and bank receipts; invoice allocation and exception review.
 - **Inventory** — SKU-level quantities, reorder points, cost and selling prices, stock adjustments and valuation.
 - **Procurement** — suppliers, purchase orders, receiving and accounts payable.
 - **Accounts** — receivables, payables, cash accounts, account balances and a journal-style record.
@@ -21,7 +21,7 @@ A posted sale is intended to flow through invoice, collection, stock and account
 The build/platform-foundation branch contains a front-end product preview built on the existing React 18, TypeScript and Vite application.
 
 - Seeded mini-mart workspace with products, suppliers, invoices, payment records and purchase orders.
-- Local interactions for recording sales, creating invoices, requesting and resolving simulated STK payments, expenses, stock counts, purchase orders and supplier payments.
+- Local interactions for recording sales, creating invoices, requesting and resolving simulated STK payments, adding unmatched receipts, matching receipts to open invoices, recording expenses, stock counts, purchase orders and supplier payments.
 - Derived dashboard and report values.
 - Browser-local persistence under hesabu:platform:v2.
 - Responsive desktop, tablet and mobile navigation.
@@ -30,7 +30,7 @@ The preview is deliberately local-first while the production database is not con
 
 ## Daraja and settlement design
 
-The payment UI is a **local simulation**. It does not call Safaricom, send an STK prompt, verify a callback or move funds.
+The payment UI is a **local simulation**. It does not call Safaricom, send an STK prompt, verify a callback, read live statements or move funds. The unmatched-receipt queue demonstrates a manual reconciliation workflow only.
 
 The intended production pattern is to initiate a supported payment request for the merchant's own registered payment destination, receive and authenticate asynchronous payment results on the server, match the receipt to the invoice idempotently, and update the business ledger. A transaction-status query is a secondary reconciliation path where a callback has not arrived.
 

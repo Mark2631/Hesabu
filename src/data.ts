@@ -99,6 +99,11 @@ export function makeDemoData(): AppData {
       { id: 'pay-004', invoiceId: 'inv-1004', invoiceNumber: 'HS-1004', customer: 'Walk-in customer', phone: '0701 000 112', amount: 780, channel: 'mpesa', status: 'succeeded', reference: 'TJL4M8A0R3', createdAt: timeAgo(1_220), confirmedAt: timeAgo(1_219), origin: 'manual' },
       { id: 'pay-005', invoiceId: 'inv-1003', invoiceNumber: 'HS-1003', customer: 'Kamau Supplies', phone: '0703 250 980', amount: 500, channel: 'bank', status: 'succeeded', reference: 'BNK-48109', createdAt: timeAgo(1_660), confirmedAt: timeAgo(1_650), origin: 'manual' },
       { id: 'pay-006', invoiceId: 'inv-1002', invoiceNumber: 'HS-1002', customer: 'Wanjiku Stores', phone: '0790 335 821', amount: 2_220, channel: 'cash', status: 'succeeded', reference: 'CASH-1002', createdAt: timeAgo(2_340), confirmedAt: timeAgo(2_340), origin: 'manual' },
+      { id: 'pay-007', invoiceId: 'inv-1001', invoiceNumber: 'HS-1001', customer: 'Walk-in customer', phone: '0712 000 000', amount: 1_860, channel: 'mpesa', status: 'succeeded', reference: 'TJL2B7M9Q4', createdAt: timeAgo(3_100), confirmedAt: timeAgo(3_098), origin: 'manual' },
+    ],
+    unmatchedReceipts: [
+      { id: 'rcpt-001', reference: 'QAM3H8PL2', payer: 'Otieno Retail', phone: '0701 228 114', amount: 1_200, rail: 'Till / PayBill', receivedAt: timeAgo(35), source: 'statement' },
+      { id: 'rcpt-002', reference: 'PCH-9841', payer: 'Unknown sender', phone: '0721 480 020', amount: 350, rail: 'Pochi la Biashara', receivedAt: timeAgo(72), source: 'manual' },
     ],
     expenses: [
       { id: 'exp-01', date: today(), category: 'Transport', description: 'Supplier collection and delivery', amount: 1_200, channel: 'cash', reference: 'EXP-304' },
@@ -173,7 +178,8 @@ export function readWorkspace(): AppData {
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<AppData>;
       if (parsed.profile && Array.isArray(parsed.products) && Array.isArray(parsed.invoices)) {
-        return { ...makeDemoData(), ...parsed };
+        const demo = makeDemoData();
+        return { ...demo, ...parsed, unmatchedReceipts: parsed.unmatchedReceipts ?? demo.unmatchedReceipts };
       }
     }
   } catch {

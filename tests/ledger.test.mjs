@@ -11,6 +11,8 @@ test('demo workspace has a complete operating record', () => {
   assert.ok(data.suppliers.length >= 3);
   assert.ok(data.invoices.length >= 5);
   assert.ok(data.payments.length >= 5);
+  assert.ok(data.unmatchedReceipts.length >= 1);
+  assert.ok(data.unmatchedReceipts.every((receipt) => receipt.amount > 0 && receipt.reference.length > 0));
   assert.ok(data.purchaseOrders.length >= 2);
 });
 
@@ -38,6 +40,15 @@ test('seed journal entries are balanced', () => {
   const debits = sum(data.journal.map((line) => line.debit));
   const credits = sum(data.journal.map((line) => line.credit));
   assert.equal(debits, credits);
+});
+
+test('unmatched receipts remain separate from invoice payments until allocated', () => {
+  const data = makeDemoData();
+  const unmatchedTotal = sum(data.unmatchedReceipts.map((receipt) => receipt.amount));
+  const recordedPayments = sum(data.payments.map((payment) => payment.amount));
+  assert.ok(unmatchedTotal > 0);
+  assert.ok(data.payments.every((payment) => payment.status !== 'pending' || !payment.confirmedAt));
+  assert.ok(recordedPayments > 0);
 });
 
 test('low stock is measurable from quantity and reorder rules', () => {
