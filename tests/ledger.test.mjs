@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeDemoData } from '../src/data.ts';
-import { allocateIncomingPayment, buildJournalPair, calculateGrossProfit, isJournalBalanced, outstandingBalance, weightedAverageUnitCost } from '../src/finance.ts';
+import { allocateIncomingPayment, buildJournalPair, calculateGrossProfit, isJournalBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from '../src/finance.ts';
 
 const sum = (values) => values.reduce((total, value) => total + value, 0);
 
@@ -117,6 +117,47 @@ test('sales discounts reduce gross profit and can result in a trading loss', () 
   assert.equal(calculateGrossProfit(lines), 100);
   assert.equal(calculateGrossProfit(lines, 30), 70);
   assert.equal(calculateGrossProfit(lines, 120), -20);
+});
+
+
+test('purchase receipt plans support part deliveries and preserve remaining quantities', () => {
+  const lines = [
+    { productId: 'a', name: 'Rice', quantity: 10, received: 0, unitCost: 100, lineTotal: 1000 },
+    { productId: 'b', name: 'Oil', quantity: 5, received: 2, unitCost: 200, lineTotal: 1000 },
+  ];
+  const plan = planPurchaseReceipt(lines, [
+    { productId: 'a', quantity: 4 },
+    { productId: 'b', quantity: 1 },
+  ]);
+  assert.equal(plan.valid, true);
+  assert.equal(plan.totalValue, 600);
+  assert.equal(plan.status, 'partially_received');
+  assert.deepEqual(plan.lines.map(line => line.received), [4, 3]);
+});
+
+test('purchase receipt plan completes only when all ordered quantities are received', () => {
+  const lines = [
+    { productId: 'a', name: 'Rice', quantity: 10, received: 8, unitCost: 100, lineTotal: 1000 },
+    { productId: 'b', name: 'Oil', quantity: 5, received: 5, unitCost: 200, lineTotal: 1000 },
+  ];
+  const plan = planPurchaseReceipt(lines, [{ productId: 'a', quantity: 2 }]);
+  assert.equal(plan.valid, true);
+  assert.equal(plan.totalValue, 200);
+  assert.equal(plan.status, 'received');
+});
+
+test('purchase receipt rejects over-receiving, unknown products and zero-value receipts', () => {
+  const lines = [
+    { productId: 'a', name: 'Rice', quantity: 10, received: 8, unitCost: 100, lineTotal: 1000 },
+  ];
+  const over = planPurchaseReceipt(lines, [{ productId: 'a', quantity: 3 }]);
+  assert.equal(over.valid, false);
+  assert.match(over.reason, /exceeds/);
+  const unknown = planPurchaseReceipt(lines, [{ productId: 'unknown', quantity: 1 }]);
+  assert.equal(unknown.valid, false);
+  assert.match(unknown.reason, /not on this purchase order/);
+  const zero = planPurchaseReceipt(lines, [{ productId: 'a', quantity: 0 }]);
+  assert.equal(zero.valid, false);
 });
 
 test('low stock is measurable from quantity and reorder rules', () => {

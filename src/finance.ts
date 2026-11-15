@@ -76,3 +76,60 @@ export function calculateGrossProfit(lines: CostedInvoiceLine[], discount = 0): 
   const costOfGoodsSold = lines.reduce((total, line) => total + line.quantity * line.unitCost, 0);
   return Math.round((revenueAfterDiscount - costOfGoodsSold) * 100) / 100;
 }
+
+
+export interface PurchaseReceiptItem {
+  productId: string;
+  quantity: number;
+}
+
+export function planPurchaseReceipt<T extends {
+  productId: string;
+  quantity: number;
+  received: number;
+  unitCost: number;
+}>(purchaseLines: T[], receiptItems: PurchaseReceiptItem[]) {
+  if (!receiptItems.length) {
+    return { valid: false as const, reason: 'Enter at least one received quantity.', totalValue: 0, lines: purchaseLines, status: 'partially_received' as const };
+  }
+
+  const quantities = new Map<string, number>();
+  for (const item of receiptItems) {
+    if (!Number.isFinite(item.quantity) || item.quantity < 0) {
+      return { valid: false as const, reason: 'Received quantities must be zero or greater.', totalValue: 0, lines: purchaseLines, status: 'partially_received' as const };
+    }
+    quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
+  }
+
+  const knownProducts = new Set(purchaseLines.map(line => line.productId));
+  if ([...quantities.keys()].some(productId => !knownProducts.has(productId))) {
+    return { valid: false as const, reason: 'The receipt contains a product that is not on this purchase order.', totalValue: 0, lines: purchaseLines, status: 'partially_received' as const };
+  }
+
+  let totalValue = 0;
+  const lines = purchaseLines.map(line => {
+    const quantity = quantities.get(line.productId) ?? 0;
+    const remaining = Math.max(0, line.quantity - line.received);
+    if (quantity > remaining) {
+      totalValue = -1;
+      return line;
+    }
+    totalValue += quantity * line.unitCost;
+    return { ...line, received: line.received + quantity };
+  });
+
+  if (totalValue < 0) {
+    return { valid: false as const, reason: 'A received quantity exceeds the remaining quantity on the purchase order.', totalValue: 0, lines: purchaseLines, status: 'partially_received' as const };
+  }
+  if (totalValue === 0) {
+    return { valid: false as const, reason: 'Enter a quantity greater than zero.', totalValue: 0, lines: purchaseLines, status: 'partially_received' as const };
+  }
+
+  const completed = lines.every(line => line.received >= line.quantity);
+  return {
+    valid: true as const,
+    totalValue: Math.round(totalValue * 100) / 100,
+    lines,
+    status: completed ? 'received' as const : 'partially_received' as const,
+  };
+}
