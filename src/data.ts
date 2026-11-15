@@ -100,7 +100,7 @@ function buildSeedJournal(invoices: Invoice[], payments: Payment[], expenses: Ex
   return journal;
 }
 
-  const payments: Payment[] = [
+const payments: Payment[] = [
       { id: 'pay-001', invoiceId: 'inv-1008', invoiceNumber: 'HS-1008', customer: 'Walk-in customer', phone: '0712 000 000', amount: 760, channel: 'mpesa', status: 'succeeded', reference: 'TJL8Q2M4P1', createdAt: timeAgo(18), confirmedAt: timeAgo(17), origin: 'manual' },
       { id: 'pay-002', invoiceId: 'inv-1007', invoiceNumber: 'HS-1007', customer: 'Njeri Wanjiku', phone: '0722 410 665', amount: 940, channel: 'cash', status: 'succeeded', reference: 'CASH-1007', createdAt: timeAgo(54), confirmedAt: timeAgo(54), origin: 'manual' },
       { id: 'pay-003', invoiceId: 'inv-1006', invoiceNumber: 'HS-1006', customer: 'Maua Café', phone: '0718 230 011', amount: 1_540, channel: 'mpesa', status: 'succeeded', reference: 'TJL7P9K2D6', createdAt: timeAgo(92), confirmedAt: timeAgo(91), origin: 'integration' },
@@ -108,7 +108,7 @@ function buildSeedJournal(invoices: Invoice[], payments: Payment[], expenses: Ex
       { id: 'pay-005', invoiceId: 'inv-1003', invoiceNumber: 'HS-1003', customer: 'Kamau Supplies', phone: '0703 250 980', amount: 500, channel: 'bank', status: 'succeeded', reference: 'BNK-48109', createdAt: timeAgo(1_660), confirmedAt: timeAgo(1_650), origin: 'manual' },
       { id: 'pay-006', invoiceId: 'inv-1002', invoiceNumber: 'HS-1002', customer: 'Wanjiku Stores', phone: '0790 335 821', amount: 2_220, channel: 'cash', status: 'succeeded', reference: 'CASH-1002', createdAt: timeAgo(2_340), confirmedAt: timeAgo(2_340), origin: 'manual' },
       { id: 'pay-007', invoiceId: 'inv-1001', invoiceNumber: 'HS-1001', customer: 'Walk-in customer', phone: '0712 000 000', amount: 1_860, channel: 'mpesa', status: 'succeeded', reference: 'TJL2B7M9Q4', createdAt: timeAgo(3_100), confirmedAt: timeAgo(3_098), origin: 'manual' },
-    ],
+];
 
 export function makeDemoData(): AppData {
   const invoices: Invoice[] = [
