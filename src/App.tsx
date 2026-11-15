@@ -950,8 +950,6 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
   const chartDays = Array.from({ length: 7 }, (_, index) => addDays(today(), index - 6));
   const chartValues = chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
   const chartLabels = chartDays.map(day => new Date(day + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }));
-  const averageDailySales = sum(chartValues) / 7;
-  const todayInvoices = data.invoices.filter(invoice => invoice.date === today());
   const recentInvoices = [...data.invoices].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
   const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
   const zeroStock = data.products.filter(product => product.quantity === 0);
@@ -968,21 +966,22 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
         <Button onClick={onCreateSale}><Plus size={15} /> Record sale</Button>
       </div>
     </div>
-    <div className="metric-grid metric-grid-five">
-      <MetricCard label="Sales today" value={money(metrics.salesToday)} note={todayInvoices.length + ' sales recorded'} icon={TrendingUp} tone="green" />
-      <MetricCard label="Gross profit this month" value={money(metrics.grossProfitMonth)} note="After recorded product costs" icon={Activity} tone="blue" />
-      <MetricCard label="Stock at cost" value={money(metrics.inventoryValue)} note={lowStock.length + ' products need attention'} icon={Boxes} tone="slate" />
-      <MetricCard label="Customer balances" value={money(metrics.receivables)} note={metrics.unpaidInvoices + ' unpaid invoices'} icon={ArrowDownLeft} tone="amber" />
-      <MetricCard label="Average daily sales" value={money(averageDailySales)} note="Last 7 calendar days" icon={BarChart3} tone="green" />
-    </div>
-    <section className="quick-actions-section">
-      <div className="quick-actions-heading"><strong>Quick actions</strong><span>Common records, one tap away</span></div>
-      <div className="quick-action-grid">
-        <button type="button" className="quick-action-card" onClick={onCreateSale}><span><Receipt size={20} /></span><strong>New sale</strong><small>Record items sold</small></button>
-        <button type="button" className="quick-action-card" onClick={onRecordExpense}><span><TrendingDown size={20} /></span><strong>Add expense</strong><small>Record money spent</small></button>
-        <button type="button" className="quick-action-card" onClick={onRecordPayment}><span><Wallet size={20} /></span><strong>Record payment</strong><small>Capture money received</small></button>
-        <button type="button" className="quick-action-card" onClick={onCreatePurchase}><span><ShoppingCart size={20} /></span><strong>Supplier order</strong><small>Order stock quickly</small></button>
-        <button type="button" className="quick-action-card" onClick={onQuickStock}><span><Package size={20} /></span><strong>Update stock</strong><small>Correct a product count</small></button>
+    <section className="business-overview-panel" aria-label="Business overview">
+      <div className="business-overview-top">
+        <div><span className="business-overview-kicker">BUSINESS OVERVIEW</span><h3>At a glance</h3></div>
+        <div className="business-quick-actions" aria-label="Quick actions">
+          <button type="button" onClick={onCreateSale}><Plus size={15} /> New sale</button>
+          <button type="button" onClick={onRecordExpense}><Plus size={15} /> Expense</button>
+          <button type="button" onClick={onRecordPayment}><Wallet size={15} /> Payment</button>
+          <button type="button" onClick={onCreatePurchase}><ShoppingCart size={15} /> Order stock</button>
+          <button type="button" onClick={onQuickStock}><Package size={15} /> Update stock</button>
+        </div>
+      </div>
+      <div className="business-overview-metrics">
+        <div className="business-overview-metric"><span><TrendingUp size={15} /> Sales today</span><strong>{money(metrics.salesToday)}</strong><small>Today's recorded sales</small></div>
+        <div className="business-overview-metric"><span><TrendingDown size={15} /> Expenses this month</span><strong>{money(sum(data.expenses.filter(expense => expense.date.slice(0, 7) === today().slice(0, 7)).map(expense => expense.amount)))}</strong><small>Operating expenses recorded</small></div>
+        <div className="business-overview-metric"><span><Boxes size={15} /> Inventory at cost</span><strong>{money(metrics.inventoryValue)}</strong><small>{lowStock.length} products at reorder level</small></div>
+        <div className="business-overview-metric"><span><FileText size={15} /> Pending bills</span><strong>{money(metrics.payables)}</strong><small>{data.suppliers.filter(supplier => supplier.balance > 0).length} supplier balances outstanding</small></div>
       </div>
     </section>
     <div className="content-grid content-grid-main">
