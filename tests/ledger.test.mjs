@@ -35,11 +35,24 @@ test('purchase order totals reconcile to supplier order lines', () => {
   }
 });
 
-test('seed journal entries are balanced', () => {
+test('seed journal transactions are individually balanced', () => {
   const data = makeDemoData();
-  const debits = sum(data.journal.map((line) => line.debit));
-  const credits = sum(data.journal.map((line) => line.credit));
-  assert.equal(debits, credits);
+  const groups = new Map();
+  for (const line of data.journal) {
+    const group = groups.get(line.journalId) ?? { debit: 0, credit: 0 };
+    group.debit += line.debit;
+    group.credit += line.credit;
+    groups.set(line.journalId, group);
+  }
+  assert.ok(groups.size >= 10);
+  for (const group of groups.values()) assert.equal(group.debit, group.credit);
+});
+
+test('confirmed payment records reconcile to invoice paid totals', () => {
+  const data = makeDemoData();
+  const paidOnInvoices = sum(data.invoices.map((invoice) => invoice.paid));
+  const recordedPayments = sum(data.payments.filter((payment) => payment.status === 'succeeded').map((payment) => payment.amount));
+  assert.equal(recordedPayments, paidOnInvoices);
 });
 
 test('unmatched receipts remain separate from invoice payments until allocated', () => {

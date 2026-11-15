@@ -1,4 +1,4 @@
-import type { AppData, Invoice, Product } from './types';
+import type { AppData, Expense, Invoice, JournalLine, Payment, Product } from './types';
 
 const localDate = (date: Date) => {
   const year = date.getFullYear();
@@ -47,6 +47,59 @@ const makeInvoice = (
   };
 };
 
+
+function buildSeedJournal(invoices: Invoice[], payments: Payment[], expenses: Expense[]): JournalLine[] {
+  const journal: JournalLine[] = [];
+  let sequence = 1;
+  const post = (date: string, debitAccount: string, creditAccount: string, amount: number, description: string, reference: string) => {
+    if (amount <= 0) return;
+    const journalId = 'seed-' + String(sequence++).padStart(4, '0');
+    journal.push(
+      { id: journalId + '-dr', journalId, date, account: debitAccount, debit: amount, credit: 0, description, reference },
+      { id: journalId + '-cr', journalId, date, account: creditAccount, debit: 0, credit: amount, description, reference },
+    );
+  };
+
+  for (const invoice of invoices) {
+    post(invoice.date, 'Accounts receivable', 'Sales revenue', invoice.total, 'Invoice issued · ' + invoice.number, invoice.number);
+    const cost = invoice.lines.reduce((total, line) => total + line.quantity * line.unitCost, 0);
+    post(invoice.date, 'Cost of goods sold', 'Inventory', cost, 'Cost of sale · ' + invoice.number, invoice.number);
+  }
+
+  for (const payment of payments) {
+    const debitAccount = payment.channel === 'mpesa'
+      ? 'M-Pesa clearing'
+      : payment.channel === 'cash'
+        ? 'Cash on hand'
+        : payment.channel === 'bank'
+          ? 'Bank account'
+          : 'Card clearing';
+    post(payment.createdAt.slice(0, 10), debitAccount, 'Accounts receivable', payment.amount, 'Customer payment · ' + payment.invoiceNumber, payment.reference);
+  }
+
+  for (const expense of expenses) {
+    const debitAccount = expense.category === 'Rent'
+      ? 'Rent expense'
+      : expense.category === 'Utilities'
+        ? 'Utilities expense'
+        : expense.category === 'Staff costs'
+          ? 'Staff expense'
+          : expense.category === 'Transport'
+            ? 'Transport expense'
+            : 'Operating expenses';
+    const creditAccount = expense.channel === 'cash'
+      ? 'Cash on hand'
+      : expense.channel === 'mpesa'
+        ? 'M-Pesa clearing'
+        : expense.channel === 'bank'
+          ? 'Bank account'
+          : 'Card clearing';
+    post(expense.date, debitAccount, creditAccount, expense.amount, expense.description, expense.reference);
+  }
+
+  return journal;
+}
+
 export function makeDemoData(): AppData {
   const invoices: Invoice[] = [
     makeInvoice('inv-1008', 'HS-1008', 'Walk-in customer', 0, [
@@ -83,6 +136,13 @@ export function makeDemoData(): AppData {
     ], 1_860, 'mpesa'),
   ];
 
+  const expenses: Expense[] = [
+    { id: 'exp-01', date: today(), category: 'Transport', description: 'Supplier collection and delivery', amount: 1_200, channel: 'cash', reference: 'EXP-304' },
+    { id: 'exp-02', date: offset(-1), category: 'Utilities', description: 'Electricity tokens', amount: 3_500, channel: 'mpesa', reference: 'EXP-303' },
+    { id: 'exp-03', date: offset(-2), category: 'Rent', description: 'Monthly shop rent', amount: 18_000, channel: 'bank', reference: 'EXP-302' },
+    { id: 'exp-04', date: offset(-3), category: 'Staff costs', description: 'Weekly wages', amount: 8_500, channel: 'bank', reference: 'EXP-301' },
+  ];
+
   return {
     profile: {
       name: 'Northstar Market', legalName: 'Northstar Retail Limited',
@@ -105,12 +165,7 @@ export function makeDemoData(): AppData {
       { id: 'rcpt-001', reference: 'QAM3H8PL2', payer: 'Otieno Retail', phone: '0701 228 114', amount: 1_200, rail: 'Till / PayBill', receivedAt: timeAgo(35), source: 'statement' },
       { id: 'rcpt-002', reference: 'PCH-9841', payer: 'Unknown sender', phone: '0721 480 020', amount: 350, rail: 'Pochi la Biashara', receivedAt: timeAgo(72), source: 'manual' },
     ],
-    expenses: [
-      { id: 'exp-01', date: today(), category: 'Transport', description: 'Supplier collection and delivery', amount: 1_200, channel: 'cash', reference: 'EXP-304' },
-      { id: 'exp-02', date: offset(-1), category: 'Utilities', description: 'Electricity tokens', amount: 3_500, channel: 'mpesa', reference: 'EXP-303' },
-      { id: 'exp-03', date: offset(-2), category: 'Rent', description: 'Monthly shop rent', amount: 18_000, channel: 'bank', reference: 'EXP-302' },
-      { id: 'exp-04', date: offset(-3), category: 'Staff costs', description: 'Weekly wages', amount: 8_500, channel: 'bank', reference: 'EXP-301' },
-    ],
+    expenses,
     suppliers: [
       { id: 'sup-001', name: 'Meru Wholesale Distributors', phone: '+254 700 120 450', email: 'orders@meruwholesale.example', terms: '14 days', balance: 18_400 },
       { id: 'sup-002', name: 'Eastlands Oils & Foods', phone: '+254 711 445 201', email: 'sales@eastlandsoils.example', terms: '7 days', balance: 7_250 },
@@ -149,14 +204,7 @@ export function makeDemoData(): AppData {
         ],
       },
     ],
-    journal: [
-      { id: 'j-001a', journalId: 'j-001', date: today(), account: 'M-Pesa clearing', debit: 760, credit: 0, description: 'Customer payment · HS-1008', reference: 'TJL8Q2M4P1' },
-      { id: 'j-001b', journalId: 'j-001', date: today(), account: 'Accounts receivable', debit: 0, credit: 760, description: 'Customer payment · HS-1008', reference: 'TJL8Q2M4P1' },
-      { id: 'j-002a', journalId: 'j-002', date: today(), account: 'Cash on hand', debit: 940, credit: 0, description: 'Cash sale · HS-1007', reference: 'CASH-1007' },
-      { id: 'j-002b', journalId: 'j-002', date: today(), account: 'Sales revenue', debit: 0, credit: 940, description: 'Cash sale · HS-1007', reference: 'HS-1007' },
-      { id: 'j-003a', journalId: 'j-003', date: today(), account: 'M-Pesa clearing', debit: 1_540, credit: 0, description: 'Website payment · HS-1006', reference: 'TJL7P9K2D6' },
-      { id: 'j-003b', journalId: 'j-003', date: today(), account: 'Sales revenue', debit: 0, credit: 1_540, description: 'Website payment · HS-1006', reference: 'HS-1006' },
-    ],
+    journal: buildSeedJournal(invoices, payments, expenses),
     events: [
       { id: 'evt-01', time: timeAgo(17), type: 'payment.confirmed', source: 'M-Pesa collection', status: 'delivered', reference: 'TJL8Q2M4P1', detail: 'Payment matched to HS-1008' },
       { id: 'evt-02', time: timeAgo(34), type: 'invoice.paid', source: 'Hesabu checkout', status: 'delivered', reference: 'HS-1006', detail: 'Invoice status updated to paid' },
