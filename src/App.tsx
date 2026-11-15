@@ -752,19 +752,46 @@ function AdjustStockDialog({ product, onClose, onAdjust }: {
   </Modal>;
 }
 
-function StockPickerDialog({ products, onClose, onSelect }: {
-  products: Product[]; onClose: () => void; onSelect: (productId: string) => void;
+function StockPickerDialog({ products, onClose, onAdjust }: {
+  products: Product[];
+  onClose: () => void;
+  onAdjust: (productId: string, quantity: number, reason: string) => void;
 }) {
   const [productId, setProductId] = useState(products[0]?.id || '');
   const product = products.find(item => item.id === productId);
-  return <Modal title="Update stock" detail="Choose the item you have counted or received." onClose={onClose}>
-    <div className="modal-body">
-      <SelectField label="Product" value={productId} onChange={setProductId} options={products.map(item => ({
+  const [quantity, setQuantity] = useState(String(products[0]?.quantity ?? 0));
+  const [reason, setReason] = useState('Stock count adjustment');
+  const counted = Math.max(0, Number(quantity) || 0);
+  const difference = product ? counted - product.quantity : 0;
+  const valueImpact = Math.abs(difference * (product?.costPrice || 0));
+  return <Modal title="Update stock" detail="Choose the product and enter the quantity you have counted." onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      const next = Number(quantity);
+      if (product && Number.isFinite(next) && next >= 0) onAdjust(product.id, next, reason);
+    }}>
+      <SelectField label="Product" value={productId} onChange={value => {
+        setProductId(value);
+        const selected = products.find(item => item.id === value);
+        setQuantity(String(selected?.quantity ?? 0));
+      }} options={products.map(item => ({
         value: item.id, label: item.name + ' · ' + numberText(item.quantity) + ' ' + item.unit,
       }))} />
-      {product && <div className="stock-picker-current"><span>Current recorded quantity</span><strong>{numberText(product.quantity)} {product.unit}</strong></div>}
-      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={() => product && onSelect(product.id)} disabled={!product}>Continue</Button></div>
-    </div>
+      {product && <div className="stock-count-summary">
+        <div><span>Recorded</span><strong>{numberText(product.quantity)} {product.unit}</strong></div>
+        <div><span>Counted</span><strong>{numberText(counted)} {product.unit}</strong></div>
+        <div><span>Difference</span><strong className={difference < 0 ? 'negative-text' : difference > 0 ? 'positive-text' : ''}>{difference > 0 ? '+' : ''}{numberText(difference)} {product.unit}</strong></div>
+        <div><span>Value difference</span><strong>{money(valueImpact)}</strong></div>
+      </div>}
+      <Field label="Physical quantity counted" type="number" min={0} step={0.01} value={quantity} onChange={setQuantity} required />
+      <SelectField label="Reason for difference" value={reason} onChange={setReason} options={[
+        { value: 'Stock count adjustment', label: 'Routine stock count' },
+        { value: 'Damaged or expired', label: 'Damaged or expired goods' },
+        { value: 'Opening balance correction', label: 'Opening count correction' },
+        { value: 'Other stock movement', label: 'Other stock movement' },
+      ]} />
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!product || !Number.isFinite(Number(quantity)) || Number(quantity) < 0}>Save stock update</Button></div>
+    </form>
   </Modal>;
 }
 
@@ -2275,7 +2302,7 @@ function App() {
     {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} initialProductId={dialog.productId} initialQuantity={dialog.quantity} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
     {dialog?.kind === 'receive-purchase' && selectedPurchaseOrder && <ReceivePurchaseDialog order={selectedPurchaseOrder} onClose={() => setDialog(null)} onReceive={items => receivePurchaseOrder(selectedPurchaseOrder.id, items)} />}
     {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={amount => paySupplier(selectedSupplier.id, amount)} />}
-    {dialog?.kind === 'stock-picker' && <StockPickerDialog products={data.products} onClose={() => setDialog(null)} onSelect={productId => setDialog({ kind: 'adjust', productId })} />}
+    {dialog?.kind === 'stock-picker' && <StockPickerDialog products={data.products} onClose={() => setDialog(null)} onAdjust={adjustStock} />}
     {dialog?.kind === 'adjust' && selectedProduct && <AdjustStockDialog product={selectedProduct} onClose={() => setDialog(null)} onAdjust={(quantity, reason) => adjustStock(selectedProduct.id, quantity, reason)} />}
     {selectedInvoice && <InvoiceDialog invoice={selectedInvoice} onClose={() => setSelectedInvoiceId(null)} onRequestPayment={() => {
       setSelectedInvoiceId(null);
