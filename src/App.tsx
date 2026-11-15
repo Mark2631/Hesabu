@@ -62,6 +62,15 @@ const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
   reports: { title: 'Reports', description: 'Understand trading performance, cash movement and working capital.' },
   integrations: { title: 'Sales channels', description: 'Bring in-store, online and wholesale orders into one business view.' },
   settings: { title: 'Team & settings', description: 'Manage your business profile and the people who run it.' },
+
+};
+
+const roleAccess: Record<TeamRole, ModuleKey[]> = {
+  Owner: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'settings'],
+  Manager: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations'],
+  Sales: ['overview', 'sales', 'payments'],
+  Inventory: ['overview', 'inventory', 'procurement'],
+  Finance: ['overview', 'sales', 'payments', 'accounts', 'reports'],
 };
 
 const money = (value: number) => new Intl.NumberFormat('en-KE', {
@@ -1465,6 +1474,8 @@ function recordJournal(
 
 function App() {
   const [data, setData] = useState<AppData>(() => readWorkspace());
+  const [activeMemberId, setActiveMemberId] = useState('team-001');
+  const [userSwitcherOpen, setUserSwitcherOpen] = useState(false);
   const [active, setActive] = useState<ModuleKey>('overview');
   const [dialog, setDialog] = useState<DialogState>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
@@ -1477,6 +1488,13 @@ function App() {
   useEffect(() => { saveWorkspace(data); }, [data]);
 
   const metrics = useMemo(() => getMetrics(data), [data]);
+  const activeMember = data.teamMembers.find(member => member.id === activeMemberId && member.status === 'active')
+    || data.teamMembers.find(member => member.role === 'Owner' && member.status === 'active')
+    || data.teamMembers.find(member => member.status === 'active');
+  const allowedModules = activeMember ? roleAccess[activeMember.role] : roleAccess.Owner;
+  const visibleNavGroups = NAV_GROUPS.map(group => ({
+    ...group, items: group.items.filter(item => allowedModules.includes(item.id)),
+  })).filter(group => group.items.length > 0);
   const selectedInvoice = selectedInvoiceId ? data.invoices.find(invoice => invoice.id === selectedInvoiceId) : undefined;
   const selectedSupplier = dialog?.kind === 'supplier-payment' ? data.suppliers.find(supplier => supplier.id === dialog.supplierId) : undefined;
   const selectedPurchaseOrder = dialog?.kind === 'receive-purchase' ? data.purchaseOrders.find(order => order.id === dialog.purchaseOrderId) : undefined;
@@ -1486,6 +1504,10 @@ function App() {
   const notify = (title: string, detail?: string) => setNotice({ title, detail });
   const closeNotice = () => setNotice(null);
   const navigate = (section: ModuleKey) => {
+    if (!allowedModules.includes(section)) {
+      notify('This area is not included in this role', 'Switch to an authorised business role to continue.');
+      return;
+    }
     setActive(section);
     setSearch('');
     setDialog(null);
@@ -1963,15 +1985,15 @@ function App() {
     <aside className={'sidebar ' + (mobileMenuOpen ? 'sidebar-mobile-open' : '')}>
       <div className="brand-row">
         <div className="brand-mark">H</div>
-        {!sidebarCollapsed && <div className="brand-text"><strong>hesabu<span>.</span></strong><small>Business operating system</small></div>}
+        {!sidebarCollapsed && <div className="brand-text"><strong>hesabu<span>.</span></strong><small>BUSINESS WORKSPACE</small></div>}
         <button className="sidebar-collapse" onClick={() => setSidebarCollapsed(value => !value)} aria-label="Collapse navigation"><PanelLeftClose size={16} /></button>
       </div>
-      <button className="workspace-switcher" onClick={() => navigate('settings')}>
+      <button className="workspace-switcher" onClick={() => navigate('overview')}>
         <span className="workspace-avatar"><Store size={15} /></span>
         {!sidebarCollapsed && <><span className="workspace-name"><strong>{data.profile.name}</strong><small>{data.profile.industry}</small></span><ChevronDown size={14} /></>}
       </button>
       <nav className="sidebar-nav">
-        {NAV_GROUPS.map(group => <div className="nav-group" key={group.title}>
+        {visibleNavGroups.map(group => <div className="nav-group" key={group.title}>
           {!sidebarCollapsed && <div className="nav-group-label">{group.title}</div>}
           {group.items.map(item => {
             const Icon = item.icon;
@@ -1986,7 +2008,7 @@ function App() {
       {!sidebarCollapsed && <div className="sidebar-bottom">
         <div className="sidebar-help"><div><span className="sidebar-help-mark">H</span><strong>Built for the whole business</strong></div><p>Keep sales, stock and purchasing in sync.</p><button onClick={() => navigate('reports')}>View performance <ArrowRight size={12} /></button></div>
         <div className="sidebar-profile" onClick={() => navigate('settings')} role="button" tabIndex={0}>
-          <Initials name={data.profile.name} /><span><strong>{data.profile.name}</strong><small>Demo workspace</small></span><MoreHorizontal size={17} />
+          <Initials name={activeMember?.name || data.profile.name} /><span><strong>{activeMember?.name || data.profile.name}</strong><small>{activeMember?.role || 'Owner'} · role preview</small></span><MoreHorizontal size={17} />
         </div>
       </div>}
     </aside>
@@ -2004,7 +2026,8 @@ function App() {
           <span className="topbar-divider" />
           <button className="topbar-date" onClick={() => notify('Workspace date', dateLabel(today()))}><CalendarDays size={15} /> <span>{dateLabel(today())}</span></button>
           <button className="notification-button" onClick={() => notify('Operational attention', data.products.filter(product => product.quantity <= product.reorderLevel).length + ' stock items are at or below reorder level.')}><Bell size={17} /><i /></button>
-          <button className="topbar-avatar" onClick={() => navigate('settings')}><Initials name={data.profile.name} /></button>
+          <button className="topbar-avatar" aria-label="Switch role preview" aria-expanded={userSwitcherOpen} onClick={() => setUserSwitcherOpen(value => !value)}><Initials name={activeMember?.name || data.profile.name} /></button>
+          {userSwitcherOpen && <div className="user-switcher-panel"><div className="user-switcher-heading"><strong>Preview workspace as</strong><small>Switch between the owner and staff views.</small></div>{data.teamMembers.filter(member => member.status === 'active').map(member => <button key={member.id} className={member.id === activeMember?.id ? 'user-switcher-active' : ''} onClick={() => { setActiveMemberId(member.id); setUserSwitcherOpen(false); setActive('overview'); setDialog(null); setSelectedInvoiceId(null); setSearch(''); }}><Initials name={member.name} /><span><strong>{member.name}</strong><small>{member.role}</small></span>{member.id === activeMember?.id && <span className="user-switcher-current">Current</span>}</button>)}</div>
         </div>
       </header>
 
@@ -2029,7 +2052,7 @@ function App() {
         { id: 'payments' as ModuleKey, label: 'Money', icon: Wallet },
         { id: 'inventory' as ModuleKey, label: 'Stock', icon: Package },
         { id: 'procurement' as ModuleKey, label: 'Orders', icon: ShoppingCart },
-      ].map(item => {
+      ].filter(item => allowedModules.includes(item.id)).map(item => {
         const Icon = item.icon;
         return <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>;
       })}

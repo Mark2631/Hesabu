@@ -961,3 +961,24 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 @media (max-width:390px) {
   .stock-count-summary { gap:8px; }
 }
+
+
+/* Account role preview: compact owner/staff view switcher for the prototype. */
+.topbar-right { position:relative; }
+.user-switcher-panel {
+  position:absolute; right:0; top:calc(100% + 12px); z-index:60; width:min(300px, calc(100vw - 24px));
+  padding:8px; border:1px solid #e4e8ef; border-radius:12px; background:#fff;
+  box-shadow:0 14px 38px rgba(17,24,39,.13);
+}
+.user-switcher-heading { display:flex; flex-direction:column; gap:4px; padding:9px 10px 11px; border-bottom:1px solid #edf0f4; }
+.user-switcher-heading strong { color:#172133; font-size:11px; }
+.user-switcher-heading small { color:#8490a1; font-size:9px; }
+.user-switcher-panel > button { display:flex; align-items:center; gap:9px; width:100%; padding:9px 8px; margin-top:3px; border:0; border-radius:8px; background:#fff; text-align:left; }
+.user-switcher-panel > button:hover, .user-switcher-panel > button.user-switcher-active { background:#f5f7fc; }
+.user-switcher-panel > button > span:nth-child(2) { display:flex; flex:1; min-width:0; flex-direction:column; gap:3px; }
+.user-switcher-panel > button strong { color:#202b3b; font-size:10px; }
+.user-switcher-panel > button small { color:#8490a1; font-size:9px; }
+.user-switcher-current { color:#315bd6; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+@media (max-width:720px) {
+  .user-switcher-panel { position:fixed; top:61px; right:10px; }
+}
