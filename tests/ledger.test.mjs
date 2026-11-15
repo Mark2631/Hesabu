@@ -189,3 +189,50 @@ test('low stock is measurable from quantity and reorder rules', () => {
   assert.ok(lowStock.length >= 3);
   assert.ok(lowStock.some((product) => product.sku === 'HOM-011'));
 });
+
+
+test('production plans consume recipe quantities and value finished goods at material cost', async () => {
+  const { planProductionRun } = await import('../src/finance.ts');
+  const recipe = {
+    outputProductId: 'bread',
+    ingredients: [
+      { productId: 'flour', quantityPerUnit: 0.5 },
+      { productId: 'sugar', quantityPerUnit: 0.1 },
+    ],
+  };
+  const products = [
+    { id: 'bread', name: 'Bread loaf', quantity: 4, costPrice: 22 },
+    { id: 'flour', name: 'Flour', quantity: 20, costPrice: 80 },
+    { id: 'sugar', name: 'Sugar', quantity: 10, costPrice: 120 },
+  ];
+  const plan = planProductionRun(recipe, products, 10);
+  assert.equal(plan.valid, true);
+  if (!plan.valid) return;
+  assert.equal(plan.materialCost, 520);
+  assert.equal(plan.unitCost, 52);
+  assert.deepEqual(plan.materials.map(line => line.quantity), [5, 1]);
+});
+
+test('production plans reject insufficient stock, duplicate inputs and invalid output quantities', async () => {
+  const { planProductionRun } = await import('../src/finance.ts');
+  const products = [
+    { id: 'bread', name: 'Bread loaf', quantity: 0, costPrice: 20 },
+    { id: 'flour', name: 'Flour', quantity: 2, costPrice: 80 },
+  ];
+  const insufficient = planProductionRun({
+    outputProductId: 'bread', ingredients: [{ productId: 'flour', quantityPerUnit: 1 }],
+  }, products, 3);
+  assert.equal(insufficient.valid, false);
+  assert.match(insufficient.reason, /Not enough Flour/);
+  const duplicate = planProductionRun({
+    outputProductId: 'bread', ingredients: [
+      { productId: 'flour', quantityPerUnit: 0.5 },
+      { productId: 'flour', quantityPerUnit: 0.2 },
+    ],
+  }, products, 1);
+  assert.equal(duplicate.valid, false);
+  const invalidQuantity = planProductionRun({
+    outputProductId: 'bread', ingredients: [{ productId: 'flour', quantityPerUnit: 1 }],
+  }, products, 0);
+  assert.equal(invalidQuantity.valid, false);
+});

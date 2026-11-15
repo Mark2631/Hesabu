@@ -260,6 +260,9 @@ export function makeDemoData(): AppData {
     ],
     openingBalances,
     teamMembers,
+    productionRecipes: [],
+    productionRuns: [],
+    nextProductionRun: 1,
     nextInvoice: 1009,
     nextPurchaseOrder: 21,
   };
@@ -274,7 +277,7 @@ export function readWorkspace(): AppData {
       const parsed = JSON.parse(raw) as Partial<AppData>;
       if (parsed.profile && Array.isArray(parsed.products) && Array.isArray(parsed.invoices)) {
         const demo = makeDemoData();
-        return { ...demo, ...parsed, unmatchedReceipts: parsed.unmatchedReceipts ?? demo.unmatchedReceipts, cashMovements: parsed.cashMovements ?? demo.cashMovements, teamMembers: parsed.teamMembers ?? demo.teamMembers };
+        return { ...demo, ...parsed, unmatchedReceipts: parsed.unmatchedReceipts ?? demo.unmatchedReceipts, cashMovements: parsed.cashMovements ?? demo.cashMovements, teamMembers: parsed.teamMembers ?? demo.teamMembers, productionRecipes: parsed.productionRecipes ?? demo.productionRecipes, productionRuns: parsed.productionRuns ?? demo.productionRuns, nextProductionRun: parsed.nextProductionRun ?? demo.nextProductionRun };
       }
     }
   } catch {
