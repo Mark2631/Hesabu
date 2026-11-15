@@ -21,12 +21,14 @@ A posted sale is intended to flow through invoice, collection, stock and account
 The build/platform-foundation branch contains a front-end product preview built on the existing React 18, TypeScript and Vite application.
 
 - Seeded mini-mart workspace with products, suppliers, invoices, payment records and purchase orders.
-- Local interactions for recording sales, creating invoices, requesting and resolving simulated STK payments, adding unmatched receipts, matching receipts to open invoices, recording expenses, stock counts, purchase orders and supplier payments.
+- Local interactions for recording sales, creating invoices, requesting and resolving simulated STK payments, adding unmatched receipts, matching receipts to open invoices, recording expenses, stock counts, multi-line purchase orders and supplier payments.
+- Balanced journal-pair posting for preview transactions, weighted-average cost on stock receipts, and separate treatment of unapplied customer receipts as customer advances.
+- Supplier settlements reduce bank cash and accounts payable; they are not treated as operating expenses.
 - Derived dashboard and report values.
 - Browser-local persistence under hesabu:platform:v2.
 - Responsive desktop, tablet and mobile navigation.
 
-The preview is deliberately local-first while the production database is not connected. Data only persists in the current browser. It is not yet multi-user, multi-branch, cloud-synchronised or suitable for real financial operations.
+The preview is deliberately local-first while the production database is not connected. Data only persists in the current browser. It is not yet multi-user, multi-branch, cloud-synchronised or suitable for real financial operations. Seeded values are representative demo figures, not audited opening balances.
 
 ## Daraja and settlement design
 

@@ -9,6 +9,7 @@ import {
   Store, TrendingDown, TrendingUp, Truck, Wallet, X,
   type LucideIcon,
 } from 'lucide-react';
+import { allocateIncomingPayment, buildJournalPair, isJournalBalanced, outstandingBalance, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
@@ -94,7 +95,7 @@ const statusClass = (status: string) => 'status-pill status-' + (status === 'suc
 const channelClass = (channel: PaymentChannel) => 'channel-badge channel-' + channel;
 const shortRef = (value: string) => value.length > 15 ? value.slice(0, 13) + '…' : value;
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
-const invoiceBalance = (invoice: Invoice) => Math.max(0, invoice.total - invoice.paid);
+const invoiceBalance = (invoice: Invoice) => outstandingBalance(invoice.total, invoice.paid);
 const productValue = (product: Product) => product.quantity * product.costPrice;
 const marginValue = (invoice: Invoice) => sum(invoice.lines.map(line => (line.unitPrice - line.unitCost) * line.quantity));
 const sourceLabel = (source: Invoice['source']) => ({
@@ -474,35 +475,55 @@ function PurchaseDialog({ suppliers, products, onClose, onCreate }: {
   suppliers: Supplier[]; products: Product[]; onClose: () => void; onCreate: (input: NewPurchaseInput) => void;
 }) {
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id || '');
-  const [productId, setProductId] = useState(products[0]?.id || '');
-  const [quantity, setQuantity] = useState('10');
-  const [unitCost, setUnitCost] = useState(String(products[0]?.costPrice || 0));
   const [expectedAt, setExpectedAt] = useState(addDays(today(), 2));
-  const product = products.find(item => item.id === productId);
-  const total = Math.max(0, Number(quantity) || 0) * Math.max(0, Number(unitCost) || 0);
-  return <Modal title="Create purchase order" detail="Prepare a supplier order. Inventory and accounts payable update when goods are received." onClose={onClose}>
-    <form className="modal-body" onSubmit={event => {
-      event.preventDefault();
-      const qty = Number(quantity);
-      const cost = Number(unitCost);
-      if (supplierId && productId && qty > 0 && cost > 0) onCreate({
-        supplierId, expectedAt, items: [{ productId, quantity: qty, unitCost: cost }],
-      });
-    }}>
+  const [items, setItems] = useState(() => products[0] ? [{
+    productId: products[0].id, quantity: 10, unitCost: products[0].costPrice,
+  }] : []);
+  const updateItem = (index: number, patch: Partial<(typeof items)[number]>) => {
+    setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  };
+  const addItem = () => {
+    const product = products.find(candidate => !items.some(item => item.productId === candidate.id));
+    if (product) setItems(current => [...current, { productId: product.id, quantity: 1, unitCost: product.costPrice }]);
+  };
+  const total = sum(items.map(item => item.quantity * item.unitCost));
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const valid = items.filter(item => item.productId && item.quantity > 0 && item.unitCost > 0);
+    if (supplierId && valid.length) onCreate({ supplierId, expectedAt, items: valid });
+  };
+  return <Modal title="Create purchase order" detail="Build a supplier order with multiple lines. Inventory and accounts payable update when goods are received." onClose={onClose} size="lg">
+    <form className="modal-body" onSubmit={submit}>
       <SelectField label="Supplier" value={supplierId} onChange={setSupplierId} options={suppliers.map(item => ({ value: item.id, label: item.name }))} />
-      <SelectField label="Product" value={productId} onChange={value => {
-        setProductId(value);
-        const selected = products.find(item => item.id === value);
-        if (selected) setUnitCost(String(selected.costPrice));
-      }} options={products.map(item => ({ value: item.id, label: item.name + ' · ' + item.sku }))} />
-      <div className="form-grid form-grid-three">
-        <Field label="Order quantity" type="number" min={1} value={quantity} onChange={setQuantity} />
-        <Field label="Unit cost (KSh)" type="number" min={1} value={unitCost} onChange={setUnitCost} />
-        <Field label="Expected delivery" type="date" value={expectedAt} onChange={setExpectedAt} />
+      <div className="subsection-label">Order items</div>
+      <div className="sale-items">
+        {items.map((item, index) => {
+          const selected = products.find(product => product.id === item.productId);
+          const available = products.filter(product => product.id === item.productId || !items.some(other => other.productId === product.id));
+          return <div className="purchase-item-row" key={index}>
+            <label className="field purchase-product-field">
+              <span className="field-label">Product</span>
+              <select className="field-input" value={item.productId} onChange={event => {
+                const product = products.find(candidate => candidate.id === event.target.value);
+                if (product) updateItem(index, { productId: product.id, unitCost: product.costPrice });
+              }}>
+                {available.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}
+              </select>
+            </label>
+            <Field label="Qty" type="number" min={1} value={item.quantity} onChange={value => updateItem(index, { quantity: Math.max(1, Number(value) || 1) })} />
+            <Field label="Unit cost" type="number" min={1} value={item.unitCost} onChange={value => updateItem(index, { unitCost: Math.max(0, Number(value) || 0) })} />
+            <div className="sale-line-total"><span>Line total</span><strong>{money(selected ? item.quantity * item.unitCost : 0)}</strong></div>
+            {items.length > 1 && <IconButton label="Remove item" onClick={() => setItems(current => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></IconButton>}
+          </div>;
+        })}
       </div>
+      <div className="inline-form-actions">
+        <Button variant="outline" size="sm" onClick={addItem} disabled={items.length >= products.length}><Plus size={14} /> Add another item</Button>
+        <span className="field-hint">Each line retains its purchase cost for stock valuation.</span>
+      </div>
+      <Field label="Expected delivery date" type="date" value={expectedAt} onChange={setExpectedAt} />
       <div className="dialog-total"><span className="dialog-total-final"><span>Purchase order total</span><strong>{money(total)}</strong></span></div>
-      {product && <div className="field-hint">Current recorded cost: {money(product.costPrice)} per {product.unit}.</div>}
-      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!supplierId || !productId || total <= 0}>Create purchase order</Button></div>
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!supplierId || !items.length || total <= 0}>Create purchase order</Button></div>
     </form>
   </Modal>;
 }
@@ -605,11 +626,13 @@ function ReceiptDialog({ onClose, onCreate }: {
 function MatchReceiptDialog({ receipt, invoices, onClose, onMatch }: {
   receipt: UnmatchedReceipt; invoices: Invoice[]; onClose: () => void; onMatch: (invoiceId: string) => void;
 }) {
-  const eligible = invoices.filter(invoice => invoiceBalance(invoice) >= receipt.amount);
+  const eligible = invoices.filter(invoice => invoiceBalance(invoice) > 0);
   const likely = eligible.find(invoice => invoice.customer.toLowerCase() === receipt.payer.toLowerCase());
   const [invoiceId, setInvoiceId] = useState(likely?.id || eligible[0]?.id || '');
   const invoice = eligible.find(item => item.id === invoiceId);
-  return <Modal title="Match payment to invoice" detail="Apply this receipt once. Hesabu will update the invoice balance and reconciliation ledger together." onClose={onClose}>
+  const balance = invoice ? invoiceBalance(invoice) : 0;
+  const excess = Math.max(0, receipt.amount - balance);
+  return <Modal title="Match payment to invoice" detail="Apply the invoice portion and retain any excess as customer credit." onClose={onClose}>
     <div className="modal-body">
       <div className="receipt-match-summary">
         <div><span className="field-label">Amount received</span><strong>{money(receipt.amount)}</strong></div>
@@ -622,13 +645,18 @@ function MatchReceiptDialog({ receipt, invoices, onClose, onMatch }: {
           value: item.id,
           label: item.number + ' · ' + item.customer + ' · balance ' + money(invoiceBalance(item)),
         }))} />
-        {invoice && <div className="balance-hint"><span>Invoice balance after matching</span><strong>{money(invoiceBalance(invoice) - receipt.amount)}</strong></div>}
-        <div className="field-hint">The receipt amount cannot exceed the selected invoice's outstanding balance. Split allocations can be added as a later reconciliation workflow.</div>
+        {invoice && <div className="invoice-total-box">
+          <div><span>Invoice balance</span><strong>{money(balance)}</strong></div>
+          <div><span>Applied to invoice</span><strong>{money(Math.min(receipt.amount, balance))}</strong></div>
+          <div className="grand-total balance-total"><span>Unapplied customer credit</span><strong>{money(excess)}</strong></div>
+        </div>}
+        {excess > 0 && <div className="demo-notice"><ShieldCheck size={16} /><span><strong>Excess amount will be retained</strong><small>The invoice will not be overpaid. The difference will be posted to customer advances for later allocation or refund.</small></span></div>}
+        <div className="field-hint">This records an allocation from the receipt already captured. It does not verify the receipt with the payment provider.</div>
         <div className="modal-footer">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => onMatch(invoiceId)} disabled={!invoiceId}><Check size={15} /> Confirm match</Button>
+          <Button onClick={() => onMatch(invoiceId)} disabled={!invoiceId}><Check size={15} /> Confirm allocation</Button>
         </div>
-      </> : <EmptyState title="No eligible invoice" body="No open invoice has a balance large enough for this receipt. Create or review the invoice before allocating this payment." />}
+      </> : <EmptyState title="No open invoice" body="There is no outstanding invoice to allocate this receipt against. Keep it in the queue until the correct customer invoice is available." />}
     </div>
   </Modal>;
 }
@@ -848,7 +876,7 @@ function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onRes
           <td>{payment.customer}<small className="cell-sub">{payment.phone}</small></td>
           <td>{payment.invoiceNumber}</td><td><span className={channelClass(payment.channel)}>{channelLabel(payment.channel)}</span></td>
           <td className="mono-text">{shortRef(payment.reference)}</td><td>{dateTimeLabel(payment.createdAt)}</td>
-          <td className="amount-cell">{money(payment.amount)}</td>
+          <td className="amount-cell">{money(payment.amount)}{(payment.unappliedAmount ?? 0) > 0 && <small className="cell-sub">{money(payment.unappliedAmount ?? 0)} customer credit</small>}</td>
           <td><StatusPill status={payment.status}>{payment.status === 'succeeded' ? 'Confirmed' : payment.status === 'pending' ? 'Pending' : payment.status === 'failed' ? 'Failed' : 'Reversed'}</StatusPill></td>
           <td>{payment.status === 'pending' ? <div className="row-actions">
             <Button size="sm" variant="secondary" onClick={() => onResolvePayment(payment.id, true)}>Approve</Button>
@@ -953,6 +981,7 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
     { name: 'Inventory', group: 'Current asset', amount: metrics.inventoryValue, type: 'asset' },
     { name: 'Accounts receivable', group: 'Current asset', amount: metrics.receivables, type: 'asset' },
     { name: 'Accounts payable', group: 'Current liability', amount: metrics.payables, type: 'liability' },
+    { name: 'Customer advances', group: 'Current liability', amount: metrics.customerAdvances, type: 'liability' },
     { name: 'Sales revenue', group: 'Income', amount: metrics.totalRevenue, type: 'income' },
     { name: 'Cost of goods sold', group: 'Direct cost', amount: metrics.costOfGoodsSold, type: 'expense' },
     { name: 'Operating expenses', group: 'Operating cost', amount: metrics.expenses, type: 'expense' },
@@ -960,8 +989,9 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
   const journal = [...data.journal].sort((a, b) => b.date.localeCompare(a.date));
   const debitTotal = sum(journal.map(line => line.debit));
   const creditTotal = sum(journal.map(line => line.credit));
+  const journalBalanced = isJournalBalanced(journal);
   return <div className="page-stack">
-    <PageHeader title="Accounts" description="The business record behind every invoice, expense and stock movement." actions={<span className="accounting-balance"><ShieldCheck size={15} /> Double-entry preview</span>} />
+    <PageHeader title="Accounts" description="The business record behind every invoice, expense and stock movement." actions={<span className="accounting-balance"><ShieldCheck size={15} /> {journalBalanced ? 'Journal balanced' : 'Journal needs review'}</span>} />
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Accounts receivable" value={money(metrics.receivables)} note="Due from customers" icon={ArrowDownLeft} tone="amber" />
       <MetricCard label="Accounts payable" value={money(metrics.payables)} note="Due to suppliers" icon={ArrowUpRight} tone="blue" />
@@ -1043,7 +1073,7 @@ function ReportsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typ
           <div><span>Customer receivables</span><strong>{money(metrics.receivables)}</strong></div>
           <div><span>Inventory at cost</span><strong>{money(metrics.inventoryValue)}</strong></div>
           <div><span>Supplier payables</span><strong className="negative-text">{money(metrics.payables)}</strong></div>
-          <div className="working-capital-total"><span>Net operating working capital</span><strong>{money(metrics.cashPosition + metrics.receivables + metrics.inventoryValue - metrics.payables)}</strong></div>
+          <div className="working-capital-total"><span>Net operating working capital</span><strong>{money(metrics.cashPosition + metrics.receivables + metrics.inventoryValue - metrics.payables - metrics.customerAdvances)}</strong></div>
         </div>
       </SectionCard>
     </div>
@@ -1174,14 +1204,14 @@ function SettingsPage({ profile, onSave, onReset, onNotice }: {
             <div className="provider-logo provider-mpesa">M</div><div><strong>Safaricom Daraja</strong><small>Sandbox and production credentials not supplied</small></div>
             <StatusPill status="pending">Not connected</StatusPill>
           </div>
-          <Button variant="outline" block onClick={() => onNotice('Payment backend required', 'The production flow needs a secure server, merchant shortcode, callback URLs, credentials and payment reconciliation controls.')}>View setup requirements</Button>
+          <Button variant="outline" className="btn-block" onClick={() => onNotice('Payment backend required', 'The production flow needs a secure server, merchant shortcode, callback URLs, credentials and payment reconciliation controls.')}>View setup requirements</Button>
         </SectionCard>
         <SectionCard title="Data & workspace" detail="This preview is stored locally on this device.">
           <div className="workspace-detail"><span>Workspace mode</span><strong>Local demo</strong></div>
           <div className="workspace-detail"><span>Database connection</span><strong>Not connected</strong></div>
           <div className="workspace-detail"><span>Data scope</span><strong>This browser only</strong></div>
-          <Button variant="outline" block onClick={() => onNotice('Data export', 'The local demo workspace stores records in browser storage. A structured export is planned with the production data layer.') }><Download size={14} /> Export options</Button>
-          <Button variant="danger" block onClick={onReset}><RefreshCw size={14} /> Reset demo workspace</Button>
+          <Button variant="outline" className="btn-block" onClick={() => onNotice('Data export', 'The local demo workspace stores records in browser storage. A structured export is planned with the production data layer.') }><Download size={14} /> Export options</Button>
+          <Button variant="danger" className="btn-block" onClick={onReset}><RefreshCw size={14} /> Reset demo workspace</Button>
         </SectionCard>
         <div className="settings-footer-note">Demo records are illustrative. Do not enter real customer information, credentials or confidential business data.</div>
       </div>
@@ -1193,38 +1223,45 @@ function getMetrics(data: AppData) {
   const currentMonth = today().slice(0, 7);
   const monthInvoices = data.invoices.filter(invoice => invoice.date.slice(0, 7) === currentMonth);
   const salesToday = sum(data.invoices.filter(invoice => invoice.date === today()).map(invoice => invoice.total));
-  const collectedToday = sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.createdAt.slice(0, 10) === today()).map(payment => payment.amount));
+  const collectedToday = sum(data.payments.filter(payment =>
+    payment.status === 'succeeded' && dateKey(new Date(payment.createdAt)) === today(),
+  ).map(payment => payment.amount));
   const totalRevenue = sum(data.invoices.map(invoice => invoice.total));
   const grossProfitMonth = sum(monthInvoices.map(marginValue));
   const receivables = sum(data.invoices.map(invoiceBalance));
   const payables = sum(data.suppliers.map(supplier => supplier.balance));
+  const customerAdvances = sum(data.payments.filter(payment => payment.status === 'succeeded').map(payment => payment.unappliedAmount ?? 0));
   const inventoryValue = sum(data.products.map(productValue));
   const totalExpenses = sum(data.expenses.map(expense => expense.amount));
+  const channelOutflow = (channel: 'cash' | 'mpesa' | 'bank' | 'card') =>
+    sum(data.expenses.filter(expense => expense.channel === channel).map(expense => expense.amount)) +
+    sum((data.cashMovements ?? []).filter(movement => movement.channel === channel && movement.direction === 'out').map(movement => movement.amount));
   const channelBalances = {
-    cash: data.openingBalances.cash + sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'cash').map(payment => payment.amount)) - sum(data.expenses.filter(expense => expense.channel === 'cash').map(expense => expense.amount)),
-    mpesa: data.openingBalances.mpesa + sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'mpesa').map(payment => payment.amount)) - sum(data.expenses.filter(expense => expense.channel === 'mpesa').map(expense => expense.amount)),
-    bank: data.openingBalances.bank + sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'bank').map(payment => payment.amount)) - sum(data.expenses.filter(expense => expense.channel === 'bank').map(expense => expense.amount)),
-    card: sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'card').map(payment => payment.amount)),
+    cash: data.openingBalances.cash + sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'cash').map(payment => payment.amount)) - channelOutflow('cash'),
+    mpesa: data.openingBalances.mpesa + sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'mpesa').map(payment => payment.amount)) - channelOutflow('mpesa'),
+    bank: data.openingBalances.bank + sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'bank').map(payment => payment.amount)) - channelOutflow('bank'),
+    card: sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'card').map(payment => payment.amount)) - channelOutflow('card'),
   };
   const cashPosition = channelBalances.cash + channelBalances.mpesa + channelBalances.bank + channelBalances.card;
   const costOfGoodsSold = sum(data.invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity))));
   return {
-    salesToday, collectedToday, grossProfitMonth, cashPosition, receivables, payables,
+    salesToday, collectedToday, grossProfitMonth, cashPosition, receivables, payables, customerAdvances,
     inventoryValue, expenses: totalExpenses, totalRevenue, costOfGoodsSold,
     channelBalances, unpaidInvoices: data.invoices.filter(invoice => invoiceBalance(invoice) > 0).length,
   };
 }
 
 function recordJournal(
-  data: AppData, accountDebit: string, accountCredit: string, amount: number,
-  description: string, reference: string,
+  current: AppData, accountDebit: string, accountCredit: string, amount: number,
+  description: string, reference: string, postedDate = today(),
 ): AppData['journal'] {
   const journalId = makeId('JRN');
-  const date = today();
   return [
-    ...data.journal,
-    { id: makeId('JL'), journalId, date, account: accountDebit, debit: amount, credit: 0, description, reference },
-    { id: makeId('JL'), journalId, date, account: accountCredit, debit: 0, credit: amount, description, reference },
+    ...current.journal,
+    ...buildJournalPair({
+      journalId, date: postedDate, debitAccount: accountDebit, creditAccount: accountCredit,
+      amount, description, reference,
+    }),
   ];
 }
 
@@ -1260,6 +1297,19 @@ function App() {
   };
 
   const createInvoice = (input: NewInvoiceInput) => {
+    const requestedQuantities = new Map<string, number>();
+    for (const item of input.items) {
+      requestedQuantities.set(item.productId, (requestedQuantities.get(item.productId) ?? 0) + item.quantity);
+    }
+    for (const [productId, requested] of requestedQuantities) {
+      const product = data.products.find(candidate => candidate.id === productId);
+      if (!product || requested > product.quantity) {
+        notify('Sale could not be posted', product
+          ? 'Only ' + numberText(product.quantity) + ' ' + product.unit + ' of ' + product.name + ' are currently recorded.'
+          : 'One of the selected products is no longer available.');
+        return;
+      }
+    }
     const lines = input.items.map(item => {
       const product = data.products.find(candidate => candidate.id === item.productId);
       if (!product) return null;
@@ -1297,6 +1347,7 @@ function App() {
         phone: input.phone, amount: paid, channel: input.channel, status: 'succeeded',
         reference: input.channel === 'mpesa' ? 'DEMO-' + makeId('MP') : makeId(input.channel.toUpperCase()),
         createdAt: new Date().toISOString(), confirmedAt: new Date().toISOString(),
+        appliedAmount: paid, unappliedAmount: 0,
         origin: 'manual',
       };
       const debitAccount = input.channel === 'mpesa' ? 'M-Pesa clearing' : input.channel === 'cash' ? 'Cash on hand' : input.channel === 'bank' ? 'Bank account' : 'Card clearing';
@@ -1356,8 +1407,14 @@ function App() {
   };
 
   const addUnmatchedReceipt = (input: NewUnmatchedReceiptInput) => {
+    const duplicateReference = data.unmatchedReceipts.some(item => item.reference.toUpperCase() === input.reference.toUpperCase()) ||
+      data.payments.some(item => item.reference.toUpperCase() === input.reference.toUpperCase());
+    if (duplicateReference) {
+      notify('Receipt reference already recorded', 'Check the existing payment register or unmatched queue before adding this receipt again.');
+      return;
+    }
     const receipt: UnmatchedReceipt = {
-      id: makeId('RCPT'), reference: input.reference, payer: input.payer, phone: input.phone,
+      id: makeId('RCPT'), reference, payer: input.payer, phone: input.phone,
       amount: input.amount, rail: input.rail, receivedAt: new Date().toISOString(), source: 'manual',
     };
     setData(current => ({
@@ -1376,19 +1433,35 @@ function App() {
   const matchUnmatchedReceipt = (receiptId: string, invoiceId: string) => {
     const receipt = data.unmatchedReceipts.find(item => item.id === receiptId);
     const invoice = data.invoices.find(item => item.id === invoiceId);
-    if (!receipt || !invoice || receipt.amount <= 0 || receipt.amount > invoiceBalance(invoice)) return;
+    if (!receipt || !invoice || receipt.amount <= 0 || invoiceBalance(invoice) <= 0) return;
     const now = new Date().toISOString();
     const channel: PaymentChannel = receipt.rail === 'Bank transfer' ? 'bank' : 'mpesa';
+    const allocation = allocateIncomingPayment(invoice.total, invoice.paid, receipt.amount);
+    const { appliedAmount, unappliedAmount, newPaid: paid } = allocation;
     const payment: Payment = {
       id: makeId('PAY'), invoiceId: invoice.id, invoiceNumber: invoice.number,
       customer: invoice.customer, phone: receipt.phone, amount: receipt.amount,
+      appliedAmount, unappliedAmount,
       channel, status: 'succeeded', reference: receipt.reference,
       createdAt: receipt.receivedAt, confirmedAt: now, rail: receipt.rail,
-      note: 'Manually matched from unmatched receipt queue.',
+      note: unappliedAmount > 0
+        ? 'Matched from receipt queue. Excess retained as customer advance.'
+        : 'Manually matched from unmatched receipt queue.',
       origin: 'reconciliation',
     };
-    const paid = Math.min(invoice.total, invoice.paid + receipt.amount);
     const debitAccount = channel === 'bank' ? 'Bank account' : 'M-Pesa clearing';
+    const journal = [
+      ...buildJournalPair({
+        journalId: makeId('JRN'), date: receipt.receivedAt.slice(0, 10),
+        debitAccount, creditAccount: 'Accounts receivable', amount: appliedAmount,
+        description: 'Matched receipt · ' + invoice.number, reference: receipt.reference,
+      }),
+      ...buildJournalPair({
+        journalId: makeId('JRN'), date: receipt.receivedAt.slice(0, 10),
+        debitAccount, creditAccount: 'Customer advances', amount: unappliedAmount,
+        description: 'Unapplied receipt · ' + invoice.number, reference: receipt.reference,
+      }),
+    ];
     setData(current => ({
       ...current,
       unmatchedReceipts: current.unmatchedReceipts.filter(item => item.id !== receiptId),
@@ -1396,53 +1469,84 @@ function App() {
       invoices: current.invoices.map(item => item.id === invoice.id ? {
         ...item, paid, status: paid >= item.total ? 'paid' : 'partial',
       } : item),
-      journal: recordJournal(current, debitAccount, 'Accounts receivable', receipt.amount, 'Matched receipt · ' + invoice.number, receipt.reference),
+      journal: [...current.journal, ...journal],
       events: [{
         id: makeId('EVT'), time: now, type: 'payment.reconciled',
         source: receipt.rail, status: 'delivered', reference: receipt.reference,
-        detail: money(receipt.amount) + ' matched to ' + invoice.number,
+        detail: money(appliedAmount) + ' applied to ' + invoice.number +
+          (unappliedAmount > 0 ? '; ' + money(unappliedAmount) + ' retained as customer credit' : ''),
       }, ...current.events],
     }));
     setDialog(null);
-    notify('Receipt matched', money(receipt.amount) + ' allocated to ' + invoice.number + '. The invoice balance has been updated.');
+    notify('Receipt allocated', money(appliedAmount) + ' applied to ' + invoice.number +
+      (unappliedAmount > 0 ? '; ' + money(unappliedAmount) + ' recorded as customer credit.' : '.'));
   };
 
   const resolvePayment = (paymentId: string, success: boolean) => {
     const payment = data.payments.find(item => item.id === paymentId);
     if (!payment || payment.status !== 'pending') return;
     const invoice = data.invoices.find(item => item.id === payment.invoiceId);
+    if (success && !invoice) {
+      notify('Payment could not be matched', 'The source invoice no longer exists. Review this request manually.');
+      return;
+    }
     const now = new Date().toISOString();
-    const status = success ? 'succeeded' : 'failed';
+    const cashAccount = payment.channel === 'mpesa' ? 'M-Pesa clearing'
+      : payment.channel === 'cash' ? 'Cash on hand'
+      : payment.channel === 'bank' ? 'Bank account' : 'Card clearing';
+    const appliedAmount = success && invoice ? Math.min(payment.amount, invoiceBalance(invoice)) : 0;
+    const unappliedAmount = success ? Math.max(0, payment.amount - appliedAmount) : 0;
+    const receiptReference = success ? 'RCP' + Math.random().toString(36).slice(2, 9).toUpperCase() : payment.reference;
     let next: AppData = {
       ...data,
       payments: data.payments.map(item => item.id === paymentId ? {
-        ...item, status, confirmedAt: success ? now : undefined,
-        note: success ? 'Simulated callback result received.' : 'Simulated customer cancellation or failed request.',
-        reference: success ? 'RCP' + Math.random().toString(36).slice(2, 9).toUpperCase() : item.reference,
+        ...item, status: success ? 'succeeded' : 'failed', confirmedAt: success ? now : undefined,
+        appliedAmount, unappliedAmount,
+        note: success
+          ? unappliedAmount > 0
+            ? 'Payment confirmed. ' + money(unappliedAmount) + ' retained as customer credit.'
+            : 'Simulated callback result received and matched to the invoice.'
+          : 'Simulated customer cancellation or failed request.',
+        reference: receiptReference,
       } : item),
       events: [{
         id: makeId('EVT'), time: now, type: success ? 'payment.confirmed' : 'payment.failed',
         source: 'Daraja simulator', status: success ? 'delivered' : 'failed',
-        reference: payment.reference,
-        detail: success ? 'Callback matched and payment posted against ' + payment.invoiceNumber : 'No successful payment was confirmed',
+        reference: receiptReference,
+        detail: success ? money(appliedAmount) + ' applied to ' + payment.invoiceNumber +
+          (unappliedAmount > 0 ? '; ' + money(unappliedAmount) + ' retained as customer credit' : '')
+          : 'No successful payment was confirmed',
       }, ...data.events],
     };
     if (success && invoice) {
-      const paid = Math.min(invoice.total, invoice.paid + payment.amount);
+      const { appliedAmount, unappliedAmount, newPaid: paid } = allocateIncomingPayment(invoice.total, invoice.paid, payment.amount);
+      const paymentJournal = [
+        ...buildJournalPair({
+          journalId: makeId('JRN'), date: today(), debitAccount: cashAccount,
+          creditAccount: 'Accounts receivable', amount: appliedAmount,
+          description: 'Payment matched · ' + payment.invoiceNumber, reference: receiptReference,
+        }),
+        ...buildJournalPair({
+          journalId: makeId('JRN'), date: today(), debitAccount: cashAccount,
+          creditAccount: 'Customer advances', amount: unappliedAmount,
+          description: 'Unapplied customer receipt · ' + payment.invoiceNumber, reference: receiptReference,
+        }),
+      ];
       next = {
         ...next,
         invoices: next.invoices.map(item => item.id === invoice.id ? {
           ...item, paid, status: paid >= item.total ? 'paid' : 'partial',
         } : item),
-        journal: recordJournal(
-          next,
-          payment.channel === 'mpesa' ? 'M-Pesa clearing' : payment.channel === 'cash' ? 'Cash on hand' : payment.channel === 'bank' ? 'Bank account' : 'Card clearing',
-          'Accounts receivable', payment.amount, 'Payment matched · ' + payment.invoiceNumber, payment.reference,
-        ),
+        journal: [...next.journal, ...paymentJournal],
       };
     }
     setData(next);
-    notify(success ? 'Payment confirmed' : 'Payment marked as failed', success ? 'The invoice balance and ledger have been updated.' : 'The invoice remains unpaid.');
+    notify(success ? 'Payment confirmed' : 'Payment marked as failed',
+      success
+        ? unappliedAmount > 0
+          ? money(appliedAmount) + ' applied to the invoice; ' + money(unappliedAmount) + ' retained as customer credit.'
+          : 'The invoice balance and ledger have been updated.'
+        : 'The invoice remains unpaid.');
   };
 
   const createExpense = (input: { category: string; description: string; amount: number; channel: 'cash' | 'mpesa' | 'bank' }) => {
@@ -1514,7 +1618,7 @@ function App() {
         return {
           ...product,
           quantity: product.quantity + Math.max(0, line.quantity - line.received),
-          costPrice: line.unitCost,
+          costPrice: weightedAverageUnitCost(product.quantity, product.costPrice, Math.max(0, line.quantity - line.received), line.unitCost),
           updatedAt: today(),
         };
       }),
@@ -1537,9 +1641,15 @@ function App() {
     const supplier = data.suppliers.find(item => item.id === supplierId);
     if (!supplier || amount <= 0 || amount > supplier.balance) return;
     const reference = makeId('BANK');
+    const movement = {
+      id: makeId('MOV'), date: today(), channel: 'bank' as const, direction: 'out' as const,
+      amount, description: 'Supplier payment · ' + supplier.name, reference,
+      source: 'supplier_payment' as const,
+    };
     setData(current => ({
       ...current,
       suppliers: current.suppliers.map(item => item.id === supplierId ? { ...item, balance: Math.max(0, item.balance - amount) } : item),
+      cashMovements: [...(current.cashMovements ?? []), movement],
       journal: recordJournal(current, 'Accounts payable', 'Bank account', amount, 'Supplier payment · ' + supplier.name, reference),
       events: [{
         id: makeId('EVT'), time: new Date().toISOString(), type: 'supplier.payment_recorded',

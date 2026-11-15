@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeDemoData } from '../src/data.ts';
+import { allocateIncomingPayment, buildJournalPair, isJournalBalanced, outstandingBalance, weightedAverageUnitCost } from '../src/finance.ts';
 
 const sum = (values) => values.reduce((total, value) => total + value, 0);
 
@@ -14,6 +15,7 @@ test('demo workspace has a complete operating record', () => {
   assert.ok(data.unmatchedReceipts.length >= 1);
   assert.ok(data.unmatchedReceipts.every((receipt) => receipt.amount > 0 && receipt.reference.length > 0));
   assert.ok(data.purchaseOrders.length >= 2);
+  assert.ok(Array.isArray(data.cashMovements));
 });
 
 test('invoice totals reconcile to the underlying item lines', () => {
@@ -62,6 +64,52 @@ test('unmatched receipts remain separate from invoice payments until allocated',
   assert.ok(unmatchedTotal > 0);
   assert.ok(data.payments.every((payment) => payment.status !== 'pending' || !payment.confirmedAt));
   assert.ok(recordedPayments > 0);
+});
+
+test('a journal entry is balanced before it can be posted', () => {
+  const pair = buildJournalPair({
+    journalId: 'test-journal', date: '2026-11-15',
+    debitAccount: 'Cash on hand', creditAccount: 'Sales revenue',
+    amount: 1250, description: 'Test cash sale', reference: 'TEST-001',
+  });
+  assert.equal(pair.length, 2);
+  assert.equal(pair[0].debit, 1250);
+  assert.equal(pair[1].credit, 1250);
+  assert.equal(isJournalBalanced(pair), true);
+  assert.equal(isJournalBalanced([pair[0]]), false);
+});
+
+test('zero-value journal entries are not posted', () => {
+  const pair = buildJournalPair({
+    journalId: 'test-zero', date: '2026-11-15',
+    debitAccount: 'Cash on hand', creditAccount: 'Sales revenue',
+    amount: 0, description: 'Zero sale', reference: 'TEST-000',
+  });
+  assert.deepEqual(pair, []);
+});
+
+test('an incoming receipt is split between invoice balance and customer credit', () => {
+  const allocation = allocateIncomingPayment(1000, 700, 500);
+  assert.deepEqual(allocation, {
+    appliedAmount: 300, unappliedAmount: 200, newPaid: 1000, outstandingAfter: 0,
+  });
+  const normal = allocateIncomingPayment(1000, 200, 300);
+  assert.deepEqual(normal, {
+    appliedAmount: 300, unappliedAmount: 0, newPaid: 500, outstandingAfter: 500,
+  });
+});
+
+test('outstanding balance never falls below zero', () => {
+  assert.equal(outstandingBalance(1000, 250), 750);
+  assert.equal(outstandingBalance(1000, 1000), 0);
+  assert.equal(outstandingBalance(1000, 1200), 0);
+});
+
+test('weighted average cost includes existing and incoming stock', () => {
+  assert.equal(weightedAverageUnitCost(10, 10, 10, 20), 15);
+  assert.equal(weightedAverageUnitCost(5, 100, 15, 140), 130);
+  assert.equal(weightedAverageUnitCost(0, 0, 7, 85), 85);
+  assert.equal(weightedAverageUnitCost(7, 85, 0, 120), 85);
 });
 
 test('low stock is measurable from quantity and reorder rules', () => {

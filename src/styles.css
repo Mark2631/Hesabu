@@ -322,6 +322,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .subsection-label { color: #526157; font-size: 10px; font-weight: 800; margin: 2px 0 -3px; }
 .sale-items { display: flex; flex-direction: column; gap: 8px; }
 .sale-item-row { display: grid; grid-template-columns: minmax(0, 1.7fr) 90px minmax(100px, .7fr) 30px; align-items: end; gap: 9px; padding: 9px; background: #f8faf8; border: 1px solid #edf1ed; border-radius: 9px; }
+.purchase-item-row { display: grid; grid-template-columns: minmax(0, 1.7fr) 76px 108px minmax(100px, .7fr) 30px; align-items: end; gap: 8px; padding: 9px; background: #f8faf8; border: 1px solid #edf1ed; border-radius: 9px; }
+.purchase-product-field { min-width: 0; }
 .sale-product-field { min-width: 0; }
 .sale-line-total { display: flex; flex-direction: column; gap: 5px; padding-bottom: 9px; }
 .sale-line-total span { color: #99a49c; font-size: 9px; }
@@ -572,6 +574,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   .compact-metrics .metric-card { min-height: 100px; }
   .form-grid-two, .form-grid-three { grid-template-columns: minmax(0, 1fr); }
   .sale-item-row { grid-template-columns: minmax(0, 1fr) 74px; align-items: end; }
+  .purchase-item-row { grid-template-columns: minmax(0, 1fr) 72px; align-items: end; }
+  .purchase-item-row .purchase-product-field { grid-column: 1 / -1; }
+  .purchase-item-row .sale-line-total { grid-column: 1 / 2; padding-bottom: 2px; }
+  .purchase-item-row > .icon-button { grid-column: 2 / 3; justify-self: end; }
   .sale-line-total { grid-column: 1 / 2; padding: 0 0 2px 1px; }
   .sale-item-row > .icon-button { grid-column: 2 / 3; justify-self: end; }
   .modal-backdrop { padding: 8px; align-items: flex-end; }

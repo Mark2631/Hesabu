@@ -166,6 +166,7 @@ export function makeDemoData(): AppData {
       { id: 'rcpt-002', reference: 'PCH-9841', payer: 'Unknown sender', phone: '0721 480 020', amount: 350, rail: 'Pochi la Biashara', receivedAt: timeAgo(72), source: 'manual' },
     ],
     expenses,
+    cashMovements: [],
     suppliers: [
       { id: 'sup-001', name: 'Meru Wholesale Distributors', phone: '+254 700 120 450', email: 'orders@meruwholesale.example', terms: '14 days', balance: 18_400 },
       { id: 'sup-002', name: 'Eastlands Oils & Foods', phone: '+254 711 445 201', email: 'sales@eastlandsoils.example', terms: '7 days', balance: 7_250 },
@@ -212,7 +213,7 @@ export function makeDemoData(): AppData {
       { id: 'evt-04', time: timeAgo(92), type: 'payment.confirmed', source: 'M-Pesa collection', status: 'delivered', reference: 'TJL7P9K2D6', detail: 'Payment matched to HS-1006' },
       { id: 'evt-05', time: timeAgo(160), type: 'purchase_order.sent', source: 'Procurement', status: 'delivered', reference: 'PO-020', detail: 'Purchase order sent to supplier' },
     ],
-    openingBalances: { cash: 42_800, mpesa: 86_450, bank: 224_700, inventory: 184_600 },
+    openingBalances: { cash: 42_800, mpesa: 86_450, bank: 224_700, inventory: 34_276 },
     nextInvoice: 1009,
     nextPurchaseOrder: 21,
   };
@@ -227,7 +228,7 @@ export function readWorkspace(): AppData {
       const parsed = JSON.parse(raw) as Partial<AppData>;
       if (parsed.profile && Array.isArray(parsed.products) && Array.isArray(parsed.invoices)) {
         const demo = makeDemoData();
-        return { ...demo, ...parsed, unmatchedReceipts: parsed.unmatchedReceipts ?? demo.unmatchedReceipts };
+        return { ...demo, ...parsed, unmatchedReceipts: parsed.unmatchedReceipts ?? demo.unmatchedReceipts, cashMovements: parsed.cashMovements ?? demo.cashMovements };
       }
     }
   } catch {

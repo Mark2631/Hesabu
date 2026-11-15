@@ -26,6 +26,7 @@ export interface Payment {
   id: string; invoiceId: string; invoiceNumber: string; customer: string; phone: string;
   amount: number; channel: PaymentChannel; status: PaymentStatus; reference: string;
   createdAt: string; confirmedAt?: string; note?: string; rail?: string;
+  appliedAmount?: number; unappliedAmount?: number;
   origin: 'manual' | 'daraja_demo' | 'integration' | 'reconciliation';
 }
 export type ReceiptRail = 'Till / PayBill' | 'Pochi la Biashara' | 'Send Money to business' | 'Bank transfer' | 'Manual M-Pesa receipt';
@@ -58,9 +59,19 @@ export interface IntegrationEvent {
   id: string; time: string; type: string; source: string;
   status: 'delivered' | 'pending' | 'failed'; reference: string; detail: string;
 }
+export interface CashMovement {
+  id: string;
+  date: string;
+  channel: 'cash' | 'mpesa' | 'bank' | 'card';
+  direction: 'out';
+  amount: number;
+  description: string;
+  reference: string;
+  source: 'supplier_payment' | 'other';
+}
 export interface AppData {
   profile: BusinessProfile; products: Product[]; invoices: Invoice[]; payments: Payment[];
-  unmatchedReceipts: UnmatchedReceipt[]; expenses: Expense[]; suppliers: Supplier[]; purchaseOrders: PurchaseOrder[];
+  unmatchedReceipts: UnmatchedReceipt[]; expenses: Expense[]; cashMovements: CashMovement[]; suppliers: Supplier[]; purchaseOrders: PurchaseOrder[];
   journal: JournalLine[]; events: IntegrationEvent[];
   openingBalances: { cash: number; mpesa: number; bank: number; inventory: number };
   nextInvoice: number; nextPurchaseOrder: number;
