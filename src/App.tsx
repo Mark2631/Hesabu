@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   Activity, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, BookOpen,
-  Bell, Boxes, Building2, CalendarDays, Check, CheckCircle2, ChevronDown,
-  ChevronRight, CircleDollarSign, Clock3, Code2, Copy, CreditCard, Download,
-  FileCheck2, FileText, Filter, Globe2, LayoutDashboard, Link2,
-  Menu, MoreHorizontal, Package, PanelLeftClose, Plus, Receipt, RefreshCw,
+  Bell, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown,
+  ChevronRight, CircleDollarSign, Clock3, Download,
+  FileCheck2, FileText, Filter, LayoutDashboard, Link2,
+  Menu, MoreHorizontal, Package, PanelLeftClose, Plus, Receipt,
   Search, Send, Settings, ShieldCheck, ShoppingCart, Smartphone,
   Store, TrendingDown, TrendingUp, Truck, Wallet, X,
   type LucideIcon,
@@ -12,7 +12,7 @@ import {
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import type {
-  AppData, BusinessProfile, Invoice, ModuleKey, NewInvoiceInput,
+  AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
   NewPaymentInput, NewPurchaseInput, NewUnmatchedReceiptInput, Payment, PaymentChannel, Product,
   PurchaseOrder, ReceiptRail, Supplier, TeamMember, TeamRole, UnmatchedReceipt,
 } from './types';
@@ -950,12 +950,12 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
     const unitsSold = soldByProduct.get(product.id) ?? 0;
     const dailyVelocity = unitsSold / 30;
     const daysCover = dailyVelocity > 0 ? product.quantity / dailyVelocity : null;
-    const onOrder = incomingByProduct.get(product.id) ?? 0;
+    const incomingUnits = incomingByProduct.get(product.id) ?? 0;
     const targetUnits = Math.ceil((dailyVelocity * 14) + product.reorderLevel);
-    const suggestedOrder = Math.max(0, targetUnits - product.quantity - onOrder);
+    const suggestedOrder = Math.max(0, targetUnits - product.quantity - incomingUnits);
     const needsAttention = product.quantity <= product.reorderLevel || product.quantity === 0 || (daysCover !== null && daysCover <= 14);
     const slowMoving = product.quantity > 0 && (unitsSold === 0 || (daysCover !== null && daysCover > 45));
-    return { product, unitsSold, daysCover, onOrder, suggestedOrder, needsAttention, slowMoving };
+    return { product, unitsSold, daysCover, onOrder: incomingUnits, suggestedOrder, needsAttention, slowMoving };
   });
   const low = signals.filter(item => item.needsAttention);
   const slow = signals.filter(item => item.slowMoving);
@@ -1940,12 +1940,6 @@ function App() {
     setData(fresh);
     setDialog(null);
     notify('Demo workspace reset', 'The original sample records have been restored.');
-  };
-
-  const copyText = (value: string) => {
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(value).then(() => notify('Copied to clipboard')).catch(() => notify('Copy not available', 'Select the text manually in this browser.'));
-    } else notify('Copy not available', 'Select the text manually in this browser.');
   };
 
   const activeMeta = moduleMeta[active];
