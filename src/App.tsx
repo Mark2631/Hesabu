@@ -6,7 +6,7 @@ import {
   FileCheck2, FileSpreadsheet, FileText, Filter, LayoutDashboard, Link2, MessageCircle, Moon, Sun, Sparkles,
   Menu, MoreHorizontal, Package, PanelLeftClose, Plus, Receipt,
   Search, Send, Settings, ShieldCheck, ShoppingCart, Smartphone,
-  Store, TrendingDown, TrendingUp, Truck, Wallet, X,
+  Store, TrendingDown, TrendingUp, Truck, Wallet, X, LogOut,
   type LucideIcon,
 } from 'lucide-react';
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
@@ -795,25 +795,143 @@ function StockPickerDialog({ products, onClose, onAdjust }: {
   </Modal>;
 }
 
-function AssistantPanel() {
-  const [request, setRequest] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-  const examples = ['Sold 3 packets of sugar for KSh 525 via M-Pesa', 'Paid KSh 900 for transport in cash'];
-  return <section className="assistant-panel">
-    <div className="assistant-panel-heading">
-      <div className="assistant-title"><span className="assistant-mark"><Sparkles size={18} /></span><div><strong>Hesabu assistant</strong><small>Record business activity in everyday language</small></div></div>
-      <span className="assistant-status">AI connection pending</span>
-    </div>
-    <form className="assistant-entry" onSubmit={event => { event.preventDefault(); if (request.trim()) setSubmitted(true); }}>
-      <textarea value={request} onChange={event => { setRequest(event.target.value); setSubmitted(false); }} rows={2}
-        placeholder="For example: Sold 2 crates of soda for KSh 2,400, paid by M-Pesa…" />
-      <Button type="submit" disabled={!request.trim()}><Sparkles size={15} /> Prepare action</Button>
-    </form>
-    <div className="assistant-examples"><span>Try an example</span>
-      {examples.map(example => <button type="button" key={example} onClick={() => { setRequest(example); setSubmitted(false); }}>{example}</button>)}
-    </div>
-    {submitted && <p className="assistant-feedback" role="status">Request captured in this preview. AI processing is not connected yet, so no sale, expense or stock record has been changed.</p>}
-  </section>;
+function HesabuMark({ className = '' }: { className?: string }) {
+  return <svg className={'hesabu-quill-mark ' + className} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+    <path d="M29.5 5.2C18.2 6.7 9.6 14 8.8 23.4c-.4 4.7 2.1 8 6.2 9.1 8-4.2 14.7-14.6 14.5-27.3Z" fill="currentColor" />
+    <path d="M8.1 35.2C13.2 27.1 19.8 18.1 28.7 7.3M13.4 27.6l-4.8-1.2m9.7-6.8-5.7-1.1m10.2-6.2-2.9-3.7" fill="none" stroke="#176b4c" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M6.8 36.1 10.6 32" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+  </svg>;
+}
+
+function AuthPage({ onPreview }: { onPreview: () => void }) {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [message, setMessage] = useState('');
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    setMessage(mode === 'signin'
+      ? 'Secure sign-in is not connected in this preview yet. Your password has not been saved.'
+      : 'Account creation will be enabled after secure authentication and cloud storage are connected.');
+  };
+  return <main className="auth-page">
+    <section className="auth-shell">
+      <div className="auth-form-panel">
+        <div className="auth-brand">
+          <span className="brand-mark"><HesabuMark /></span>
+          <span className="brand-text"><strong>hesabu<span>.</span></strong><small>BUSINESS WORKSPACE</small></span>
+        </div>
+        <div className="auth-copy">
+          <span className="auth-kicker">BUSINESS, IN BALANCE</span>
+          <h1>{mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.'}</h1>
+          <p>Sales, payments, stock and business performance in one calm workspace.</p>
+        </div>
+        <div className="auth-tabs" role="tablist" aria-label="Account access">
+          <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setMessage(''); }}>Sign in</button>
+          <button type="button" role="tab" aria-selected={mode === 'signup'} className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setMessage(''); }}>Create account</button>
+        </div>
+        <form className="auth-form" onSubmit={submit}>
+          <label className="auth-field"><span>Business email</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
+          <label className="auth-field"><span>Password</span><input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /></label>
+          <Button type="submit" block>{mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
+        </form>
+        {message && <p className="auth-message" role="status">{message}</p>}
+        <div className="auth-divider"><span>OR</span></div>
+        <Button variant="outline" block onClick={onPreview}>Explore the sample workspace <ArrowRight size={15} /></Button>
+        <p className="auth-footnote">Preview access uses this browser only. Business data is not yet synced between devices or users.</p>
+      </div>
+      <aside className="auth-aside">
+        <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">PRODUCT PREVIEW</span></div>
+        <div className="auth-aside-copy">
+          <span>ONE VIEW OF THE BUSINESS</span>
+          <h2>Make the next business decision with better numbers.</h2>
+          <p>Follow money, stock and customer balances without moving between disconnected records.</p>
+        </div>
+        <div className="auth-preview-stack">
+          <div className="auth-preview-row"><span className="auth-preview-icon"><TrendingUp size={17} /></span><span><strong>Sales & performance</strong><small>Daily totals, margin and trends</small></span><ChevronRight size={17} /></div>
+          <div className="auth-preview-row"><span className="auth-preview-icon"><Package size={17} /></span><span><strong>Stock & purchasing</strong><small>Quantities, cost and reorder points</small></span><ChevronRight size={17} /></div>
+          <div className="auth-preview-row"><span className="auth-preview-icon"><Wallet size={17} /></span><span><strong>Cash & customer balances</strong><small>See what came in and what is due</small></span><ChevronRight size={17} /></div>
+        </div>
+        <div className="auth-aside-footer"><span>Built for everyday business operations</span><span>Hesabu · Kenya</span></div>
+      </aside>
+    </section>
+  </main>;
+}
+
+function getWorkspaceAnswer(data: AppData, question: string) {
+  const query = question.toLowerCase();
+  const todayDigest = getDailyDigest(data);
+  const lastSevenDays = data.invoices.filter(invoice => invoice.date >= addDays(today(), -6) && invoice.date <= today());
+  const sevenDaySales = sum(lastSevenDays.map(invoice => invoice.total));
+  const averageDailySales = sevenDaySales / 7;
+  if (/stock|inventory|reorder|out of stock|product|slow mov/.test(query)) {
+    const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
+    const outOfStock = lowStock.filter(product => product.quantity <= 0);
+    const names = lowStock.slice(0, 4).map(product => product.name + ' (' + numberText(product.quantity) + ' ' + product.unit + ')');
+    return 'Stock check: ' + outOfStock.length + ' products are out of stock and ' + lowStock.length + ' are at or below their reorder point. ' +
+      (names.length ? 'Review: ' + names.join(', ') + '.' : 'No products are currently at or below their reorder point.') +
+      ' Stock value at cost is ' + money(sum(data.products.map(productValue))) + '.';
+  }
+  if (/owe|debt|receivable|unpaid|customer balance|who.*pay/.test(query)) {
+    const due = data.invoices.filter(invoice => invoiceBalance(invoice) > 0).sort((a, b) => invoiceBalance(b) - invoiceBalance(a));
+    const names = due.slice(0, 3).map(invoice => invoice.customer + ' · ' + money(invoiceBalance(invoice)));
+    return 'Customer balances total ' + money(sum(due.map(invoiceBalance))) + ' across ' + due.length + ' unpaid invoices. ' +
+      (names.length ? 'Largest balances: ' + names.join('; ') + '.' : 'There are no unpaid customer invoices in the current records.');
+  }
+  if (/expense|spend|spent|cost today/.test(query)) {
+    return 'Expenses recorded today total ' + money(todayDigest.expenseTotal) + '. Supplier payments were ' +
+      money(todayDigest.supplierPaymentTotal) + '. These are separate figures so supplier settlements are not mixed with operating expenses.';
+  }
+  if (/best sell|top sell|popular|fast mov/.test(query)) {
+    const cutoff = addDays(today(), -29);
+    const ranked = data.products.map(product => ({
+      product,
+      units: sum(data.invoices.filter(invoice => invoice.date >= cutoff && invoice.date <= today())
+        .flatMap(invoice => invoice.lines.filter(line => line.productId === product.id).map(line => line.quantity))),
+    })).filter(item => item.units > 0).sort((a, b) => b.units - a.units).slice(0, 3);
+    return ranked.length
+      ? 'Top sellers by units over the last 30 days: ' + ranked.map((item, index) => (index + 1) + '. ' + item.product.name + ' — ' + numberText(item.units) + ' ' + item.product.unit).join('; ') + '.'
+      : 'There are no recorded product sales in the last 30 days, so I cannot rank best sellers yet.';
+  }
+  return 'Today: ' + money(todayDigest.salesTotal) + ' in sales across ' + todayDigest.sales.length + ' invoices, with gross profit of ' +
+    money(todayDigest.grossProfit) + '. The seven-day daily sales average is ' + money(averageDailySales) +
+    '. Ask about stock, unpaid customer balances, expenses or best-selling products for a more specific view.';
+}
+
+function FloatingAssistant({ data }: { data: AppData }) {
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const ask = (value: string) => {
+    const clean = value.trim();
+    if (!clean) return;
+    setQuestion(clean);
+    setAnswer(getWorkspaceAnswer(data, clean));
+  };
+  const suggestions = ['How are sales doing?', 'What stock needs attention?', 'Who still owes us?'];
+  return <>
+    {open && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu AI assistant">
+      <header className="assistant-drawer-header">
+        <span className="assistant-drawer-mark"><HesabuMark /></span>
+        <span><strong>Hesabu assistant</strong><small>Answers from this workspace · Preview</small></span>
+        <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setOpen(false)}><X size={18} /></button>
+      </header>
+      <div className="assistant-drawer-body">
+        <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>I can summarise the sales, balances and stock records currently saved in this browser.</p></div>
+        <div className="assistant-suggestions">{suggestions.map(item => <button key={item} type="button" onClick={() => ask(item)}>{item}<ArrowRight size={13} /></button>)}</div>
+        {question && <div className="assistant-answer" aria-live="polite"><span className="assistant-question">{question}</span><p>{answer}</p></div>}
+      </div>
+      <form className="assistant-drawer-entry" onSubmit={event => { event.preventDefault(); ask(question); }}>
+        <input aria-label="Ask Hesabu" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask about sales, stock or balances…" />
+        <button type="submit" aria-label="Send question" disabled={!question.trim()}><ArrowUpRight size={18} /></button>
+      </form>
+      <p className="assistant-drawer-note">Live generative AI, voice capture and automatic record posting are not connected in this preview.</p>
+    </section>}
+    <button type="button" className={'assistant-launcher ' + (open ? 'assistant-launcher-open' : '')} aria-label={open ? 'Close Hesabu assistant' : 'Open Hesabu assistant'} aria-expanded={open} onClick={() => setOpen(value => !value)}>
+      {open ? <X size={21} /> : <HesabuMark />}
+      <span className="assistant-launcher-tooltip">Ask Hesabu</span>
+    </button>
+  </>;
 }
 
 function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice, onRecordExpense, onRecordPayment, onCreatePurchase, onQuickStock }: {
@@ -824,6 +942,7 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
   const chartDays = Array.from({ length: 7 }, (_, index) => addDays(today(), index - 6));
   const chartValues = chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
   const chartLabels = chartDays.map(day => new Date(day + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }));
+  const averageDailySales = sum(chartValues) / 7;
   const todayInvoices = data.invoices.filter(invoice => invoice.date === today());
   const recentInvoices = [...data.invoices].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
   const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
@@ -841,11 +960,12 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
         <Button onClick={onCreateSale}><Plus size={15} /> Record sale</Button>
       </div>
     </div>
-    <div className="metric-grid metric-grid-four">
+    <div className="metric-grid metric-grid-five">
       <MetricCard label="Sales today" value={money(metrics.salesToday)} note={todayInvoices.length + ' sales recorded'} icon={TrendingUp} tone="green" />
       <MetricCard label="Gross profit this month" value={money(metrics.grossProfitMonth)} note="After recorded product costs" icon={Activity} tone="blue" />
       <MetricCard label="Stock at cost" value={money(metrics.inventoryValue)} note={lowStock.length + ' products need attention'} icon={Boxes} tone="slate" />
       <MetricCard label="Customer balances" value={money(metrics.receivables)} note={metrics.unpaidInvoices + ' unpaid invoices'} icon={ArrowDownLeft} tone="amber" />
+      <MetricCard label="Average daily sales" value={money(averageDailySales)} note="Last 7 calendar days" icon={BarChart3} tone="green" />
     </div>
     <section className="quick-actions-section">
       <div className="quick-actions-heading"><strong>Quick actions</strong><span>Common records, one tap away</span></div>
@@ -857,7 +977,6 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
         <button type="button" className="quick-action-card" onClick={onQuickStock}><span><Package size={20} /></span><strong>Update stock</strong><small>Correct a product count</small></button>
       </div>
     </section>
-    <AssistantPanel />
     <div className="content-grid content-grid-main">
       <SectionCard title="Sales trend" detail="Recorded sales over the last seven days.">
         <div className="chart-summary"><strong>{money(sum(chartValues))}</strong><span>Last 7 days</span></div>
@@ -1233,8 +1352,6 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
   </div>;
 }
 
-const DAILY_DIGEST_WHATSAPP = '254745706087';
-
 function getDailyDigest(data: AppData) {
   const date = today();
   const sales = data.invoices.filter(invoice => invoice.date === date);
@@ -1271,8 +1388,17 @@ function buildDailyDigestMessage(data: AppData) {
   ].join('\n');
 }
 
-function openDailyDigestWhatsApp(data: AppData) {
-  const url = 'https://wa.me/' + DAILY_DIGEST_WHATSAPP + '?text=' + encodeURIComponent(buildDailyDigestMessage(data));
+function normaliseWhatsAppNumber(value: string) {
+  let digits = value.replace(/\D/g, '');
+  if (digits.startsWith('0') && digits.length === 10) digits = '254' + digits.slice(1);
+  else if ((digits.startsWith('7') || digits.startsWith('1')) && digits.length === 9) digits = '254' + digits;
+  return digits.length >= 10 && digits.length <= 15 ? digits : '';
+}
+
+function openDailyDigestWhatsApp(data: AppData, destination: string, onMissing: () => void) {
+  const number = normaliseWhatsAppNumber(destination);
+  if (!number) { onMissing(); return; }
+  const url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(buildDailyDigestMessage(data));
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
@@ -1341,7 +1467,7 @@ function downloadDailyWorkbook(data: AppData) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function ReportsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typeof getMetrics> }) {
+function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: { data: AppData; metrics: ReturnType<typeof getMetrics>; whatsappNumber: string; onWhatsAppUnavailable: () => void }) {
   const [period, setPeriod] = useState<'week' | 'month'>('week');
   const days = period === 'week' ? 7 : 30;
   const dayRows = Array.from({ length: days }, (_, index) => {
@@ -1351,6 +1477,10 @@ function ReportsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typ
   });
   const filteredInvoices = data.invoices.filter(invoice => invoice.date >= addDays(today(), -(days - 1)) && invoice.date <= today());
   const sales = sum(filteredInvoices.map(invoice => invoice.total));
+  const averageDailySales = sales / days;
+  const averageOrderValue = filteredInvoices.length ? sales / filteredInvoices.length : 0;
+  const unitsSoldInPeriod = sum(filteredInvoices.flatMap(invoice => invoice.lines.map(line => line.quantity)));
+  const grossProfitInPeriod = sum(filteredInvoices.map(marginValue));
   const cogs = sum(filteredInvoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity))));
   const productPerformance = data.products.map(product => {
     let unitsSold = 0, netSales = 0, itemCost = 0;
@@ -1382,15 +1512,17 @@ function ReportsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typ
       <div className="daily-digest-actions">
         <Button variant="outline" onClick={() => downloadDailyWorkbook(data)}><FileSpreadsheet size={16} /> Download Excel workbook</Button>
         <Button variant="outline" onClick={() => window.print()}><FileText size={16} /> Save as PDF</Button>
-        <Button onClick={() => openDailyDigestWhatsApp(data)}><MessageCircle size={16} /> Prepare WhatsApp summary</Button>
+        <Button onClick={() => openDailyDigestWhatsApp(data, whatsappNumber, onWhatsAppUnavailable)}><MessageCircle size={16} /> Prepare WhatsApp summary</Button>
       </div>
-      <p className="daily-digest-note">The workbook is generated from the latest records in this browser. WhatsApp opens a prepared summary to +254 745 706 087; scheduled sending and file attachments require the business database and WhatsApp Business connection.</p>
+      <p className="daily-digest-note">The workbook is generated from the latest records in this browser. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery requires the WhatsApp Business API and a secure server connection.</p>
     </SectionCard>
-    <div className="metric-grid metric-grid-four compact-metrics">
-      <MetricCard label="Sales recorded" value={money(sales)} note={period === 'week' ? 'Last seven days' : 'Last 30 days'} icon={TrendingUp} tone="green" />
-      <MetricCard label="Gross margin" value={money(sales - cogs)} note="Sales value less recorded product cost" icon={Activity} tone="blue" />
-      <MetricCard label="Margin rate" value={(sales > 0 ? ((sales - cogs) / sales) * 100 : 0).toFixed(1) + '%'} note="Based on item cost data" icon={BarChart3} tone="slate" />
-      <MetricCard label="Inventory value" value={money(metrics.inventoryValue)} note="Current stock at cost" icon={Package} tone="amber" />
+    <div className="metric-grid metric-grid-six compact-metrics">
+      <MetricCard label="Sales recorded" value={money(sales)} note={filteredInvoices.length + ' invoices · ' + days + ' days'} icon={TrendingUp} tone="green" />
+      <MetricCard label="Average daily sales" value={money(averageDailySales)} note="Includes days with no sales" icon={BarChart3} tone="green" />
+      <MetricCard label="Average sale" value={money(averageOrderValue)} note="Sales value per invoice" icon={Receipt} tone="blue" />
+      <MetricCard label="Gross profit" value={money(grossProfitInPeriod)} note="After recorded item cost" icon={Activity} tone="blue" />
+      <MetricCard label="Gross margin" value={(sales > 0 ? (grossProfitInPeriod / sales) * 100 : 0).toFixed(1) + '%'} note="Gross profit as share of sales" icon={TrendingUp} tone="slate" />
+      <MetricCard label="Units sold" value={numberText(unitsSoldInPeriod)} note="Across the selected period" icon={Package} tone="amber" />
     </div>
     <SectionCard title="Trading performance" detail="Sales and cost of goods sold by day." action={<div className="segmented-control"><button className={period === 'week' ? 'active' : ''} onClick={() => setPeriod('week')}>7 days</button><button className={period === 'month' ? 'active' : ''} onClick={() => setPeriod('month')}>30 days</button></div>}>
       <div className="report-chart-legend"><span><i className="legend-dot legend-green" /> Sales</span><span><i className="legend-dot legend-blue" /> Cost of goods sold</span></div>
@@ -1546,12 +1678,13 @@ function MorePage({ allowedModules, onNavigate }: {
   </div>;
 }
 
-function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMember, onReset, theme, onThemeChange, onOpenReports }: {
+function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMember, onReset, theme, onThemeChange, onOpenReports, whatsappNumber, onWhatsAppNumberChange }: {
   profile: BusinessProfile; teamMembers: TeamMember[];
   onSave: (profile: BusinessProfile) => void;
   onAddMember: (input: { name: string; email: string; role: TeamRole }) => void;
   onUpdateMember: (id: string, patch: Partial<TeamMember>) => void;
   onReset: () => void; theme: 'dark' | 'light'; onThemeChange: (theme: 'dark' | 'light') => void; onOpenReports: () => void;
+  whatsappNumber: string; onWhatsAppNumberChange: (value: string) => void;
 }) {
   const [tab, setTab] = useState<'profile' | 'team' | 'preferences'>('profile');
   const [form, setForm] = useState(profile);
@@ -1639,8 +1772,9 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
           </div>
         </section>
         <section className="preference-block">
-          <div><strong>WhatsApp daily digest</strong><p>Daily summaries are prepared for this destination. Scheduled delivery and file attachments require the business database and WhatsApp Business connection.</p></div>
-          <div className="digest-recipient"><MessageCircle size={18} /><strong>+254 745 706 087</strong><span>Current digest destination</span></div>
+          <div><strong>WhatsApp daily digest</strong><p>Choose the number that should receive the prepared daily summary. Hesabu opens the chat for you to review and send.</p></div>
+          <Field label="WhatsApp destination" value={whatsappNumber} onChange={onWhatsAppNumberChange} placeholder="2547XXXXXXXX" hint="Use country code, e.g. 254712345678. You can also enter a Kenyan number beginning with 07 or 01." />
+          <div className="whatsapp-connection-note"><MessageCircle size={16} /><span>Click-to-chat is available in this preview. Automatic scheduled messages and attachments need the WhatsApp Business API connected on a secure server.</span></div>
           <Button variant="outline" onClick={onOpenReports}>Open daily digest</Button>
         </section>
       </div>}
@@ -1700,6 +1834,14 @@ function recordJournal(
 
 function App() {
   const [data, setData] = useState<AppData>(() => readWorkspace());
+  const [previewAccess, setPreviewAccess] = useState(() => {
+    try { return localStorage.getItem('hesabu:preview-access:v1') === 'true'; }
+    catch { return false; }
+  });
+  const [whatsappNumber, setWhatsAppNumber] = useState(() => {
+    try { return localStorage.getItem('hesabu:whatsapp-number:v1') || ''; }
+    catch { return ''; }
+  });
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try { return localStorage.getItem('hesabu:theme:v2') === 'dark' ? 'dark' : 'light'; }
     catch { return 'light'; }
@@ -1716,6 +1858,12 @@ function App() {
   const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => { saveWorkspace(data); }, [data]);
+  useEffect(() => {
+    try {
+      if (whatsappNumber.trim()) localStorage.setItem('hesabu:whatsapp-number:v1', whatsappNumber.trim());
+      else localStorage.removeItem('hesabu:whatsapp-number:v1');
+    } catch { /* WhatsApp preference remains available for this session. */ }
+  }, [whatsappNumber]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try { localStorage.setItem('hesabu:theme:v2', theme); } catch { /* Keep this session's theme. */ }
@@ -2215,10 +2363,24 @@ function App() {
   };
 
   const activeMeta = moduleMeta[active];
+  const enterPreview = () => {
+    try { localStorage.setItem('hesabu:preview-access:v1', 'true'); } catch { /* Session can still continue. */ }
+    setPreviewAccess(true);
+  };
+  const exitPreview = () => {
+    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Keep the screen transition available. */ }
+    setUserSwitcherOpen(false);
+    setPreviewAccess(false);
+  };
+  const requestWhatsAppDestination = () => {
+    navigate('settings');
+    notify('Add a WhatsApp destination', 'Enter your business WhatsApp number in Settings before preparing the daily summary.');
+  };
+  if (!previewAccess) return <AuthPage onPreview={enterPreview} />;
   return <div className={'app-shell theme-' + theme + ' ' + (sidebarCollapsed ? 'sidebar-is-collapsed' : '')}>
     <aside className={'sidebar ' + (mobileMenuOpen ? 'sidebar-mobile-open' : '')}>
       <div className="brand-row">
-        <div className="brand-mark">H</div>
+        <span className="brand-mark"><HesabuMark /></span>
         {!sidebarCollapsed && <div className="brand-text"><strong>hesabu<span>.</span></strong><small>BUSINESS WORKSPACE</small></div>}
         <button className="sidebar-collapse" onClick={() => setSidebarCollapsed(value => !value)} aria-label="Collapse navigation"><PanelLeftClose size={16} /></button>
       </div>
@@ -2251,7 +2413,7 @@ function App() {
     <main className="main-shell">
       <header className="topbar">
         <div className="topbar-left">
-          <div className="topbar-brand-lockup"><span className="brand-mark topbar-brand-mark">H</span><span>hesabu<span>.</span><small>BUSINESS</small></span></div>
+          <div className="topbar-brand-lockup"><span className="brand-mark topbar-brand-mark"><HesabuMark /></span><span>hesabu<span>.</span><small>BUSINESS</small></span></div>
           <IconButton label="Open navigation" className="mobile-menu-button" onClick={() => setMobileMenuOpen(value => !value)}><Menu size={19} /></IconButton>
           <div className="breadcrumb"><ChevronRight size={13} /><strong>{activeMeta.title}</strong></div>
         </div>
@@ -2261,7 +2423,7 @@ function App() {
           <button className="topbar-date" onClick={() => notify('Workspace date', dateLabel(today()))}><CalendarDays size={15} /> <span>{dateLabel(today())}</span></button>
           <button className="notification-button" onClick={() => notify('Operational attention', data.products.filter(product => product.quantity <= product.reorderLevel).length + ' stock items are at or below reorder level.')}><Bell size={17} /><i /></button>
           <button className="topbar-avatar" aria-label="Switch role preview" aria-expanded={userSwitcherOpen} onClick={() => setUserSwitcherOpen(value => !value)}><Initials name={activeMember?.name || data.profile.name} /></button>
-          {userSwitcherOpen && <div className="user-switcher-panel"><div className="user-switcher-heading"><strong>Preview workspace as</strong><small>Switch between the owner and staff views.</small></div>{data.teamMembers.filter(member => member.status === 'active').map(member => <button key={member.id} className={member.id === activeMember?.id ? 'user-switcher-active' : ''} onClick={() => { setActiveMemberId(member.id); setUserSwitcherOpen(false); setActive('overview'); setDialog(null); setSelectedInvoiceId(null); setSearch(''); }}><Initials name={member.name} /><span><strong>{member.name}</strong><small>{member.role}</small></span>{member.id === activeMember?.id && <span className="user-switcher-current">Current</span>}</button>)}</div>}
+          {userSwitcherOpen && <div className="user-switcher-panel"><div className="user-switcher-heading"><strong>Preview workspace as</strong><small>Switch between the owner and staff views.</small></div>{data.teamMembers.filter(member => member.status === 'active').map(member => <button key={member.id} className={member.id === activeMember?.id ? 'user-switcher-active' : ''} onClick={() => { setActiveMemberId(member.id); setUserSwitcherOpen(false); setActive('overview'); setDialog(null); setSelectedInvoiceId(null); setSearch(''); }}><Initials name={member.name} /><span><strong>{member.name}</strong><small>{member.role}</small></span>{member.id === activeMember?.id && <span className="user-switcher-current">Current</span>}</button>)}<button type="button" className="user-switcher-logout" onClick={exitPreview}><LogOut size={15} /> Exit preview workspace</button></div>}
         </div>
       </header>
 
@@ -2272,9 +2434,9 @@ function App() {
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
-        {active === 'reports' && <ReportsPage data={data} metrics={metrics} />}
+        {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} />}
         {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} />}
-        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} />}
+        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
       </div>
       <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Preview workspace · Saved in this browser</span></footer>
@@ -2292,6 +2454,8 @@ function App() {
         return <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>;
       })}
     </nav>
+
+    <FloatingAssistant data={data} />
 
     {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} />}
     {dialog?.kind === 'stk' && <StkDialog invoices={data.invoices} initialInvoiceId={dialog.invoiceId} onClose={() => setDialog(null)} onCreate={createPaymentRequest} />}
