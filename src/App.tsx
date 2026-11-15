@@ -260,16 +260,6 @@ function MiniBars({ values, labels }: { values: number[]; labels: string[] }) {
   </div>;
 }
 
-function ProgressLine({ label, value, maximum, color = 'green', suffix = '' }: {
-  label: string; value: number; maximum: number; color?: string; suffix?: string;
-}) {
-  const width = maximum <= 0 ? 0 : Math.min(100, (value / maximum) * 100);
-  return <div className="progress-line">
-    <div className="progress-line-copy"><span>{label}</span><strong>{numberText(value) + suffix}</strong></div>
-    <div className="progress-track"><div className={'progress-fill progress-' + color} style={{ width: width + '%' }} /></div>
-  </div>;
-}
-
 function Initials({ name }: { name: string }) {
   const letters = name.split(' ').filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
   return <span className="avatar">{letters || 'H'}</span>;
