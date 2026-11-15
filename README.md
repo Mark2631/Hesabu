@@ -10,7 +10,7 @@ A single operational record connects:
 - **Payments and reconciliation** — cash, M-Pesa, bank and card collection records; payment requests; an unmatched-receipt queue for Till/PayBill, Pochi, Send Money and bank receipts; invoice allocation and exception review.
 - **Inventory** — SKU-level quantities, reorder points, cost and selling prices, stock adjustments and valuation.
 - **Procurement** — suppliers, purchase orders, receiving and accounts payable.
-- **Accounts** — receivables, payables, cash accounts, account balances and a journal-style record.
+- **Accounts** — receivables, payables, cash accounts, account balances, a trial balance and a journal register. The seed includes opening balances that reconcile the cash, inventory, receivables and supplier control accounts.
 - **Reports** — sales, gross margin, cash position and working-capital views.
 - **Integrations** — a planned developer API, website embed and webhook event model.
 
@@ -21,11 +21,11 @@ A posted sale is intended to flow through invoice, collection, stock and account
 The build/platform-foundation branch contains a front-end product preview built on the existing React 18, TypeScript and Vite application.
 
 - Seeded mini-mart workspace with products, suppliers, invoices, payment records and purchase orders.
-- Local interactions for recording sales, creating invoices, requesting and resolving simulated STK payments, adding unmatched receipts, matching receipts to open invoices, recording expenses, stock counts, multi-line purchase orders and supplier payments.
-- Balanced journal-pair posting for preview transactions, weighted-average cost on stock receipts, and separate treatment of unapplied customer receipts as customer advances.
+- Local interactions for recording sales, creating invoices, requesting and resolving simulated STK payments, adding unmatched receipts, matching receipts to open invoices, recording expenses, stock counts, multi-line purchase orders, partial goods receiving, opening stock entries and supplier payments.
+- Balanced journal-pair posting, a trial-balance control, weighted-average cost on stock receipts, separate treatment of unapplied customer receipts as customer advances, and ledger entries for opening stock.
 - Supplier settlements reduce bank cash and accounts payable; they are not treated as operating expenses.
 - Derived dashboard and report values.
-- Browser-local persistence under hesabu:platform:v2.
+- Browser-local persistence under hesabu:platform:v3. The new key intentionally starts a fresh seeded workspace without deleting older local browser records.
 - Responsive desktop, tablet and mobile navigation.
 
 The preview is deliberately local-first while the production database is not connected. Data only persists in the current browser. It is not yet multi-user, multi-branch, cloud-synchronised or suitable for real financial operations. Seeded values are representative demo figures, not audited opening balances.

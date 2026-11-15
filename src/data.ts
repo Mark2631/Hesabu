@@ -257,7 +257,7 @@ export function makeDemoData(): AppData {
   };
 }
 
-export const STORAGE_KEY = 'hesabu:platform:v2';
+export const STORAGE_KEY = 'hesabu:platform:v3';
 
 export function readWorkspace(): AppData {
   try {

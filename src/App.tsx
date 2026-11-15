@@ -1612,8 +1612,8 @@ function App() {
 
   const addUnmatchedReceipt = (input: NewUnmatchedReceiptInput) => {
     const reference = input.reference.trim().toUpperCase();
-    const duplicateReference = data.unmatchedReceipts.some(item => item.reference.toUpperCase() === input.reference.toUpperCase()) ||
-      data.payments.some(item => item.reference.toUpperCase() === input.reference.toUpperCase());
+    const duplicateReference = data.unmatchedReceipts.some(item => item.reference.trim().toUpperCase() === reference) ||
+      data.payments.some(item => item.reference.trim().toUpperCase() === reference);
     if (duplicateReference) {
       notify('Receipt reference already recorded', 'Check the existing payment register or unmatched queue before adding this receipt again.');
       return;
@@ -1768,17 +1768,29 @@ function App() {
   };
 
   const createProduct = (input: Omit<Product, 'id' | 'updatedAt'>) => {
-    const product: Product = { ...input, id: makeId('PRD'), updatedAt: today() };
+    const sku = input.sku.trim().toUpperCase() || makeId('SKU');
+    if (data.products.some(product => product.sku.toUpperCase() === sku)) {
+      notify('SKU already exists', 'Each inventory item needs a unique product code. Choose another SKU before saving.');
+      return;
+    }
+    const product: Product = { ...input, sku, id: makeId('PRD'), updatedAt: today() };
+    const openingValue = Math.max(0, product.quantity) * Math.max(0, product.costPrice);
     setData(current => ({
-      ...current, products: [product, ...current.products],
+      ...current,
+      products: [product, ...current.products],
+      journal: openingValue > 0
+        ? recordJournal(current, 'Inventory', 'Opening balance equity', openingValue, 'Opening stock · ' + product.name, product.sku)
+        : current.journal,
       events: [{
         id: makeId('EVT'), time: new Date().toISOString(), type: 'inventory.item_created',
         source: 'Inventory', status: 'delivered', reference: product.sku,
-        detail: product.name + ' added to the product register',
+        detail: product.name + ' added with ' + numberText(product.quantity) + ' ' + product.unit + ' on hand',
       }, ...current.events],
     }));
     setDialog(null);
-    notify('Product added', product.name + ' is now in the inventory register.');
+    notify('Product added', openingValue > 0
+      ? product.name + ' and ' + money(openingValue) + ' of opening stock have been recorded.'
+      : product.name + ' is now in the inventory register.');
   };
 
   const createPurchaseOrder = (input: NewPurchaseInput) => {
@@ -1981,7 +1993,7 @@ function App() {
         {active === 'integrations' && <IntegrationsPage data={data} onCopy={copyText} onNotice={notify} onCreateDemoOrder={createWebsiteOrder} />}
         {active === 'settings' && <SettingsPage profile={data.profile} onSave={saveProfile} onReset={resetDemo} onNotice={notify} />}
       </div>
-      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Demo workspace · Local records only</span></footer>
+      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Preview workspace · Saved in this browser</span></footer>
     </main>
 
     <nav className="mobile-bottom-nav">
