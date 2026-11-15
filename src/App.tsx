@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, BookOpen,
   Bell, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown,
   ChevronRight, CircleDollarSign, Clock3, Download,
-  FileCheck2, FileSpreadsheet, FileText, Filter, LayoutDashboard, Link2, MessageCircle, Moon, Sun, Sparkles,
+  FileCheck2, FileSpreadsheet, FileText, Filter, LayoutDashboard, Link2, MessageCircle, Moon, Sun,
   Menu, MoreHorizontal, Package, PanelLeftClose, Plus, Receipt,
   Search, Send, Settings, ShieldCheck, ShoppingCart, Smartphone,
   Store, TrendingDown, TrendingUp, Truck, Wallet, X, LogOut,
@@ -1481,7 +1481,6 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: {
   const averageOrderValue = filteredInvoices.length ? sales / filteredInvoices.length : 0;
   const unitsSoldInPeriod = sum(filteredInvoices.flatMap(invoice => invoice.lines.map(line => line.quantity)));
   const grossProfitInPeriod = sum(filteredInvoices.map(marginValue));
-  const cogs = sum(filteredInvoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity))));
   const productPerformance = data.products.map(product => {
     let unitsSold = 0, netSales = 0, itemCost = 0;
     filteredInvoices.forEach(invoice => invoice.lines.filter(line => line.productId === product.id).forEach(line => {
