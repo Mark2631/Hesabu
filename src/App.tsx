@@ -100,7 +100,7 @@ const sourceLabel = (source: Invoice['source']) => ({
 }[source]);
 
 function Button({
-  children, onClick, variant = 'primary', size = 'md', disabled = false, className = '', type = 'button',
+  children, onClick, variant = 'primary', size = 'md', disabled = false, className = '', type = 'button', block = false,
 }: {
   children: ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger';
   size?: 'sm' | 'md' | 'lg'; disabled?: boolean; className?: string; type?: 'button' | 'submit'; block?: boolean;
@@ -272,7 +272,7 @@ function SaleDialog({ products, onClose, onCreate }: {
   const [phone, setPhone] = useState('');
   const [dueDate, setDueDate] = useState(addDays(today(), 7));
   const [discount, setDiscount] = useState('0');
-  const channel: PaymentChannel = 'mpesa';
+  const [channel, setChannel] = useState<PaymentChannel>('mpesa');
   const [source, setSource] = useState<Invoice['source']>('pos');
   const [items, setItems] = useState([{ productId: products[0]?.id || '', quantity: 1 }]);
   const productFor = (id: string) => products.find(product => product.id === id);
@@ -359,7 +359,7 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate }: {
   const invoice = outstandingInvoices.find(item => item.id === invoiceId);
   const [phone, setPhone] = useState(invoice?.phone || '');
   const [amount, setAmount] = useState(String(invoice ? invoiceBalance(invoice) : 0));
-  const [channel, setChannel] = useState<PaymentChannel>('mpesa');
+  const channel: PaymentChannel = 'mpesa';
   useEffect(() => {
     const selected = outstandingInvoices.find(item => item.id === invoiceId);
     if (selected) setAmount(String(invoiceBalance(selected)));
