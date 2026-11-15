@@ -1147,11 +1147,89 @@ function ReportsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typ
   </div>;
 }
 
-function IntegrationsPage({ data, onCopy, onNotice }: {
+
+function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
+  profile: BusinessProfile;
+  products: Product[];
+  onCreateOrder: (input: { productId: string; quantity: number; customer: string; phone: string }) => void;
+}) {
+  const availableProducts = products.filter(product => product.quantity > 0);
+  const [productId, setProductId] = useState(availableProducts[0]?.id || '');
+  const [quantity, setQuantity] = useState('1');
+  const [customer, setCustomer] = useState('Maua Cafe');
+  const [phone, setPhone] = useState('0718 230 011');
+  const product = availableProducts.find(item => item.id === productId);
+  const qty = Math.max(0, Number(quantity) || 0);
+  const total = product ? product.sellingPrice * qty : 0;
+  const invalid = !product || !customer.trim() || !phone.trim() || qty <= 0 || qty > (product?.quantity ?? 0);
+
+  return <div className="embedded-checkout-demo">
+    <div className="embedded-demo-heading">
+      <div>
+        <div className="eyebrow">INTERACTIVE PRODUCT PREVIEW</div>
+        <h3>Embedded checkout</h3>
+        <p>A sample storefront order that writes into this Hesabu workspace.</p>
+      </div>
+      <StatusPill status="pending">Local simulation</StatusPill>
+    </div>
+    <div className="embedded-demo-layout">
+      <div className="embedded-storefront">
+        <div className="embedded-storefront-brand">
+          <div className="embedded-storefront-mark">{profile.name.trim().charAt(0).toUpperCase() || 'S'}</div>
+          <div><strong>{profile.name}</strong><small>Merchant checkout</small></div>
+          <span className="secure-label"><ShieldCheck size={13} /> Secure flow preview</span>
+        </div>
+        <div className="embedded-storefront-title">Complete your order</div>
+        <form className="embedded-storefront-form" onSubmit={event => {
+          event.preventDefault();
+          if (!invalid && product) onCreateOrder({ productId, quantity: qty, customer: customer.trim(), phone: phone.trim() });
+        }}>
+          <SelectField label="Product" value={productId} onChange={value => setProductId(value)}
+            options={availableProducts.map(item => ({ value: item.id, label: item.name + ' · ' + money(item.sellingPrice) }))} />
+          <div className="form-grid form-grid-two">
+            <Field label="Quantity" type="number" min={1} step={1} value={quantity} onChange={setQuantity} />
+            <Field label="Customer name" value={customer} onChange={setCustomer} required />
+          </div>
+          <Field label="M-Pesa phone" value={phone} onChange={setPhone} required placeholder="07XX XXX XXX" />
+          <div className="embedded-checkout-total">
+            <div><span>Order total</span><small>{product ? product.name + ' × ' + numberText(qty) : 'Select an in-stock item'}</small></div>
+            <strong>{money(total)}</strong>
+          </div>
+          {product && qty > product.quantity && <div className="validation-note"><AlertTriangle size={14} /> Only {numberText(product.quantity)} units are currently available.</div>}
+          <Button type="submit" block disabled={invalid}><ShoppingCart size={15} /> Create website order</Button>
+          <div className="embedded-checkout-footnote">No real payment is sent. The order is posted as an unpaid invoice, then you can initiate a simulated payment from that invoice.</div>
+        </form>
+      </div>
+      <div className="embedded-flow">
+        <div className="embedded-flow-title">What happens behind the checkout</div>
+        <div className="embedded-flow-step"><span>1</span><div><strong>Website order</strong><small>External reference and customer details</small></div></div>
+        <div className="embedded-flow-step"><span>2</span><div><strong>Hesabu invoice</strong><small>Revenue and customer receivable recorded</small></div></div>
+        <div className="embedded-flow-step"><span>3</span><div><strong>Inventory update</strong><small>On-hand quantity and cost of sale posted</small></div></div>
+        <div className="embedded-flow-step"><span>4</span><div><strong>Payment matching</strong><small>Request, confirm and reconcile a merchant payment</small></div></div>
+        <div className="embedded-flow-note"><ShieldCheck size={15} /> One order creates one business record. The storefront does not need to manage a separate stock or cashbook ledger.</div>
+      </div>
+    </div>
+  </div>;
+}
+
+function IntegrationsPage({ data, onCopy, onNotice, onCreateDemoOrder }: {
   data: AppData; onCopy: (value: string) => void; onNotice: (title: string, detail?: string) => void;
+  onCreateDemoOrder: (input: { productId: string; quantity: number; customer: string; phone: string }) => void;
 }) {
   const [tab, setTab] = useState<'payments' | 'developer' | 'events'>('payments');
-  const code = '<script src="https://cdn.hesabu.ai/v1/checkout.js" data-business="hs_demo_northstar"></script>';
+  const code = `// Illustrative request shape — Hesabu API is not live yet
+POST /v1/invoices
+{
+  "business_id": "hs_demo_northstar",
+  "external_reference": "WEB-2048",
+  "customer": "Maua Cafe",
+  "items": [
+    { "sku": "BAK-003", "quantity": 10 }
+  ]
+}
+
+Webhook event: invoice.created
+Next step: request payment via the merchant's configured rail`;
   const events = [...data.events].sort((a, b) => b.time.localeCompare(a.time));
   return <div className="page-stack">
     <PageHeader title="Integrations" description="Use Hesabu as the finance and control layer behind an existing business website or checkout." actions={<span className="integration-mode"><span className="status-dot" /> Sandbox preview</span>} />
@@ -1204,9 +1282,9 @@ function IntegrationsPage({ data, onCopy, onNotice }: {
           <div className="developer-stat-grid"><div><small>Business ID</small><strong className="mono-text">hs_demo_northstar</strong></div><div><small>Environment</small><strong>Sandbox</strong></div><div><small>Webhook delivery</small><strong>Event driven</strong></div></div>
         </div>
         <div className="code-card">
-          <div className="code-card-top"><span><i /> <i /> <i /> Integration snippet</span><button onClick={() => onCopy(code)}><Copy size={13} /> Copy</button></div>
+          <div className="code-card-top"><span><i /> <i /> <i /> API request shape · illustrative</span><button onClick={() => onCopy(code)}><Copy size={13} /> Copy</button></div>
           <pre><code>{code}</code></pre>
-          <div className="code-card-note"><LockKeyholeFallback /> Secret keys remain server-side and are never embedded in a public website.</div>
+          <div className="code-card-note"><LockKeyholeFallback /> Example contract only — this endpoint is not live. Secret keys must remain server-side and never be embedded in a public website.</div>
         </div>
         <div className="api-endpoints">
           <div className="api-endpoints-head"><strong>Planned API surface</strong><span>Design reference · Not live</span></div>
@@ -1215,6 +1293,7 @@ function IntegrationsPage({ data, onCopy, onNotice }: {
           <div><span className="http-method">GET</span><code>/v1/invoices/:id</code><small>Retrieve the latest invoice and settlement state</small></div>
           <div><span className="http-method">POST</span><code>/v1/webhooks</code><small>Register an endpoint for payment and stock events</small></div>
         </div>
+        <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
       </div>}
       {tab === 'events' && <DataTable headers={['Event', 'Source', 'Reference', 'Received', 'Delivery']}>
         {events.map(event => <tr key={event.id}>
@@ -1446,7 +1525,23 @@ function App() {
     setData(next);
     setDialog(null);
     notify('Sale posted', number + ' has been recorded and inventory has been updated.');
+    return invoiceId;
   };
+
+
+  const createWebsiteOrder = (input: { productId: string; quantity: number; customer: string; phone: string }) => {
+    const invoiceId = createInvoice({
+      customer: input.customer,
+      phone: input.phone,
+      dueDate: addDays(today(), 7),
+      discount: 0,
+      channel: 'credit',
+      items: [{ productId: input.productId, quantity: input.quantity }],
+      source: 'website',
+    });
+    if (invoiceId) setSelectedInvoiceId(invoiceId);
+  };
+
 
   const createPaymentRequest = (input: NewPaymentInput) => {
     const invoice = data.invoices.find(item => item.id === input.invoiceId);
@@ -1841,7 +1936,7 @@ function App() {
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} />}
-        {active === 'integrations' && <IntegrationsPage data={data} onCopy={copyText} onNotice={notify} />}
+        {active === 'integrations' && <IntegrationsPage data={data} onCopy={copyText} onNotice={notify} onCreateDemoOrder={createWebsiteOrder} />}
         {active === 'settings' && <SettingsPage profile={data.profile} onSave={saveProfile} onReset={resetDemo} onNotice={notify} />}
       </div>
       <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Demo workspace · Local records only</span></footer>
