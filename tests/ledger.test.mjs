@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeDemoData } from '../src/data.ts';
-import { allocateIncomingPayment, buildJournalPair, isJournalBalanced, outstandingBalance, weightedAverageUnitCost } from '../src/finance.ts';
+import { allocateIncomingPayment, buildJournalPair, calculateGrossProfit, isJournalBalanced, outstandingBalance, weightedAverageUnitCost } from '../src/finance.ts';
 
 const sum = (values) => values.reduce((total, value) => total + value, 0);
 
@@ -110,6 +110,13 @@ test('weighted average cost includes existing and incoming stock', () => {
   assert.equal(weightedAverageUnitCost(5, 100, 15, 140), 130);
   assert.equal(weightedAverageUnitCost(0, 0, 7, 85), 85);
   assert.equal(weightedAverageUnitCost(7, 85, 0, 120), 85);
+});
+
+test('sales discounts reduce gross profit and can result in a trading loss', () => {
+  const lines = [{ quantity: 2, unitPrice: 150, unitCost: 100 }];
+  assert.equal(calculateGrossProfit(lines), 100);
+  assert.equal(calculateGrossProfit(lines, 30), 70);
+  assert.equal(calculateGrossProfit(lines, 120), -20);
 });
 
 test('low stock is measurable from quantity and reorder rules', () => {

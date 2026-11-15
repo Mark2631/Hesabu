@@ -9,7 +9,7 @@ import {
   Store, TrendingDown, TrendingUp, Truck, Wallet, X,
   type LucideIcon,
 } from 'lucide-react';
-import { allocateIncomingPayment, buildJournalPair, isJournalBalanced, outstandingBalance, weightedAverageUnitCost } from './finance';
+import { allocateIncomingPayment, buildJournalPair, calculateGrossProfit, isJournalBalanced, outstandingBalance, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
@@ -97,7 +97,7 @@ const shortRef = (value: string) => value.length > 15 ? value.slice(0, 13) + 'â€
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 const invoiceBalance = (invoice: Invoice) => outstandingBalance(invoice.total, invoice.paid);
 const productValue = (product: Product) => product.quantity * product.costPrice;
-const marginValue = (invoice: Invoice) => sum(invoice.lines.map(line => (line.unitPrice - line.unitCost) * line.quantity));
+const marginValue = (invoice: Invoice) => calculateGrossProfit(invoice.lines, invoice.discount);
 const sourceLabel = (source: Invoice['source']) => ({
   hesabu: 'Hesabu', website: 'Website', pos: 'Point of sale', manual: 'Manual',
 }[source]);
@@ -1407,6 +1407,7 @@ function App() {
   };
 
   const addUnmatchedReceipt = (input: NewUnmatchedReceiptInput) => {
+    const reference = input.reference.trim().toUpperCase();
     const duplicateReference = data.unmatchedReceipts.some(item => item.reference.toUpperCase() === input.reference.toUpperCase()) ||
       data.payments.some(item => item.reference.toUpperCase() === input.reference.toUpperCase());
     if (duplicateReference) {

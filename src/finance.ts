@@ -64,3 +64,15 @@ export function allocateIncomingPayment(invoiceTotal: number, invoicePaid: numbe
   const newPaid = Math.min(invoiceTotal, invoicePaid + appliedAmount);
   return { appliedAmount, unappliedAmount, newPaid, outstandingAfter: outstandingBalance(invoiceTotal, newPaid) };
 }
+
+export interface CostedInvoiceLine {
+  quantity: number;
+  unitPrice: number;
+  unitCost: number;
+}
+
+export function calculateGrossProfit(lines: CostedInvoiceLine[], discount = 0): number {
+  const revenueAfterDiscount = lines.reduce((total, line) => total + line.quantity * line.unitPrice, 0) - Math.max(0, discount);
+  const costOfGoodsSold = lines.reduce((total, line) => total + line.quantity * line.unitCost, 0);
+  return Math.round((revenueAfterDiscount - costOfGoodsSold) * 100) / 100;
+}
