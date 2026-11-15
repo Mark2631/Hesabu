@@ -12,9 +12,9 @@ import {
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import type {
-  AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
+  AppData, BusinessProfile, Invoice, ModuleKey, NewInvoiceInput,
   NewPaymentInput, NewPurchaseInput, NewUnmatchedReceiptInput, Payment, PaymentChannel, Product,
-  PurchaseOrder, ReceiptRail, Supplier, UnmatchedReceipt,
+  PurchaseOrder, ReceiptRail, Supplier, TeamMember, TeamRole, UnmatchedReceipt,
 } from './types';
 
 type Notice = { title: string; detail?: string } | null;
@@ -25,7 +25,7 @@ type DialogState =
   | { kind: 'match-receipt'; receiptId: string }
   | { kind: 'expense' }
   | { kind: 'product' }
-  | { kind: 'purchase' }
+  | { kind: 'purchase'; productId?: string; quantity?: number }
   | { kind: 'receive-purchase'; purchaseOrderId: string }
   | { kind: 'invoice'; invoiceId: string }
   | { kind: 'supplier-payment'; supplierId: string }
@@ -39,15 +39,15 @@ const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: st
     { id: 'sales', label: 'Sales & invoices', icon: Receipt },
     { id: 'payments', label: 'Payments', icon: CircleDollarSign },
     { id: 'inventory', label: 'Inventory', icon: Package },
-    { id: 'procurement', label: 'Procurement', icon: ShoppingCart },
+    { id: 'procurement', label: 'Purchasing', icon: ShoppingCart },
   ] },
-  { title: 'CONTROL', items: [
-    { id: 'accounts', label: 'Accounts', icon: BookOpen },
+  { title: 'BUSINESS', items: [
+    { id: 'accounts', label: 'Financials', icon: BookOpen },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
   ] },
-  { title: 'PLATFORM', items: [
-    { id: 'integrations', label: 'Integrations', icon: Link2 },
-    { id: 'settings', label: 'Settings', icon: Settings },
+  { title: 'ADMIN', items: [
+    { id: 'integrations', label: 'Sales channels', icon: Link2 },
+    { id: 'settings', label: 'Team & settings', icon: Settings },
   ] },
 ];
 
@@ -55,13 +55,13 @@ const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: st
 const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
   overview: { title: 'Business overview', description: 'A live view of the money, stock and obligations moving through your business.' },
   sales: { title: 'Sales & invoices', description: 'Every sale, invoice and outstanding customer balance in one register.' },
-  payments: { title: 'Payments', description: 'Track collections across M-Pesa, cash, bank and card — then reconcile each one.' },
+  payments: { title: 'Payments', description: 'See what customers have paid and what still needs attention.' },
   inventory: { title: 'Inventory', description: 'Know what is on hand, what is moving and what needs to be reordered.' },
-  procurement: { title: 'Procurement', description: 'Control supplier orders, goods received and the bills attached to them.' },
-  accounts: { title: 'Accounts', description: 'A traceable financial record, from source transaction to account balance.' },
+  procurement: { title: 'Purchasing', description: 'Replenish stock, manage suppliers and follow deliveries.' },
+  accounts: { title: 'Financials', description: 'Understand cash, customer balances, supplier commitments and profit.' },
   reports: { title: 'Reports', description: 'Understand trading performance, cash movement and working capital.' },
-  integrations: { title: 'Integrations', description: 'Connect Hesabu to your website, checkout and existing business systems.' },
-  settings: { title: 'Business settings', description: 'Manage your business profile, operating preferences and payment configuration.' },
+  integrations: { title: 'Sales channels', description: 'Bring in-store, online and wholesale orders into one business view.' },
+  settings: { title: 'Team & settings', description: 'Manage your business profile and the people who run it.' },
 };
 
 const money = (value: number) => new Intl.NumberFormat('en-KE', {
@@ -189,15 +189,12 @@ function PageHeader({ eyebrow, title, description, actions }: {
   </div>;
 }
 
-function MetricCard({ label, value, note, icon: Icon, tone = 'green', trend }: {
+function MetricCard({ label, value, note, trend }: {
   label: string; value: string; note: string; icon: LucideIcon;
   tone?: 'green' | 'blue' | 'amber' | 'slate'; trend?: string;
 }) {
   return <div className="metric-card">
-    <div className="metric-top">
-      <span>{label}</span>
-      <span className={'metric-icon metric-icon-' + tone}><Icon size={17} strokeWidth={1.9} /></span>
-    </div>
+    <div className="metric-top"><span>{label}</span></div>
     <div className="metric-value">{value}</div>
     <div className="metric-foot">
       <span>{note}</span>
@@ -212,7 +209,7 @@ function StatusPill({ children, status }: { children: ReactNode; status: string 
 
 function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
   return <div className="empty-state">
-    <div className="empty-state-icon"><Package size={20} /></div>
+    
     <strong>{title}</strong>
     <p>{body}</p>
     {action && <div className="empty-state-action">{action}</div>}
@@ -374,10 +371,10 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate }: {
     if (!invoice || value <= 0 || value > invoiceBalance(invoice)) return;
     onCreate({ invoiceId, phone, amount: value, channel, origin: 'daraja_demo' });
   };
-  return <Modal title="Request a payment" detail="Simulate a customer payment request. No live M-Pesa prompt will be sent in this preview." onClose={onClose}>
+  return <Modal title="Request a payment" detail="Create a payment request linked to an outstanding customer sale." onClose={onClose}>
     <form className="modal-body" onSubmit={submit}>
       {outstandingInvoices.length === 0 ? <EmptyState title="No unpaid invoices" body="Create an invoice with a balance before requesting payment." /> : <>
-        <div className="demo-notice"><Smartphone size={17} /><span><strong>Daraja sandbox simulation</strong><small>Customer approval and the callback are simulated locally.</small></span></div>
+        <div className="demo-notice"><Smartphone size={17} /><span><strong>Sample payment request</strong><small>Preview the request and payment follow-up flow.</small></span></div>
         <SelectField label="Invoice" value={invoiceId} onChange={setInvoiceId} options={outstandingInvoices.map(item => ({
           value: item.id, label: item.number + ' · ' + item.customer + ' · ' + money(invoiceBalance(item)),
         }))} />
@@ -395,7 +392,7 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate }: {
         </div>
         <div className="modal-footer">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={!invoice || Number(amount) <= 0 || Number(amount) > invoiceBalance(invoice)}><Send size={15} /> Simulate STK request</Button>
+          <Button type="submit" disabled={!invoice || Number(amount) <= 0 || Number(amount) > invoiceBalance(invoice)}><Send size={15} /> Create payment request</Button>
         </div>
       </>}
     </form>
@@ -472,13 +469,15 @@ function ProductDialog({ onClose, onCreate }: {
   </Modal>;
 }
 
-function PurchaseDialog({ suppliers, products, onClose, onCreate }: {
-  suppliers: Supplier[]; products: Product[]; onClose: () => void; onCreate: (input: NewPurchaseInput) => void;
+function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity, onClose, onCreate }: {
+  suppliers: Supplier[]; products: Product[]; initialProductId?: string; initialQuantity?: number;
+  onClose: () => void; onCreate: (input: NewPurchaseInput) => void;
 }) {
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id || '');
+  const initialProduct = products.find(product => product.id === initialProductId) || products[0];
+  const [supplierId, setSupplierId] = useState(suppliers.find(item => item.id === initialProduct?.supplierId)?.id || suppliers[0]?.id || '');
   const [expectedAt, setExpectedAt] = useState(addDays(today(), 2));
-  const [items, setItems] = useState(() => products[0] ? [{
-    productId: products[0].id, quantity: 10, unitCost: products[0].costPrice,
+  const [items, setItems] = useState(() => initialProduct ? [{
+    productId: initialProduct.id, quantity: Math.max(1, initialQuantity || 10), unitCost: initialProduct.costPrice,
   }] : []);
   const updateItem = (index: number, patch: Partial<(typeof items)[number]>) => {
     setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
@@ -641,7 +640,7 @@ function SupplierPaymentDialog({ supplier, onClose, onPay }: {
     }}>
       <div className="balance-hint"><span>Outstanding supplier balance</span><strong>{money(supplier.balance)}</strong></div>
       <Field label="Payment amount (KSh)" type="number" min={1} value={amount} onChange={setAmount} />
-      <div className="field-hint">This records a bank payment and reduces the supplier payable. It does not initiate a bank transfer.</div>
+      <div className="field-hint">This records the payment against the supplier’s outstanding balance.</div>
       <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={Number(amount) <= 0 || Number(amount) > supplier.balance}>Record payment</Button></div>
     </form>
   </Modal>;
@@ -656,7 +655,7 @@ function ReceiptDialog({ onClose, onCreate }: {
   const [phone, setPhone] = useState('');
   const [reference, setReference] = useState('');
   const [amount, setAmount] = useState('');
-  return <Modal title="Add an unmatched receipt" detail="Capture a payment that reached the business but has not yet been linked to an invoice." onClose={onClose}>
+  return <Modal title="Record a payment received" detail="Record a customer payment and link it to the correct sale." onClose={onClose}>
     <form className="modal-body" onSubmit={event => {
       event.preventDefault();
       const value = Number(amount);
@@ -680,10 +679,10 @@ function ReceiptDialog({ onClose, onCreate }: {
         <Field label="Payer name" value={payer} onChange={setPayer} placeholder="Name shown on the receipt" />
         <Field label="Payer phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
       </div>
-      <div className="demo-notice"><ShieldCheck size={16} /><span><strong>Receipt capture only</strong><small>This adds a local reconciliation item. It does not verify the payment against Safaricom or a bank.</small></span></div>
+      <div className="demo-notice"><ShieldCheck size={16} /><span><strong>Receipt capture only</strong><small>This records the receipt so it can be matched to the correct customer sale.</small></span></div>
       <div className="modal-footer">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button type="submit" disabled={!reference.trim() || Number(amount) <= 0}><Plus size={15} /> Add to matching queue</Button>
+        <Button type="submit" disabled={!reference.trim() || Number(amount) <= 0}><Plus size={15} /> Save receipt</Button>
       </div>
     </form>
   </Modal>;
@@ -732,20 +731,29 @@ function AdjustStockDialog({ product, onClose, onAdjust }: {
 }) {
   const [quantity, setQuantity] = useState(String(product.quantity));
   const [reason, setReason] = useState('Stock count adjustment');
-  return <Modal title="Adjust stock quantity" detail={product.name} onClose={onClose}>
+  const counted = Math.max(0, Number(quantity) || 0);
+  const difference = counted - product.quantity;
+  const valueImpact = Math.abs(difference * product.costPrice);
+  return <Modal title="Count stock" detail={product.name} onClose={onClose}>
     <form className="modal-body" onSubmit={event => {
       event.preventDefault();
       const next = Number(quantity);
       if (Number.isFinite(next) && next >= 0) onAdjust(next, reason);
     }}>
-      <div className="balance-hint"><span>Currently recorded</span><strong>{numberText(product.quantity) + ' ' + product.unit}</strong></div>
-      <Field label="New counted quantity" type="number" min={0} value={quantity} onChange={setQuantity} required />
-      <SelectField label="Adjustment reason" value={reason} onChange={setReason} options={[
-        { value: 'Stock count adjustment', label: 'Physical stock count' },
+      <div className="stock-count-summary">
+        <div><span>Recorded</span><strong>{numberText(product.quantity)} {product.unit}</strong></div>
+        <div><span>Counted</span><strong>{numberText(counted)} {product.unit}</strong></div>
+        <div><span>Difference</span><strong className={difference < 0 ? 'negative-text' : difference > 0 ? 'positive-text' : ''}>{difference > 0 ? '+' : ''}{numberText(difference)} {product.unit}</strong></div>
+        <div><span>Value difference</span><strong>{money(valueImpact)}</strong></div>
+      </div>
+      <Field label="Physical quantity counted" type="number" min={0} step={0.01} value={quantity} onChange={setQuantity} required />
+      <SelectField label="Reason for difference" value={reason} onChange={setReason} options={[
+        { value: 'Stock count adjustment', label: 'Routine stock count' },
         { value: 'Damaged or expired', label: 'Damaged or expired goods' },
-        { value: 'Opening balance correction', label: 'Opening balance correction' },
+        { value: 'Opening balance correction', label: 'Opening count correction' },
         { value: 'Other stock movement', label: 'Other stock movement' },
       ]} />
+      <div className="field-hint">The new count is saved with its adjustment reason.</div>
       <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit">Save stock count</Button></div>
     </form>
   </Modal>;
@@ -761,82 +769,61 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
   const todayInvoices = data.invoices.filter(invoice => invoice.date === today());
   const recentInvoices = [...data.invoices].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
   const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
-  const unsettled = data.invoices.filter(invoice => invoiceBalance(invoice) > 0).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
+  const zeroStock = data.products.filter(product => product.quantity === 0);
+  const slowStock = data.products.filter(product => product.quantity > 0 && !data.invoices.some(invoice =>
+    invoice.date >= addDays(today(), -30) && invoice.lines.some(line => line.productId === product.id),
+  ));
+  const unsettled = data.invoices.filter(invoice => invoiceBalance(invoice) > 0)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
   return <div className="page-stack">
     <div className="overview-welcome">
-      <div><div className="eyebrow">YOUR BUSINESS AT A GLANCE</div><h2>Good morning, {data.profile.owner === 'Business owner' ? 'there' : data.profile.owner.split(' ')[0]}.</h2><p>Here is what is happening across {data.profile.name}.</p></div>
+      <div><div className="eyebrow">BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Here is what needs your attention today.</p></div>
       <div className="overview-welcome-actions">
         <span className="date-chip"><CalendarDays size={14} /> {dateLabel(today())}</span>
-        <Button variant="outline" onClick={onRecordExpense}><Plus size={15} /> Expense</Button>
-        <Button onClick={onCreateSale}><Plus size={16} /> Record sale</Button>
+        <Button variant="outline" onClick={onRecordExpense}>Record expense</Button>
+        <Button onClick={onCreateSale}><Plus size={15} /> Record sale</Button>
       </div>
     </div>
-
-    <div className="metric-grid metric-grid-five">
-      <MetricCard label="Sales today" value={money(metrics.salesToday)} note={todayInvoices.length + ' invoices posted'} icon={TrendingUp} tone="green" trend="Trading activity" />
-      <MetricCard label="Gross profit · MTD" value={money(metrics.grossProfitMonth)} note="Revenue less recorded item cost" icon={Activity} tone="blue" />
-      <MetricCard label="Cash position" value={money(metrics.cashPosition)} note="Cash, M-Pesa and bank balances" icon={Wallet} tone="slate" />
-      <MetricCard label="Customer balances" value={money(metrics.receivables)} note="Unpaid and part-paid invoices" icon={ArrowDownLeft} tone="amber" />
-      <MetricCard label="Stock at cost" value={money(metrics.inventoryValue)} note={lowStock.length + ' items at or below reorder'} icon={Boxes} tone="blue" />
+    <div className="metric-grid metric-grid-four">
+      <MetricCard label="Sales today" value={money(metrics.salesToday)} note={todayInvoices.length + ' sales recorded'} icon={TrendingUp} tone="green" />
+      <MetricCard label="Gross profit this month" value={money(metrics.grossProfitMonth)} note="After recorded product costs" icon={Activity} tone="blue" />
+      <MetricCard label="Stock at cost" value={money(metrics.inventoryValue)} note={lowStock.length + ' products need attention'} icon={Boxes} tone="slate" />
+      <MetricCard label="Customer balances" value={money(metrics.receivables)} note={metrics.unpaidInvoices + ' unpaid invoices'} icon={ArrowDownLeft} tone="amber" />
     </div>
-
     <div className="content-grid content-grid-main">
-      <SectionCard title="Sales performance" detail="Invoice value recorded over the last seven days." action={<button className="text-link" onClick={() => onNavigate('reports')}>Full report <ArrowRight size={13} /></button>}>
-        <div className="chart-summary"><strong>{money(sum(chartValues))}</strong><span>Sales · 7 days</span></div>
+      <SectionCard title="Sales trend" detail="Recorded sales over the last seven days.">
+        <div className="chart-summary"><strong>{money(sum(chartValues))}</strong><span>Last 7 days</span></div>
         <MiniBars values={chartValues} labels={chartLabels} />
       </SectionCard>
-      <SectionCard title="Money by channel" detail="Recorded collection balances">
-        <div className="channel-balances">
-          <div><span className="channel-icon channel-icon-mpesa"><Smartphone size={15} /></span><span>M-Pesa</span><strong>{money(metrics.channelBalances.mpesa)}</strong></div>
-          <div><span className="channel-icon channel-icon-cash"><Wallet size={15} /></span><span>Cash on hand</span><strong>{money(metrics.channelBalances.cash)}</strong></div>
-          <div><span className="channel-icon channel-icon-bank"><Building2 size={15} /></span><span>Bank</span><strong>{money(metrics.channelBalances.bank)}</strong></div>
+      <SectionCard title="Stock watch" detail="Products that could interrupt sales or tie up cash.">
+        <div className="stock-watch-list">
+          <button onClick={() => onNavigate('inventory')}><span><strong>Out of stock</strong><small>Products unavailable to sell</small></span><b>{zeroStock.length}</b></button>
+          <button onClick={() => onNavigate('inventory')}><span><strong>Reorder soon</strong><small>At or below the reorder point</small></span><b>{lowStock.length}</b></button>
+          <button onClick={() => onNavigate('inventory')}><span><strong>Slow stock</strong><small>No recorded sale in 30 days</small></span><b>{slowStock.length}</b></button>
         </div>
-        <div className="channel-total"><span>Total recorded funds</span><strong>{money(metrics.cashPosition)}</strong></div>
+        <button className="text-link stock-watch-link" onClick={() => onNavigate('inventory')}>Review inventory <ArrowRight size={13} /></button>
       </SectionCard>
     </div>
-
     <div className="content-grid content-grid-main">
-      <SectionCard title="Recent invoices" detail="Latest sales across POS, website and manual entry." action={<button className="text-link" onClick={() => onNavigate('sales')}>All invoices <ArrowRight size={13} /></button>}>
-        {recentInvoices.length ? <DataTable headers={['Invoice', 'Customer', 'Date', 'Status', 'Total']}>
+      <SectionCard title="Recent sales" detail="The latest activity across your sales channels." action={<button className="text-link" onClick={() => onNavigate('sales')}>All sales <ArrowRight size={13} /></button>}>
+        {recentInvoices.length ? <DataTable headers={['Sale', 'Customer', 'Date', 'Status', 'Total']}>
           {recentInvoices.map(invoice => <tr key={invoice.id} className="clickable-row" onClick={() => onSelectInvoice(invoice.id)}>
             <td><strong>{invoice.number}</strong><small className="cell-sub">{sourceLabel(invoice.source)}</small></td>
             <td>{invoice.customer}</td><td>{dateLabel(invoice.date)}</td>
             <td><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill></td>
             <td className="amount-cell">{money(invoice.total)}</td>
           </tr>)}
-        </DataTable> : <EmptyState title="No invoices yet" body="Record the first sale to start building your business record." />}
+        </DataTable> : <EmptyState title="No sales yet" body="Record the first sale to start building your business record." action={<Button onClick={onCreateSale}>Record a sale</Button>} />}
       </SectionCard>
-      <div className="side-stack">
-        <SectionCard title="Needs attention" detail="Actions that may affect today's operations.">
-          <div className="attention-list">
-            <button onClick={() => onNavigate('inventory')}>
-              <span className="attention-icon attention-amber"><Package size={16} /></span>
-              <span><strong>{lowStock.length} low-stock items</strong><small>Review reorder quantities</small></span>
-              <ChevronRight size={15} />
-            </button>
-            <button onClick={() => onNavigate('sales')}>
-              <span className="attention-icon attention-blue"><Receipt size={16} /></span>
-              <span><strong>{money(metrics.receivables)} receivable</strong><small>{metrics.unpaidInvoices} unpaid invoices</small></span>
-              <ChevronRight size={15} />
-            </button>
-            <button onClick={() => onNavigate('procurement')}>
-              <span className="attention-icon attention-red"><Truck size={16} /></span>
-              <span><strong>{money(metrics.payables)} supplier balances</strong><small>Review payments due</small></span>
-              <ChevronRight size={15} />
-            </button>
-          </div>
-        </SectionCard>
-        <SectionCard title="Collection follow-up" detail="Invoices with balances remaining.">
-          <div className="followup-list">
-            {unsettled.length ? unsettled.slice(0, 3).map(invoice => <button key={invoice.id} onClick={() => onSelectInvoice(invoice.id)}>
-              <span><strong>{invoice.customer}</strong><small>{invoice.number} · Due {dateLabel(invoice.dueDate)}</small></span>
-              <strong>{money(invoiceBalance(invoice))}</strong>
-            </button>) : <p className="muted-copy">No outstanding invoices.</p>}
-          </div>
-        </SectionCard>
-      </div>
+      <SectionCard title="Customer follow-up" detail="Sales where payment is still outstanding.">
+        {unsettled.length ? <div className="followup-list">
+          {unsettled.map(invoice => <button key={invoice.id} onClick={() => onSelectInvoice(invoice.id)}>
+            <span><strong>{invoice.customer}</strong><small>{invoice.number} · Due {dateLabel(invoice.dueDate)}</small></span>
+            <strong>{money(invoiceBalance(invoice))}</strong>
+          </button>)}
+        </div> : <EmptyState title="No balances to follow up" body="Unpaid and part-paid sales will appear here." />}
+      </SectionCard>
     </div>
-    <div className="overview-footnote"><ShieldCheck size={15} /> Figures are calculated from the records currently in this demo workspace. No external bank or M-Pesa balance is being queried.</div>
   </div>;
 }
 
@@ -893,111 +880,153 @@ function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onRes
   const unmatched = [...data.unmatchedReceipts].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
   const unmatchedValue = sum(unmatched.map(receipt => receipt.amount));
   return <div className="page-stack">
-    <PageHeader title="Payments" description="Collect, reconcile and trace receipts across merchant payment methods — without relying on a customer SMS as the only record." actions={<>
-      <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Add receipt</Button>
+    <PageHeader title="Payments" description="See what customers have paid and what still needs your attention." actions={<>
+      <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Record receipt</Button>
       <Button onClick={onRequestPayment}><Send size={15} /> Request payment</Button>
     </>} />
-    <div className="metric-grid metric-grid-five compact-metrics">
-      <MetricCard label="Collected today" value={money(metrics.collectedToday)} note="Confirmed receipts" icon={CircleDollarSign} tone="green" />
-      <MetricCard label="Awaiting confirmation" value={numberText(pending)} note="Requests not yet resolved" icon={Clock3} tone="amber" />
-      <MetricCard label="Unmatched receipts" value={numberText(unmatched.length)} note={money(unmatchedValue) + ' waiting to be allocated'} icon={AlertTriangle} tone="amber" />
-      <MetricCard label="Failed requests" value={numberText(failed)} note="Requests not confirmed" icon={Activity} tone="blue" />
-      <MetricCard label="Payment rails" value="Multi-channel" note="M-Pesa, Pochi, bank and more" icon={CreditCard} tone="slate" />
+    <div className="metric-grid metric-grid-four compact-metrics">
+      <MetricCard label="Received today" value={money(metrics.collectedToday)} note="Payments recorded today" icon={CircleDollarSign} tone="green" />
+      <MetricCard label="Awaiting payment" value={numberText(pending)} note="Requests awaiting a response" icon={Clock3} tone="amber" />
+      <MetricCard label="Receipts to match" value={numberText(unmatched.length)} note={money(unmatchedValue) + ' without an invoice'} icon={AlertTriangle} tone="blue" />
+      <MetricCard label="Needs attention" value={numberText(failed)} note="Payments that did not complete" icon={Activity} tone="slate" />
     </div>
     <div className="content-grid content-grid-main">
-      <SectionCard title="Money by account" detail="Recorded balances from posted receipts and expenses.">
-        <div className="channel-balances payment-channel-balances">
-          <div><span className="channel-icon channel-icon-mpesa"><Smartphone size={15} /></span><span>M-Pesa clearing</span><strong>{money(metrics.channelBalances.mpesa)}</strong></div>
-          <div><span className="channel-icon channel-icon-cash"><Wallet size={15} /></span><span>Cash on hand</span><strong>{money(metrics.channelBalances.cash)}</strong></div>
-          <div><span className="channel-icon channel-icon-bank"><Building2 size={15} /></span><span>Bank account</span><strong>{money(metrics.channelBalances.bank)}</strong></div>
-          <div><span className="channel-icon channel-icon-card"><CreditCard size={15} /></span><span>Card clearing</span><strong>{money(metrics.channelBalances.card)}</strong></div>
+      <SectionCard title="Money received by method" detail="Recorded collection balances across your business.">
+        <div className="payment-method-summary">
+          <div><span>M-Pesa</span><strong>{money(metrics.channelBalances.mpesa)}</strong></div>
+          <div><span>Cash</span><strong>{money(metrics.channelBalances.cash)}</strong></div>
+          <div><span>Bank</span><strong>{money(metrics.channelBalances.bank)}</strong></div>
+          <div><span>Card</span><strong>{money(metrics.channelBalances.card)}</strong></div>
         </div>
+        <div className="channel-total"><span>Total recorded funds</span><strong>{money(metrics.cashPosition)}</strong></div>
       </SectionCard>
-      <SectionCard title="Collection controls" detail="Payment handling status">
-        <div className="control-list">
-          <div><span className="control-led control-led-green" /><span><strong>Invoice matching</strong><small>Match by receipt reference, amount and invoice</small></span><StatusPill status="delivered">Available</StatusPill></div>
-          <div><span className="control-led control-led-amber" /><span><strong>Daraja connection</strong><small>Preview simulator only</small></span><StatusPill status="pending">Not connected</StatusPill></div>
-          <div><span className="control-led control-led-blue" /><span><strong>Statement intake</strong><small>Manual receipt capture in this preview</small></span><StatusPill status="pending">Manual</StatusPill></div>
-        </div>
+      <SectionCard title="Receipts to match" detail="Payments received that still need to be linked to a customer sale.">
+        {unmatched.length ? <div className="attention-list">
+          {unmatched.slice(0, 4).map(receipt => <button key={receipt.id} onClick={() => onMatchReceipt(receipt.id)}>
+            <span><strong>{receipt.payer || 'Unidentified payer'}</strong><small>{receipt.rail} · {shortRef(receipt.reference)}</small></span>
+            <strong>{money(receipt.amount)}</strong><span className="table-action">Match</span>
+          </button>)}
+        </div> : <EmptyState title="All receipts matched" body="New receipts that need a customer match will appear here." />}
       </SectionCard>
     </div>
-    <SectionCard title="Unmatched receipt queue" detail="Money received by the business but not yet allocated to a customer invoice.">
-      {unmatched.length ? <DataTable headers={['Received', 'Payment rail', 'Payer', 'Phone', 'Receipt reference', 'Amount', 'Action']}>
-        {unmatched.map(receipt => <tr key={receipt.id}>
-          <td>{dateTimeLabel(receipt.receivedAt)}<small className="cell-sub">{receipt.source === 'statement' ? 'Statement import' : receipt.source === 'callback' ? 'Provider callback' : 'Manual capture'}</small></td>
-          <td>{receipt.rail}</td><td><strong>{receipt.payer}</strong></td><td>{receipt.phone || '—'}</td>
-          <td className="mono-text">{receipt.reference}</td><td className="amount-cell">{money(receipt.amount)}</td>
-          <td><Button size="sm" variant="secondary" onClick={() => onMatchReceipt(receipt.id)}>Match invoice</Button></td>
-        </tr>)}
-      </DataTable> : <EmptyState title="No unmatched receipts" body="Incoming receipts that cannot be linked automatically will appear here for review." />}
-    </SectionCard>
-    <SectionCard title="Payment register" detail="Pending STK requests can be resolved with the preview simulator to demonstrate an asynchronous callback.">
+    <SectionCard title="Payment activity" detail="Collections recorded against customer sales.">
       <div className="table-toolbar">
-        <div className="table-search"><Search size={15} /><input value={search} onChange={event => onSearch(event.target.value)} placeholder="Search payment, invoice or receipt…" /></div>
-        <span className="table-count">{list.length} records</span>
+        <div className="table-search"><Search size={15} /><input value={search} onChange={event => onSearch(event.target.value)} placeholder="Search customer, invoice or reference…" /></div>
+        <span className="table-count">{list.length} payments</span>
       </div>
-      {list.length ? <DataTable headers={['Payment', 'Customer', 'Invoice', 'Channel', 'Reference', 'Time', 'Amount', 'Status', 'Action']}>
+      {list.length ? <DataTable headers={['Customer', 'Sale', 'Method', 'Reference', 'Date', 'Amount', 'Status', '']}>
         {list.map(payment => <tr key={payment.id}>
-          <td><strong>{payment.id.toUpperCase()}</strong><small className="cell-sub">{payment.origin === 'daraja_demo' ? 'STK simulation' : payment.origin === 'integration' ? 'Website integration' : payment.origin === 'reconciliation' ? 'Matched receipt · ' + (payment.rail || 'Imported') : 'Manual record'}</small></td>
-          <td>{payment.customer}<small className="cell-sub">{payment.phone}</small></td>
-          <td>{payment.invoiceNumber}</td><td><span className={channelClass(payment.channel)}>{channelLabel(payment.channel)}</span></td>
+          <td><strong>{payment.customer}</strong><small className="cell-sub">{payment.phone || 'No phone recorded'}</small></td>
+          <td>{payment.invoiceNumber}</td><td>{channelLabel(payment.channel)}</td>
           <td className="mono-text">{shortRef(payment.reference)}</td><td>{dateTimeLabel(payment.createdAt)}</td>
           <td className="amount-cell">{money(payment.amount)}{(payment.unappliedAmount ?? 0) > 0 && <small className="cell-sub">{money(payment.unappliedAmount ?? 0)} customer credit</small>}</td>
-          <td><StatusPill status={payment.status}>{payment.status === 'succeeded' ? 'Confirmed' : payment.status === 'pending' ? 'Pending' : payment.status === 'failed' ? 'Failed' : 'Reversed'}</StatusPill></td>
+          <td><StatusPill status={payment.status}>{payment.status === 'succeeded' ? 'Received' : payment.status === 'pending' ? 'Awaiting' : payment.status === 'failed' ? 'Unsuccessful' : 'Reversed'}</StatusPill></td>
           <td>{payment.status === 'pending' ? <div className="row-actions">
-            <Button size="sm" variant="secondary" onClick={() => onResolvePayment(payment.id, true)}>Approve</Button>
-            <Button size="sm" variant="ghost" onClick={() => onResolvePayment(payment.id, false)}>Fail</Button>
+            <Button size="sm" variant="secondary" onClick={() => onResolvePayment(payment.id, true)}>Mark received</Button>
+            <Button size="sm" variant="ghost" onClick={() => onResolvePayment(payment.id, false)}>Mark failed</Button>
           </div> : <span className="muted-copy">—</span>}</td>
         </tr>)}
-      </DataTable> : <EmptyState title="No payment records" body="Payment confirmations and cash records will appear here." />}
+      </DataTable> : <EmptyState title="No payment activity" body="Payments linked to sales will appear here." />}
     </SectionCard>
   </div>;
 }
 
-function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust }: {
-  data: AppData; search: string; onSearch: (value: string) => void; onAddProduct: () => void; onAdjust: (id: string) => void;
+function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder }: {
+  data: AppData; search: string; onSearch: (value: string) => void;
+  onAddProduct: () => void; onAdjust: (id: string) => void; onOrder: (id: string, quantity: number) => void;
 }) {
-  const [view, setView] = useState<'all' | 'low'>('all');
-  const list = data.products.filter(product => {
-    const matches = (product.name + ' ' + product.sku + ' ' + product.category).toLowerCase().includes(search.toLowerCase());
-    return matches && (view === 'all' || product.quantity <= product.reorderLevel);
+  const [view, setView] = useState<'all' | 'attention' | 'slow'>('all');
+  const since = addDays(today(), -30);
+  const soldByProduct = new Map<string, number>();
+  data.invoices.filter(invoice => invoice.date >= since).forEach(invoice => invoice.lines.forEach(line => {
+    soldByProduct.set(line.productId, (soldByProduct.get(line.productId) ?? 0) + line.quantity);
+  }));
+  const incomingByProduct = new Map<string, number>();
+  data.purchaseOrders.filter(order => order.status === 'sent' || order.status === 'partially_received')
+    .forEach(order => order.lines.forEach(line => {
+      incomingByProduct.set(line.productId, (incomingByProduct.get(line.productId) ?? 0) + Math.max(0, line.quantity - line.received));
+    }));
+  const signals = data.products.map(product => {
+    const unitsSold = soldByProduct.get(product.id) ?? 0;
+    const dailyVelocity = unitsSold / 30;
+    const daysCover = dailyVelocity > 0 ? product.quantity / dailyVelocity : null;
+    const onOrder = incomingByProduct.get(product.id) ?? 0;
+    const targetUnits = Math.ceil((dailyVelocity * 14) + product.reorderLevel);
+    const suggestedOrder = Math.max(0, targetUnits - product.quantity - onOrder);
+    const needsAttention = product.quantity <= product.reorderLevel || product.quantity === 0 || (daysCover !== null && daysCover <= 14);
+    const slowMoving = product.quantity > 0 && (unitsSold === 0 || (daysCover !== null && daysCover > 45));
+    return { product, unitsSold, daysCover, onOrder, suggestedOrder, needsAttention, slowMoving };
   });
-  const low = data.products.filter(product => product.quantity <= product.reorderLevel);
-  const value = sum(data.products.map(productValue));
-  const potential = sum(data.products.map(product => product.quantity * product.sellingPrice));
+  const low = signals.filter(item => item.needsAttention);
+  const slow = signals.filter(item => item.slowMoving);
+  const stockValue = sum(data.products.map(productValue));
+  const slowStockValue = sum(slow.map(item => productValue(item.product)));
+  const unitsSold30 = sum(signals.map(item => item.unitsSold));
+  const outOfStock = signals.filter(item => item.product.quantity === 0).length;
+  const list = signals.filter(item => {
+    const matches = (item.product.name + ' ' + item.product.sku + ' ' + item.product.category).toLowerCase().includes(search.toLowerCase());
+    return matches && (view === 'all' || (view === 'attention' ? item.needsAttention : item.slowMoving));
+  }).sort((a, b) => {
+    if (view === 'slow') return productValue(b.product) - productValue(a.product);
+    if (a.daysCover === null) return -1;
+    if (b.daysCover === null) return 1;
+    return a.daysCover - b.daysCover;
+  });
+  const riskItems = [...low].sort((a, b) => (a.daysCover ?? 0) - (b.daysCover ?? 0)).slice(0, 5);
+  const slowItems = [...slow].sort((a, b) => productValue(b.product) - productValue(a.product)).slice(0, 4);
   return <div className="page-stack">
-    <PageHeader title="Inventory" description="Track stock quantities and product economics across the business." actions={<Button onClick={onAddProduct}><Plus size={16} /> Add product</Button>} />
+    <PageHeader title="Inventory" description="Protect sales from stockouts and free cash trapped in products that are not moving." actions={<Button onClick={onAddProduct}><Plus size={15} /> Add product</Button>} />
     <div className="metric-grid metric-grid-four compact-metrics">
-      <MetricCard label="Stock at cost" value={money(value)} note="Current quantity × unit cost" icon={Boxes} tone="blue" />
-      <MetricCard label="Retail value" value={money(potential)} note="At current selling prices" icon={TrendingUp} tone="green" />
-      <MetricCard label="Tracked products" value={numberText(data.products.length)} note="Unique product records" icon={Package} tone="slate" />
-      <MetricCard label="Reorder needed" value={numberText(low.length)} note="At or below reorder level" icon={AlertTriangle} tone="amber" />
+      <MetricCard label="Stock at cost" value={money(stockValue)} note="Current stock value" icon={Boxes} tone="slate" />
+      <MetricCard label="Units sold · 30 days" value={numberText(unitsSold30)} note="Recorded product movement" icon={TrendingUp} tone="blue" />
+      <MetricCard label="Need replenishment" value={numberText(low.length)} note={outOfStock + ' currently out of stock'} icon={AlertTriangle} tone="amber" />
+      <MetricCard label="Slow stock value" value={money(slowStockValue)} note={slow.length + ' items with low movement'} icon={Package} tone="slate" />
     </div>
-    <SectionCard title="Product register" detail="Quantities are updated when a sale is posted or a purchase order is received.">
+    <div className="content-grid content-grid-main stock-health-grid">
+      <SectionCard title="Replenish before sales are lost" detail="Suggestions target around 14 days of demand plus the item’s reorder floor. Open purchase orders are deducted.">
+        {riskItems.length ? <div className="stock-signal-list">
+          {riskItems.map(item => <div className="stock-signal-row" key={item.product.id}>
+            <div className="stock-signal-main"><strong>{item.product.name}</strong><small>{numberText(item.product.quantity)} {item.product.unit} left · {item.daysCover === null ? 'No recent sales history' : Math.max(0, Math.floor(item.daysCover)) + ' days of cover'}{item.onOrder > 0 ? ' · ' + numberText(item.onOrder) + ' on order' : ''}</small></div>
+            <div className="stock-signal-action"><strong>{item.suggestedOrder > 0 ? numberText(item.suggestedOrder) : '—'}</strong><small>{item.suggestedOrder > 0 ? 'Suggested units' : 'Review count'}</small></div>
+            {item.suggestedOrder > 0 ? <Button size="sm" variant="outline" onClick={() => onOrder(item.product.id, item.suggestedOrder)}>Order</Button>
+              : <button className="table-action" onClick={() => onAdjust(item.product.id)}>Count</button>}
+          </div>)}
+        </div> : <EmptyState title="Stock cover looks healthy" body="No products are below the reorder floor or 14-day cover." />}
+      </SectionCard>
+      <SectionCard title="Cash tied in slow stock" detail="Products with over 45 days of cover or no sales in the last 30 days.">
+        {slowItems.length ? <div className="stock-signal-list">
+          {slowItems.map(item => <div className="stock-signal-row" key={item.product.id}>
+            <div className="stock-signal-main"><strong>{item.product.name}</strong><small>{numberText(item.product.quantity)} {item.product.unit} on hand · {item.unitsSold} sold in 30 days</small></div>
+            <div className="stock-signal-action"><strong>{money(productValue(item.product))}</strong><small>Stock at cost</small></div>
+            <button className="table-action" onClick={() => onAdjust(item.product.id)}>Count</button>
+          </div>)}
+        </div> : <EmptyState title="No slow stock flagged" body="Products with low movement will be shown here for review." />}
+      </SectionCard>
+    </div>
+    <SectionCard title="Product catalogue" detail="One live product list for counter, wholesale and online sales.">
       <div className="table-toolbar">
-        <div className="table-search"><Search size={15} /><input value={search} onChange={event => onSearch(event.target.value)} placeholder="Search name, SKU or category…" /></div>
+        <div className="table-search"><Search size={15} /><input value={search} onChange={event => onSearch(event.target.value)} placeholder="Search product, SKU or category…" /></div>
         <div className="segmented-control">
-          <button className={view === 'all' ? 'active' : ''} onClick={() => setView('all')}>All items</button>
-          <button className={view === 'low' ? 'active' : ''} onClick={() => setView('low')}>Reorder list <span>{low.length}</span></button>
+          <button className={view === 'all' ? 'active' : ''} onClick={() => setView('all')}>All</button>
+          <button className={view === 'attention' ? 'active' : ''} onClick={() => setView('attention')}>Replenish <span>{low.length}</span></button>
+          <button className={view === 'slow' ? 'active' : ''} onClick={() => setView('slow')}>Slow stock <span>{slow.length}</span></button>
         </div>
         <span className="table-count">{list.length} products</span>
       </div>
-      {list.length ? <DataTable headers={['Product', 'SKU', 'Category', 'On hand', 'Reorder level', 'Cost price', 'Selling price', 'Stock value', 'Status', '']}>
-        {list.map(product => {
-          const isLow = product.quantity <= product.reorderLevel;
-          const isCritical = product.quantity <= Math.max(1, Math.floor(product.reorderLevel / 2));
+      {list.length ? <DataTable headers={['Product', 'On hand', 'Sold · 30d', 'On order', 'Days cover', 'Cost', 'Selling price', 'Unit margin', 'Status', 'Action']}>
+        {list.map(({ product, unitsSold, daysCover, onOrder, suggestedOrder, needsAttention, slowMoving }) => {
+          const status = product.quantity === 0 ? 'Out of stock' : needsAttention ? 'Reorder soon' : slowMoving ? 'Slow moving' : 'In stock';
           return <tr key={product.id}>
-            <td><strong>{product.name}</strong><small className="cell-sub">{product.unit}</small></td>
-            <td className="mono-text">{product.sku}</td><td>{product.category}</td>
-            <td><strong>{numberText(product.quantity)}</strong> <small>{product.unit}</small></td>
-            <td>{numberText(product.reorderLevel)} <small>{product.unit}</small></td>
+            <td><strong>{product.name}</strong><small className="cell-sub mono-text">{product.sku}</small></td>
+            <td><strong>{numberText(product.quantity)}</strong> <small>{product.unit}</small></td><td>{numberText(unitsSold)}</td>
+            <td>{numberText(onOrder)}</td><td>{daysCover === null ? 'No history' : Math.floor(daysCover) + ' days'}</td>
             <td>{money(product.costPrice)}</td><td>{money(product.sellingPrice)}</td>
-            <td className="amount-cell">{money(productValue(product))}</td>
-            <td><StatusPill status={isCritical ? 'failed' : isLow ? 'pending' : 'delivered'}>{isCritical ? 'Critical' : isLow ? 'Low stock' : 'In stock'}</StatusPill></td>
-            <td><button className="table-action" onClick={() => onAdjust(product.id)}>Adjust</button></td>
+            <td className="amount-cell">{money(product.sellingPrice - product.costPrice)}</td>
+            <td><StatusPill status={product.quantity === 0 ? 'failed' : needsAttention ? 'pending' : slowMoving ? 'draft' : 'delivered'}>{status}</StatusPill></td>
+            <td>{suggestedOrder > 0 ? <button className="table-action" onClick={() => onOrder(product.id, suggestedOrder)}>Order {numberText(suggestedOrder)}</button> : <button className="table-action" onClick={() => onAdjust(product.id)}>Count</button>}</td>
           </tr>;
         })}
-      </DataTable> : <EmptyState title="No products match" body="Try another search or switch to all items." />}
+      </DataTable> : <EmptyState title="No products match" body="Change the search or choose another stock view." />}
     </SectionCard>
   </div>;
 }
@@ -1208,18 +1237,18 @@ function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
   return <div className="embedded-checkout-demo">
     <div className="embedded-demo-heading">
       <div>
-        <div className="eyebrow">INTERACTIVE PRODUCT PREVIEW</div>
-        <h3>Embedded checkout</h3>
-        <p>A sample storefront order that writes into this Hesabu workspace.</p>
+        <div className="eyebrow">ONLINE ORDER</div>
+        <h3>Place a sample order</h3>
+        <p>Try the customer ordering experience using this business’s product catalogue.</p>
       </div>
-      <StatusPill status="pending">Local simulation</StatusPill>
+      <StatusPill status="delivered">Sample store</StatusPill>
     </div>
     <div className="embedded-demo-layout">
       <div className="embedded-storefront">
         <div className="embedded-storefront-brand">
           <div className="embedded-storefront-mark">{profile.name.trim().charAt(0).toUpperCase() || 'S'}</div>
-          <div><strong>{profile.name}</strong><small>Merchant checkout</small></div>
-          <span className="secure-label"><ShieldCheck size={13} /> Secure flow preview</span>
+          <div><strong>{profile.name}</strong><small>Online order</small></div>
+          <span className="secure-label">Sample storefront</span>
         </div>
         <div className="embedded-storefront-title">Complete your order</div>
         <form className="embedded-storefront-form" onSubmit={event => {
@@ -1232,176 +1261,142 @@ function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
             <Field label="Quantity" type="number" min={1} step={1} value={quantity} onChange={setQuantity} />
             <Field label="Customer name" value={customer} onChange={setCustomer} required />
           </div>
-          <Field label="M-Pesa phone" value={phone} onChange={setPhone} required placeholder="07XX XXX XXX" />
+          <Field label="Customer phone" value={phone} onChange={setPhone} required placeholder="07XX XXX XXX" />
           <div className="embedded-checkout-total">
             <div><span>Order total</span><small>{product ? product.name + ' × ' + numberText(qty) : 'Select an in-stock item'}</small></div>
             <strong>{money(total)}</strong>
           </div>
           {product && qty > product.quantity && <div className="validation-note"><AlertTriangle size={14} /> Only {numberText(product.quantity)} units are currently available.</div>}
-          <Button type="submit" block disabled={invalid}><ShoppingCart size={15} /> Create website order</Button>
-          <div className="embedded-checkout-footnote">No real payment is sent. The order is posted as an unpaid invoice, then you can initiate a simulated payment from that invoice.</div>
+          <Button type="submit" block disabled={invalid}>Place sample order</Button>
+          <div className="embedded-checkout-footnote">This is a sample order. It will appear in the Sales register and update the product quantity.</div>
         </form>
       </div>
       <div className="embedded-flow">
-        <div className="embedded-flow-title">What happens behind the checkout</div>
-        <div className="embedded-flow-step"><span>1</span><div><strong>Website order</strong><small>External reference and customer details</small></div></div>
-        <div className="embedded-flow-step"><span>2</span><div><strong>Hesabu invoice</strong><small>Revenue and customer receivable recorded</small></div></div>
-        <div className="embedded-flow-step"><span>3</span><div><strong>Inventory update</strong><small>On-hand quantity and cost of sale posted</small></div></div>
-        <div className="embedded-flow-step"><span>4</span><div><strong>Payment matching</strong><small>Request, confirm and reconcile a merchant payment</small></div></div>
-        <div className="embedded-flow-note"><ShieldCheck size={15} /> One order creates one business record. The storefront does not need to manage a separate stock or cashbook ledger.</div>
+        <div className="embedded-flow-title">One connected business</div>
+        <div className="embedded-flow-step"><span>1</span><div><strong>Easy for customers</strong><small>Choose an item and place an order</small></div></div>
+        <div className="embedded-flow-step"><span>2</span><div><strong>Clear for your team</strong><small>Online orders appear with other sales</small></div></div>
+        <div className="embedded-flow-step"><span>3</span><div><strong>Stock stays current</strong><small>Product quantities update as sales are recorded</small></div></div>
+        <div className="embedded-flow-note">Keep the website you already have. Give the team one place to run the business.</div>
       </div>
     </div>
   </div>;
 }
 
-function IntegrationsPage({ data, onCopy, onNotice, onCreateDemoOrder }: {
-  data: AppData; onCopy: (value: string) => void; onNotice: (title: string, detail?: string) => void;
+function SalesChannelsPage({ data, onCreateDemoOrder }: {
+  data: AppData;
   onCreateDemoOrder: (input: { productId: string; quantity: number; customer: string; phone: string }) => void;
 }) {
-  const [tab, setTab] = useState<'payments' | 'developer' | 'events'>('payments');
-  const code = `// Illustrative request shape — Hesabu API is not live yet
-POST /v1/invoices
-{
-  "business_id": "hs_demo_northstar",
-  "external_reference": "WEB-2048",
-  "customer": "Maua Cafe",
-  "items": [
-    { "sku": "BAK-003", "quantity": 10 }
-  ]
-}
-
-Webhook event: invoice.created
-Next step: request payment via the merchant's configured rail`;
-  const events = [...data.events].sort((a, b) => b.time.localeCompare(a.time));
   return <div className="page-stack">
-    <PageHeader title="Integrations" description="Use Hesabu as the finance and control layer behind an existing business website or checkout." actions={<span className="integration-mode"><span className="status-dot" /> Sandbox preview</span>} />
-    <div className="integration-hero">
-      <div className="integration-hero-copy">
-        <div className="eyebrow">HESABU PLATFORM</div>
-        <h2>One financial record.<br />Every place you sell.</h2>
-        <p>Connect an existing checkout or website to Hesabu. A completed sale can create an invoice, record the payment, update inventory and post to accounts — without rebuilding the merchant's website.</p>
-        <div className="integration-hero-actions">
-          <Button onClick={() => setTab('developer')}><Code2 size={15} /> Developer setup</Button>
-          <Button variant="outline" onClick={() => setTab('payments')}>Payment connections</Button>
-        </div>
+    <PageHeader title="Sales channels" description="Bring counter, online and wholesale orders into one business view." />
+    <div className="sales-channel-grid">
+      <div className="sales-channel-card sales-channel-card-active">
+        <div className="sales-channel-kicker">IN STORE</div><h3>Counter sales</h3>
+        <p>Record walk-in sales using the same product catalogue and stock quantities.</p><span>Available in Sales</span>
       </div>
-      <div className="integration-graphic">
-        <div className="integration-node integration-node-site"><Globe2 size={18} /><span>Business website</span><small>Online checkout</small></div>
-        <div className="integration-connect"><i /><i /><i /></div>
-        <div className="integration-node integration-node-hesabu"><div className="mini-brand">H</div><span>Hesabu</span><small>Finance engine</small></div>
-        <div className="integration-connect"><i /><i /><i /></div>
-        <div className="integration-node integration-node-core"><Boxes size={18} /><span>Business records</span><small>Accounts · Stock · Reports</small></div>
+      <div className="sales-channel-card sales-channel-card-featured">
+        <div className="sales-channel-kicker">ONLINE</div><h3>Website orders</h3>
+        <p>Capture customer orders from an existing website without a separate stock list.</p><span>Try the sample checkout</span>
+      </div>
+      <div className="sales-channel-card">
+        <div className="sales-channel-kicker">WHOLESALE</div><h3>Bulk & repeat orders</h3>
+        <p>Record phone, repeat and bulk orders against the same inventory and customer balances.</p><span>Available in Sales</span>
       </div>
     </div>
-    <SectionCard title="Connected services" detail="Configure the services your business uses. Current connections are demonstrative only.">
-      <div className="section-tabs integration-tabs">
-        <button className={tab === 'payments' ? 'active' : ''} onClick={() => setTab('payments')}>Payment connections</button>
-        <button className={tab === 'developer' ? 'active' : ''} onClick={() => setTab('developer')}>Website & API</button>
-        <button className={tab === 'events' ? 'active' : ''} onClick={() => setTab('events')}>Event log <span>{events.length}</span></button>
-      </div>
-      {tab === 'payments' && <div className="integration-payment-layout">
-        <div className="integration-provider">
-          <div className="provider-logo provider-mpesa">M</div>
-          <div className="provider-copy"><strong>M-Pesa · Daraja</strong><p>Request a payment, receive the asynchronous result and reconcile the receipt against an invoice.</p><div className="provider-tags"><span>STK Push</span><span>Callbacks</span><span>Transaction status</span></div></div>
-          <div className="provider-status"><StatusPill status="pending">Not connected</StatusPill><small>Sandbox preview only</small></div>
-          <Button variant="outline" size="sm" onClick={() => onNotice('Daraja credentials not connected', 'Add your Safaricom Daraja application credentials and merchant shortcode when the backend is ready. This preview cannot send a real prompt.')}>Configure</Button>
-        </div>
-        <div className="integration-provider">
-          <div className="provider-logo provider-tax">T</div>
-          <div className="provider-copy"><strong>KRA eTIMS · System integration</strong><p>Future tax-invoice connectivity through the applicable OSCU or VSCU route. Hesabu is not certified and does not issue eTIMS invoices in this preview.</p><div className="provider-tags"><span>OSCU</span><span>VSCU</span><span>Certification required</span></div></div>
-          <div className="provider-status"><StatusPill status="pending">Not certified</StatusPill><small>Roadmap item</small></div>
-          <Button variant="outline" size="sm" onClick={() => onNotice('eTIMS integration requirements', 'KRA requires system-to-system integrations to be developed, tested, vetted and certified before production use.')}>Requirements</Button>
-        </div>
-        <div className="merchant-methods">
-          <div><span className="channel-icon channel-icon-mpesa"><Smartphone size={15} /></span><span><strong>Merchant Till / PayBill</strong><small>Supported merchant shortcode destination</small></span><StatusPill status="pending">Not configured</StatusPill></div>
-          <div><span className="channel-icon channel-icon-cash"><Wallet size={15} /></span><span><strong>Cash collections</strong><small>Record cash received at the counter</small></span><StatusPill status="delivered">Available</StatusPill></div>
-          <div><span className="channel-icon channel-icon-bank"><Building2 size={15} /></span><span><strong>Bank reconciliation</strong><small>Import statements or connect a provider later</small></span><StatusPill status="pending">Not connected</StatusPill></div>
-        </div>
-        <div className="integration-compliance-note"><ShieldCheck size={16} /><span>In the intended flow, a merchant's own shortcode receives the M-Pesa settlement. Hesabu requests and reconciles supported merchant payments; it does not hold or pool merchant funds. Pochi and Send Money need separately verified feeds or partner connections.</span></div>
-      </div>}
-      {tab === 'developer' && <div className="developer-panel">
-        <div className="developer-copy"><div className="eyebrow">EMBED OR CONNECT</div><h3>Keep the storefront.<br />Connect the operations.</h3><p>When production APIs are available, a merchant can use the Hesabu API from their backend or embed a payment and invoice element into the checkout they already own.</p>
-          <div className="developer-stat-grid"><div><small>Business ID</small><strong className="mono-text">hs_demo_northstar</strong></div><div><small>Environment</small><strong>Sandbox</strong></div><div><small>Webhook delivery</small><strong>Event driven</strong></div></div>
-        </div>
-        <div className="code-card">
-          <div className="code-card-top"><span><i /> <i /> <i /> API request shape · illustrative</span><button onClick={() => onCopy(code)}><Copy size={13} /> Copy</button></div>
-          <pre><code>{code}</code></pre>
-          <div className="code-card-note"><LockKeyholeFallback /> Example contract only — this endpoint is not live. Secret keys must remain server-side and never be embedded in a public website.</div>
-        </div>
-        <div className="api-endpoints">
-          <div className="api-endpoints-head"><strong>Planned API surface</strong><span>Design reference · Not live</span></div>
-          <div><span className="http-method">POST</span><code>/v1/invoices</code><small>Create an invoice from an external sale</small></div>
-          <div><span className="http-method">POST</span><code>/v1/payment-intents</code><small>Start a payment request using a merchant rail</small></div>
-          <div><span className="http-method">GET</span><code>/v1/invoices/:id</code><small>Retrieve the latest invoice and settlement state</small></div>
-          <div><span className="http-method">POST</span><code>/v1/webhooks</code><small>Register an endpoint for payment and stock events</small></div>
-        </div>
-        <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
-      </div>}
-      {tab === 'events' && <DataTable headers={['Event', 'Source', 'Reference', 'Received', 'Delivery']}>
-        {events.map(event => <tr key={event.id}>
-          <td><strong className="mono-text">{event.type}</strong><small className="cell-sub">{event.detail}</small></td>
-          <td>{event.source}</td><td className="mono-text">{event.reference}</td><td>{dateTimeLabel(event.time)}</td>
-          <td><StatusPill status={event.status}>{event.status === 'delivered' ? 'Processed' : event.status === 'pending' ? 'Needs review' : 'Failed'}</StatusPill></td>
-        </tr>)}
-      </DataTable>}
+    <SectionCard title="Sample online order" detail="Place an order and see it appear with the rest of your sales.">
+      <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
     </SectionCard>
-    <div className="integration-footer-note"><ShieldCheck size={15} /> API keys, webhook signing, idempotency, replay protection and production payment credentials require a secure backend. The displayed developer surface is a product design preview, not a live API.</div>
+    <div className="sales-channel-note">One product catalogue. One view of sales. One view of available stock.</div>
   </div>;
 }
 
-function LockKeyholeFallback() {
-  return <ShieldCheck size={13} />;
-}
-
-function SettingsPage({ profile, onSave, onReset, onNotice }: {
-  profile: BusinessProfile; onSave: (profile: BusinessProfile) => void; onReset: () => void;
-  onNotice: (title: string, detail?: string) => void;
+function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMember, onReset }: {
+  profile: BusinessProfile; teamMembers: TeamMember[];
+  onSave: (profile: BusinessProfile) => void;
+  onAddMember: (input: { name: string; email: string; role: TeamRole }) => void;
+  onUpdateMember: (id: string, patch: Partial<TeamMember>) => void;
+  onReset: () => void;
 }) {
+  const [tab, setTab] = useState<'profile' | 'team'>('profile');
   const [form, setForm] = useState(profile);
   const [saved, setSaved] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [memberName, setMemberName] = useState('');
+  const [memberEmail, setMemberEmail] = useState('');
+  const [memberRole, setMemberRole] = useState<TeamRole>('Sales');
   const update = (key: keyof BusinessProfile, value: string) => {
-    setSaved(false);
-    setForm(current => ({ ...current, [key]: value }));
+    setSaved(false); setForm(current => ({ ...current, [key]: value }));
+  };
+  const roleDescriptions: Record<TeamRole, string> = {
+    Owner: 'Business profile, all records and team administration',
+    Manager: 'Sales, stock, purchasing and business reports',
+    Sales: 'Counter sales, invoices and customer balances',
+    Inventory: 'Product catalogue, stock counts and deliveries',
+    Finance: 'Payments, account balances and financial reports',
+  };
+  const submitMember = (event: FormEvent) => {
+    event.preventDefault();
+    if (!memberName.trim() || !memberEmail.trim()) return;
+    onAddMember({ name: memberName.trim(), email: memberEmail.trim(), role: memberRole });
+    setMemberName(''); setMemberEmail(''); setMemberRole('Sales'); setShowAdd(false);
   };
   return <div className="page-stack">
-    <PageHeader title="Business settings" description="The core business identity and operating configuration used across Hesabu." />
-    <div className="content-grid content-grid-main settings-grid">
-      <SectionCard title="Business profile" detail="These details appear on invoices and business reports.">
-        <form className="settings-form" onSubmit={event => {
-          event.preventDefault();
-          onSave(form); setSaved(true);
-        }}>
-          <Field label="Business display name" value={form.name} onChange={value => update('name', value)} required />
-          <Field label="Registered business name" value={form.legalName} onChange={value => update('legalName', value)} />
-          <div className="form-grid form-grid-two">
-            <Field label="Business contact" value={form.phone} onChange={value => update('phone', value)} />
-            <Field label="Accounts email" value={form.email} onChange={value => update('email', value)} />
-          </div>
-          <div className="form-grid form-grid-two">
-            <Field label="Location" value={form.location} onChange={value => update('location', value)} />
-            <Field label="Industry" value={form.industry} onChange={value => update('industry', value)} />
-          </div>
-          <Field label="KRA PIN" value={form.taxPin} onChange={value => update('taxPin', value)} hint="The preview does not validate or transmit tax details." />
-          <div className="settings-form-footer">{saved && <span className="saved-inline"><CheckCircle2 size={14} /> Saved to this browser</span>}<Button type="submit">Save business profile</Button></div>
-        </form>
-      </SectionCard>
-      <div className="side-stack">
-        <SectionCard title="Payment configuration" detail="Merchant payment details for future live integration.">
-          <div className="settings-connection">
-            <div className="provider-logo provider-mpesa">M</div><div><strong>Safaricom Daraja</strong><small>Sandbox and production credentials not supplied</small></div>
-            <StatusPill status="pending">Not connected</StatusPill>
-          </div>
-          <Button variant="outline" className="btn-block" onClick={() => onNotice('Payment backend required', 'The production flow needs a secure server, merchant shortcode, callback URLs, credentials and payment reconciliation controls.')}>View setup requirements</Button>
-        </SectionCard>
-        <SectionCard title="Data & workspace" detail="This preview is stored locally on this device.">
-          <div className="workspace-detail"><span>Workspace mode</span><strong>Local demo</strong></div>
-          <div className="workspace-detail"><span>Database connection</span><strong>Not connected</strong></div>
-          <div className="workspace-detail"><span>Data scope</span><strong>This browser only</strong></div>
-          <Button variant="outline" className="btn-block" onClick={() => onNotice('Data export', 'The local demo workspace stores records in browser storage. A structured export is planned with the production data layer.') }><Download size={14} /> Export options</Button>
-          <Button variant="danger" className="btn-block" onClick={onReset}><RefreshCw size={14} /> Reset demo workspace</Button>
-        </SectionCard>
-        <div className="settings-footer-note">Demo records are illustrative. Do not enter real customer information, credentials or confidential business data.</div>
+    <PageHeader title="Team & settings" description="Manage your business details and the people responsible for daily operations." />
+    <SectionCard title="Business administration" detail="Business identity and team responsibilities.">
+      <div className="section-tabs">
+        <button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}>Business profile</button>
+        <button className={tab === 'team' ? 'active' : ''} onClick={() => setTab('team')}>Team <span>{teamMembers.length}</span></button>
       </div>
+      {tab === 'profile' ? <form className="settings-form" onSubmit={event => {
+        event.preventDefault(); onSave(form); setSaved(true);
+      }}>
+        <div className="form-grid form-grid-two">
+          <Field label="Business name" value={form.name} onChange={value => update('name', value)} required />
+          <Field label="Registered name" value={form.legalName} onChange={value => update('legalName', value)} />
+        </div>
+        <div className="form-grid form-grid-two">
+          <Field label="Business phone" value={form.phone} onChange={value => update('phone', value)} />
+          <Field label="Business email" value={form.email} onChange={value => update('email', value)} />
+        </div>
+        <div className="form-grid form-grid-two">
+          <Field label="Location" value={form.location} onChange={value => update('location', value)} />
+          <Field label="Business type" value={form.industry} onChange={value => update('industry', value)} />
+        </div>
+        <div className="settings-form-footer">{saved && <span className="saved-inline"><CheckCircle2 size={14} /> Saved</span>}<Button type="submit">Save changes</Button></div>
+      </form> : <>
+        <div className="team-header-row">
+          <div><strong>{teamMembers.filter(member => member.status === 'active').length} people in this workspace</strong><p>Assign each team member only the responsibility they need.</p></div>
+          <Button onClick={() => setShowAdd(value => !value)}><Plus size={15} /> Add member</Button>
+        </div>
+        {showAdd && <form className="team-invite-form" onSubmit={submitMember}>
+          <div className="form-grid form-grid-two">
+            <Field label="Full name" value={memberName} onChange={setMemberName} required placeholder="Team member name" />
+            <Field label="Email address" value={memberEmail} onChange={setMemberEmail} required placeholder="name@business.com" />
+          </div>
+          <div className="form-grid form-grid-two">
+            <SelectField label="Responsibility" value={memberRole} onChange={value => setMemberRole(value as TeamRole)} options={[
+              { value: 'Manager', label: 'Manager' }, { value: 'Sales', label: 'Sales' },
+              { value: 'Inventory', label: 'Inventory' }, { value: 'Finance', label: 'Finance' },
+            ]} />
+            <div className="team-role-description"><strong>{memberRole}</strong><span>{roleDescriptions[memberRole]}</span></div>
+          </div>
+          <div className="inline-form-actions"><Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button><Button type="submit" disabled={!memberName.trim() || !memberEmail.trim()}>Add to team</Button></div>
+        </form>}
+        <div className="team-role-grid">
+          {(Object.keys(roleDescriptions) as TeamRole[]).filter(role => role !== 'Owner').map(role => <div key={role}><strong>{role}</strong><span>{roleDescriptions[role]}</span></div>)}
+        </div>
+        <DataTable headers={['Team member', 'Responsibility', 'Status', '']}>
+          {teamMembers.map(member => <tr key={member.id}>
+            <td><strong>{member.name}</strong><small className="cell-sub">{member.email}</small></td>
+            <td>{member.role}</td>
+            <td><StatusPill status={member.status === 'active' ? 'delivered' : 'draft'}>{member.status === 'active' ? 'Active' : 'Suspended'}</StatusPill></td>
+            <td>{member.role === 'Owner' ? <span className="muted-copy">Owner</span> : <button className="table-action" onClick={() => onUpdateMember(member.id, { status: member.status === 'active' ? 'suspended' : 'active' })}>{member.status === 'active' ? 'Suspend' : 'Activate'}</button>}</td>
+          </tr>)}
+        </DataTable>
+      </>}
+    </SectionCard>
+    <div className="settings-reset-row">
+      <div><strong>Reset sample workspace</strong><small>Restore the original example business and sample activity.</small></div>
+      <Button variant="outline" size="sm" onClick={onReset}>Reset workspace</Button>
     </div>
   </div>;
 }
@@ -1919,6 +1914,26 @@ function App() {
     notify('Business profile updated', 'Changes have been saved to this browser.');
   };
 
+
+  const addTeamMember = (input: { name: string; email: string; role: TeamRole }) => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) {
+      notify('Enter a valid email address'); return;
+    }
+    if (data.teamMembers.some(member => member.email.toLowerCase() === input.email.toLowerCase())) {
+      notify('This email is already on the team'); return;
+    }
+    const member: TeamMember = { id: makeId('TEAM'), ...input, status: 'active' };
+    setData(current => ({ ...current, teamMembers: [...current.teamMembers, member] }));
+    notify('Team member added', input.name + ' has been added to this workspace.');
+  };
+
+  const updateTeamMember = (id: string, patch: Partial<TeamMember>) => {
+    setData(current => ({
+      ...current,
+      teamMembers: current.teamMembers.map(member => member.id === id && member.role !== 'Owner' ? { ...member, ...patch } : member),
+    }));
+  };
+
   const resetDemo = () => {
     if (!window.confirm('Reset this browser to the original Hesabu demo workspace? Current local demo changes will be lost.')) return;
     const fresh = makeDemoData();
@@ -1959,7 +1974,7 @@ function App() {
         </div>)}
       </nav>
       {!sidebarCollapsed && <div className="sidebar-bottom">
-        <div className="sidebar-help"><div><ShieldCheck size={16} /><strong>Records in one place</strong></div><p>Sales, stock and cash movement stay connected in the same workspace.</p><button onClick={() => navigate('integrations')}>Explore integrations <ArrowRight size={12} /></button></div>
+        <div className="sidebar-help"><div><span className="sidebar-help-mark">H</span><strong>Built for the whole business</strong></div><p>Keep sales, stock and purchasing in sync.</p><button onClick={() => navigate('reports')}>View performance <ArrowRight size={12} /></button></div>
         <div className="sidebar-profile" onClick={() => navigate('settings')} role="button" tabIndex={0}>
           <Initials name={data.profile.name} /><span><strong>{data.profile.name}</strong><small>Demo workspace</small></span><MoreHorizontal size={17} />
         </div>
@@ -1970,8 +1985,9 @@ function App() {
     <main className="main-shell">
       <header className="topbar">
         <div className="topbar-left">
+          <div className="topbar-brand-lockup"><span className="brand-mark topbar-brand-mark">H</span><span>hesabu<span>.</span><small>BUSINESS</small></span></div>
           <IconButton label="Open navigation" className="mobile-menu-button" onClick={() => setMobileMenuOpen(value => !value)}><Menu size={19} /></IconButton>
-          <div className="breadcrumb"><span>Workspace</span><ChevronRight size={13} /><strong>{activeMeta.title}</strong></div>
+          <div className="breadcrumb"><ChevronRight size={13} /><strong>{activeMeta.title}</strong></div>
         </div>
         <div className="topbar-right">
           <div className={'global-search ' + (searchOpen ? 'global-search-open' : '')}><Search size={15} /><input value={search} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)} onChange={event => setSearch(event.target.value)} placeholder="Search this register…" /></div>
@@ -1986,12 +2002,12 @@ function App() {
         {active === 'overview' && <OverviewPage data={data} metrics={metrics} onCreateSale={() => setDialog({ kind: 'sale' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} />}
-        {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} />}
+        {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} />}
-        {active === 'integrations' && <IntegrationsPage data={data} onCopy={copyText} onNotice={notify} onCreateDemoOrder={createWebsiteOrder} />}
-        {active === 'settings' && <SettingsPage profile={data.profile} onSave={saveProfile} onReset={resetDemo} onNotice={notify} />}
+        {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} />}
+        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={resetDemo} />}
       </div>
       <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Preview workspace · Saved in this browser</span></footer>
     </main>
@@ -2015,7 +2031,7 @@ function App() {
     {dialog?.kind === 'match-receipt' && selectedReceipt && <MatchReceiptDialog receipt={selectedReceipt} invoices={data.invoices} onClose={() => setDialog(null)} onMatch={invoiceId => matchUnmatchedReceipt(selectedReceipt.id, invoiceId)} />}
     {dialog?.kind === 'expense' && <ExpenseDialog onClose={() => setDialog(null)} onCreate={createExpense} />}
     {dialog?.kind === 'product' && <ProductDialog onClose={() => setDialog(null)} onCreate={createProduct} />}
-    {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
+    {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} initialProductId={dialog.productId} initialQuantity={dialog.quantity} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
     {dialog?.kind === 'receive-purchase' && selectedPurchaseOrder && <ReceivePurchaseDialog order={selectedPurchaseOrder} onClose={() => setDialog(null)} onReceive={items => receivePurchaseOrder(selectedPurchaseOrder.id, items)} />}
     {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={amount => paySupplier(selectedSupplier.id, amount)} />}
     {dialog?.kind === 'adjust' && selectedProduct && <AdjustStockDialog product={selectedProduct} onClose={() => setDialog(null)} onAdjust={(quantity, reason) => adjustStock(selectedProduct.id, quantity, reason)} />}

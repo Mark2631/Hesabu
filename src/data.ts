@@ -1,4 +1,4 @@
-import type { AppData, Expense, Invoice, JournalLine, Payment, Product, Supplier } from './types';
+import type { AppData, Expense, Invoice, JournalLine, Payment, Product, Supplier, TeamMember } from './types';
 
 const localDate = (date: Date) => {
   const year = date.getFullYear();
@@ -194,6 +194,13 @@ export function makeDemoData(): AppData {
   };
   const openingPayables = suppliers.reduce((total, supplier) => total + supplier.balance, 0);
 
+  const teamMembers: TeamMember[] = [
+    { id: 'team-001', name: 'Business owner', email: 'accounts@northstarmarket.example', role: 'Owner', status: 'active' },
+    { id: 'team-002', name: 'Grace Njeri', email: 'grace@northstarmarket.example', role: 'Manager', status: 'active' },
+    { id: 'team-003', name: 'Brian Mutua', email: 'brian@northstarmarket.example', role: 'Sales', status: 'active' },
+    { id: 'team-004', name: 'Faith Wambui', email: 'faith@northstarmarket.example', role: 'Inventory', status: 'active' },
+  ];
+
   return {
     profile: {
       name: 'Northstar Market', legalName: 'Northstar Retail Limited',
@@ -252,6 +259,7 @@ export function makeDemoData(): AppData {
       { id: 'evt-05', time: timeAgo(160), type: 'purchase_order.sent', source: 'Procurement', status: 'delivered', reference: 'PO-020', detail: 'Purchase order sent to supplier' },
     ],
     openingBalances,
+    teamMembers,
     nextInvoice: 1009,
     nextPurchaseOrder: 21,
   };
@@ -266,7 +274,7 @@ export function readWorkspace(): AppData {
       const parsed = JSON.parse(raw) as Partial<AppData>;
       if (parsed.profile && Array.isArray(parsed.products) && Array.isArray(parsed.invoices)) {
         const demo = makeDemoData();
-        return { ...demo, ...parsed, unmatchedReceipts: parsed.unmatchedReceipts ?? demo.unmatchedReceipts, cashMovements: parsed.cashMovements ?? demo.cashMovements };
+        return { ...demo, ...parsed, unmatchedReceipts: parsed.unmatchedReceipts ?? demo.unmatchedReceipts, cashMovements: parsed.cashMovements ?? demo.cashMovements, teamMembers: parsed.teamMembers ?? demo.teamMembers };
       }
     }
   } catch {

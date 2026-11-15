@@ -59,6 +59,11 @@ export interface IntegrationEvent {
   id: string; time: string; type: string; source: string;
   status: 'delivered' | 'pending' | 'failed'; reference: string; detail: string;
 }
+export type TeamRole = 'Owner' | 'Manager' | 'Sales' | 'Inventory' | 'Finance';
+export type TeamMemberStatus = 'active' | 'suspended';
+export interface TeamMember {
+  id: string; name: string; email: string; role: TeamRole; status: TeamMemberStatus;
+}
 export interface CashMovement {
   id: string;
   date: string;
@@ -71,7 +76,7 @@ export interface CashMovement {
 }
 export interface AppData {
   profile: BusinessProfile; products: Product[]; invoices: Invoice[]; payments: Payment[];
-  unmatchedReceipts: UnmatchedReceipt[]; expenses: Expense[]; cashMovements: CashMovement[]; suppliers: Supplier[]; purchaseOrders: PurchaseOrder[];
+  unmatchedReceipts: UnmatchedReceipt[]; expenses: Expense[]; cashMovements: CashMovement[]; suppliers: Supplier[]; purchaseOrders: PurchaseOrder[]; teamMembers: TeamMember[];
   journal: JournalLine[]; events: IntegrationEvent[];
   openingBalances: { cash: number; mpesa: number; bank: number; inventory: number };
   nextInvoice: number; nextPurchaseOrder: number;
