@@ -982,3 +982,32 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 @media (max-width:720px) {
   .user-switcher-panel { position:fixed; top:61px; right:10px; }
 }
+
+
+/* Production workspace */
+.production-recipe-lines { display:grid; gap:9px; }
+.production-recipe-line {
+  display:grid; grid-template-columns:minmax(0,1.4fr) minmax(150px,.8fr) auto 28px;
+  align-items:end; gap:10px; padding:11px; border:1px solid #e8ebf1;
+  border-radius:9px; background:#fafbfc;
+}
+.production-line-cost { align-self:center; min-width:66px; padding-top:16px; color:#3b4656; font-size:10px; font-weight:700; text-align:right; }
+.production-output-summary { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:13px; border:1px solid #e8ebf1; border-radius:9px; background:#fafbfc; }
+.production-output-summary > div { display:flex; flex-direction:column; gap:4px; }
+.production-output-summary span { color:#7c8798; font-size:9px; }
+.production-output-summary strong { color:#1a2535; font-size:12px; }
+.production-preview-lines { display:grid; gap:0; border:1px solid #e8ebf1; border-radius:9px; padding:4px 12px; }
+.production-preview-lines > div { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #edf0f4; }
+.production-preview-lines > div:last-child { border-bottom:0; }
+.production-preview-lines span { display:flex; flex-direction:column; gap:3px; color:#344054; font-size:10px; font-weight:600; }
+.production-preview-lines small { color:#8791a0; font-size:9px; font-weight:400; }
+.production-preview-lines strong { color:#1c2636; font-size:11px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.production-preview-lines .production-preview-total { padding-top:12px; }
+.production-preview-total span { color:#596579; }
+.production-preview-total strong { color:#111827; font-size:13px; }
+@media (max-width:720px) {
+  .production-recipe-line { grid-template-columns:minmax(0,1fr) 104px 28px; gap:8px; }
+  .production-recipe-line .field:first-child { grid-column:1 / -1; }
+  .production-line-cost { display:none; }
+  .production-output-summary { gap:8px; }
+}

@@ -8,7 +8,8 @@ A single operational record connects:
 
 - **Sales and invoicing** — counter, website, Hesabu checkout and manual sales.
 - **Payments and reconciliation** — cash, M-Pesa, bank and card collection records; payment requests; an unmatched-receipt queue for Till/PayBill, Pochi, Send Money and bank receipts; invoice allocation and exception review.
-- **Inventory** — SKU-level quantities, reorder points, cost and selling prices, stock adjustments and valuation.
+- **Inventory** — SKU-level quantities, reorder points, cost and selling prices, stock adjustments, valuation and reorder suggestions.
+- **Production** — reusable material recipes and production runs that transfer stock from components into finished goods at the cost of materials consumed.
 - **Procurement** — suppliers, purchase orders, receiving and accounts payable.
 - **Accounts** — receivables, payables, cash accounts, account balances, a trial balance and a journal register. The seed includes opening balances that reconcile the cash, inventory, receivables and supplier control accounts.
 - **Reports** — sales, gross margin, cash position and working-capital views.
@@ -21,7 +22,7 @@ A posted sale is intended to flow through invoice, collection, stock and account
 The build/platform-foundation branch contains a front-end product preview built on the existing React 18, TypeScript and Vite application.
 
 - Seeded mini-mart workspace with products, suppliers, invoices, payment records and purchase orders.
-- Local interactions for recording sales, creating invoices, requesting and resolving simulated STK payments, adding unmatched receipts, matching receipts to open invoices, recording expenses, stock counts, multi-line purchase orders, partial goods receiving, opening stock entries and supplier payments.
+- Local interactions for recording sales, creating invoices, requesting and resolving sample payment requests, adding and matching receipts, recording expenses, stock counts, multi-line purchase orders, partial goods receiving, supplier payments, reusable production recipes and production runs.
 - Balanced journal-pair posting, a trial-balance control, weighted-average cost on stock receipts, separate treatment of unapplied customer receipts as customer advances, and ledger entries for opening stock.
 - Supplier settlements reduce bank cash and accounts payable; they are not treated as operating expenses.
 - Derived dashboard and report values.
@@ -49,7 +50,7 @@ KRA documents system-to-system eTIMS integration through OSCU and VSCU and requi
 1. Connect a secure multi-tenant database and enforce business-level authorization.
 2. Replace browser-only state with server-side posting and immutable, balanced journal transactions.
 3. Add idempotency, webhook signature verification, retries, reconciliation exceptions and audit logs.
-4. Complete inventory costing, returns, credit notes, tax handling, period close and accountant-reviewed reports.
+4. Complete inventory costing, production labour and overhead allocation, waste/by-product handling, returns, credit notes, tax handling, period close and accountant-reviewed reports.
 5. Connect and test supported Daraja merchant flows with production credentials and callback infrastructure.
 6. Evaluate KRA eTIMS certification, supported bank feeds and other third-party integrations.
 7. Add staff roles, branch/location permissions, backups, observability and security review.
