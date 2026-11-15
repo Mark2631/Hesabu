@@ -1872,3 +1872,13 @@ html[data-theme="light"] { color-scheme:light; }
   .assistant-launcher,
   .assistant-launcher-tooltip { transition:none; }
 }
+
+.assistant-quick-actions { margin-top:14px; padding-top:12px; border-top:1px solid #edf1ed; }
+.assistant-quick-actions > span { display:block; margin-bottom:8px; color:#8a978e; font-size:9px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; }
+.assistant-quick-actions > div { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.assistant-quick-actions button {
+  display:flex; align-items:center; justify-content:center; gap:5px; min-width:0;
+  padding:9px 6px; border:1px solid #e0e9e2; border-radius:8px;
+  background:#fff; color:#345943; font-size:10px; font-weight:700;
+}
+.assistant-quick-actions button:hover { border-color:#c0d8c6; background:#f5faf6; }
