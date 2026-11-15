@@ -1,64 +1,48 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeDemoData } from '../src/data.ts';
-import { buildReport, cashIn, cashOut, creditGiven, parseTransaction } from '../src/utils.ts';
 
-const data = makeDemoData();
+const sum = (values) => values.reduce((total, value) => total + value, 0);
 
-test('Kiswahili credit entry becomes a receivable and reduces tracked stock', () => {
-  const draft = parseTransaction('Kamau alichukua sukari ya 120', data);
-  assert.equal(draft.type, 'credit');
-  assert.equal(draft.amount, 120);
-  assert.equal(draft.customerName, 'Kamau');
-  assert.equal(draft.stockItemName, 'Sukari');
-  assert.equal(draft.stockQuantityDelta, -1);
-  assert.ok(draft.dueDate);
+test('demo workspace has a complete operating record', () => {
+  const data = makeDemoData();
+  assert.equal(data.profile.name, 'Northstar Market');
+  assert.ok(data.products.length >= 10);
+  assert.ok(data.suppliers.length >= 3);
+  assert.ok(data.invoices.length >= 5);
+  assert.ok(data.payments.length >= 5);
+  assert.ok(data.purchaseOrders.length >= 2);
 });
 
-test('English credit phrase with a payment promise parses the due weekday', () => {
-  const draft = parseTransaction('Kamau took 1 kg sugar 120 bob, pays Friday', data);
-  assert.equal(draft.type, 'credit');
-  assert.equal(draft.amount, 120);
-  assert.equal(draft.customerName, 'Kamau');
-  assert.equal(draft.stockQuantityDelta, -1);
-  assert.match(draft.summary, /on credit/);
+test('invoice totals reconcile to the underlying item lines', () => {
+  const data = makeDemoData();
+  for (const invoice of data.invoices) {
+    const lineTotal = sum(invoice.lines.map((line) => line.quantity * line.unitPrice));
+    assert.equal(invoice.subtotal, lineTotal);
+    assert.equal(invoice.total, invoice.subtotal - invoice.discount);
+    assert.ok(invoice.paid >= 0);
+    assert.ok(invoice.paid <= invoice.total);
+  }
 });
 
-test('multi-unit bread credit reduces stock by the spoken quantity', () => {
-  const draft = parseTransaction('Kamau took 2 loaves bread for 120 bob, pays Friday', data);
-  assert.equal(draft.type, 'credit');
-  assert.equal(draft.amount, 120);
-  assert.equal(draft.stockItemName, 'Mkate');
-  assert.equal(draft.stockQuantityDelta, -2);
-  assert.ok(draft.dueDate);
+test('purchase order totals reconcile to supplier order lines', () => {
+  const data = makeDemoData();
+  for (const order of data.purchaseOrders) {
+    assert.equal(order.total, sum(order.lines.map((line) => line.lineTotal)));
+    assert.ok(order.lines.every((line) => line.received <= line.quantity));
+  }
 });
 
-test('supplier restock is cash out and increases stock', () => {
-  const draft = parseTransaction('Supplier alileta mafuta, nililipa 3000', data);
-  assert.equal(draft.type, 'expense');
-  assert.equal(draft.amount, 3000);
-  assert.equal(draft.stockItemName, 'Mafuta');
-  assert.equal(draft.stockQuantityDelta, 1);
+test('seed journal entries are balanced', () => {
+  const data = makeDemoData();
+  const debits = sum(data.journal.map((line) => line.debit));
+  const credits = sum(data.journal.map((line) => line.credit));
+  assert.equal(debits, credits);
 });
 
-test('customer debt repayment is cash in, not a new sale', () => {
-  const draft = parseTransaction('Njeri alilipa deni yake ya 500', data);
-  assert.equal(draft.type, 'payment');
-  assert.equal(draft.amount, 500);
-  assert.equal(draft.customerName, 'Njeri');
-});
-
-test('untracked item purchase is an expense and keeps amount intact', () => {
-  const draft = parseTransaction('Nilinunua mkaa kwa 800', data);
-  assert.equal(draft.type, 'expense');
-  assert.equal(draft.amount, 800);
-  assert.equal(draft.stockItemName, undefined);
-});
-
-test('daily cash summary excludes credit sales', () => {
-  const tx = data.transactions.filter(t => t.date === new Date().toLocaleDateString('en-CA'));
-  assert.equal(cashIn(tx), tx.filter(t => t.type === 'sale' || t.type === 'payment').reduce((a, t) => a + t.amount, 0));
-  assert.equal(cashOut(tx), tx.filter(t => t.type === 'expense').reduce((a, t) => a + t.amount, 0));
-  assert.equal(creditGiven(tx), tx.filter(t => t.type === 'credit').reduce((a, t) => a + t.amount, 0));
-  assert.equal(buildReport(data, 'daily', tx[0]?.date ?? new Date().toLocaleDateString('en-CA')).credit, creditGiven(tx));
+test('low stock is measurable from quantity and reorder rules', () => {
+  const data = makeDemoData();
+  const lowStock = data.products.filter((product) => product.quantity <= product.reorderLevel);
+  assert.ok(lowStock.length >= 3);
+  assert.ok(lowStock.some((product) => product.sku === 'HOM-011'));
 });

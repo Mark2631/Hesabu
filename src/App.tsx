@@ -1,913 +1,1549 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ComponentProps, type FormEvent, type ReactNode } from 'react';
 import {
-  ArrowDownLeft, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, CalendarDays,
-  Check, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, ClipboardList,
-  FileSpreadsheet, FileText, HandCoins, Headphones, House, Mic, Mic2, MoreHorizontal, Package, Plus,
-  Download, ReceiptText, RotateCcw, Search, Settings2, Share2, SlidersHorizontal, Sparkles, Store, Upload,
-  Trash2, TrendingDown, TrendingUp, Users,
-  Wallet, X, type LucideIcon,
+  Activity, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3,
+  Bell, Boxes, Building2, CalendarDays, Check, CheckCircle2, ChevronDown,
+  ChevronRight, CircleDollarSign, Clock3, Code2, Copy, CreditCard, Download,
+  FileCheck2, FileText, Filter, Globe2, LayoutDashboard, Link2,
+  Menu, MoreHorizontal, Package, PanelLeftClose, Plus, Receipt, RefreshCw,
+  Search, Send, Settings, ShieldCheck, ShoppingCart, Smartphone,
+  Store, TrendingDown, TrendingUp, Truck, Wallet, X,
+  type LucideIcon,
 } from 'lucide-react';
-import { hasSavedData, makeDemoData, readSavedData, saveData } from './data';
-import type { AppData, Customer, Reminder, Section, StockItem, Transaction, TransactionDraft, TransactionType } from './types';
-import { addDays, buildReport, cashIn, cashOut, creditGiven, currentTime, dateText, daysUntil, fullDateText, id, money, parseTransaction, shortDay, timeText, today, transactionLabel } from './utils';
+import { makeDemoData, readWorkspace, saveWorkspace } from './data';
+import type {
+  AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
+  NewPaymentInput, NewPurchaseInput, Payment, PaymentChannel, Product,
+  PurchaseOrder, Supplier,
+} from './types';
 
-const NAV: { id: Section; label: string; icon: LucideIcon }[] = [
-  { id: 'home', label: 'Home', icon: House },
-  { id: 'debts', label: 'Customers', icon: Users },
-  { id: 'stock', label: 'Inventory', icon: Package },
-  { id: 'reports', label: 'Reports', icon: FileText },
-];
-
-const TYPE_META: Record<TransactionType, { label: string; swahili: string; icon: LucideIcon; hint: string }> = {
-  sale: { label: 'Cash sale', swahili: 'Mauzo', icon: ArrowDownLeft, hint: 'Cash or M-Pesa received' },
-  credit: { label: 'Credit given', swahili: 'Deni', icon: HandCoins, hint: 'Someone takes goods and pays later' },
-  expense: { label: 'Expense', swahili: 'Expenses', icon: ArrowUpRight, hint: 'Stock, bills or day-to-day costs' },
-  payment: { label: 'Debt payment', swahili: 'Malipo ya deni', icon: Wallet, hint: 'A customer pays what they owe' },
-};
-
-const TYPE_TONE: Record<TransactionType, string> = {
-  sale: 'tone-green', credit: 'tone-amber', expense: 'tone-red', payment: 'tone-blue',
-};
-
-type ModalState =
-  | { kind: 'customer'; customer?: Customer }
-  | { kind: 'payment'; customerId: string }
-  | { kind: 'stock'; item?: StockItem }
-  | { kind: 'stock-update'; itemId: string; mode: 'restock' | 'adjust' }
-  | { kind: 'stock-edit'; itemId: string }
-  | { kind: 'reminder'; reminder?: Reminder }
+type Notice = { title: string; detail?: string } | null;
+type DialogState =
+  | { kind: 'sale' }
+  | { kind: 'stk'; invoiceId?: string }
+  | { kind: 'expense' }
+  | { kind: 'product' }
+  | { kind: 'purchase' }
+  | { kind: 'invoice'; invoiceId: string }
+  | { kind: 'supplier-payment'; supplierId: string }
+  | { kind: 'adjust'; productId: string }
   | { kind: 'profile' }
-  | { kind: 'edit-draft' }
-  | { kind: 'transaction'; transactionId: string }
-  | { kind: 'edit-transaction'; transactionId: string }
-  | { kind: 'settings' }
   | null;
 
-function cn(...classes: Array<string | undefined | null | false>) { return classes.filter(Boolean).join(' '); }
+const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: string; icon: LucideIcon }> }> = [
+  { title: 'WORKSPACE', items: [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'sales', label: 'Sales & invoices', icon: Receipt },
+    { id: 'payments', label: 'Payments', icon: CircleDollarSign },
+    { id: 'inventory', label: 'Inventory', icon: Package },
+    { id: 'procurement', label: 'Procurement', icon: ShoppingCart },
+  ] },
+  { title: 'CONTROL', items: [
+    { id: 'accounts', label: 'Accounts', icon: BookOpenIcon },
+    { id: 'reports', label: 'Reports', icon: BarChart3 },
+  ] },
+  { title: 'PLATFORM', items: [
+    { id: 'integrations', label: 'Integrations', icon: Link2 },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ] },
+];
 
-function Logo({ compact = false }: { compact?: boolean }) {
-  return <div className="flex min-w-0 items-center gap-3">
-    <div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M9 9v22M9 20h22M31 9v22" stroke="currentColor" strokeWidth="4.1" strokeLinecap="round"/><circle cx="31" cy="9" r="3.2" fill="#F3AC63" /></svg></div>
-    {!compact && <div className="min-w-0"><div className="font-display text-[18px] font-extrabold tracking-[-.055em] text-hesabu-ink">hesabu<span className="text-hesabu-green">.</span></div><div className="-mt-0.5 text-[10px] font-medium tracking-[.03em] text-hesabu-muted">Business, in balance.</div></div>}
-  </div>;
+function BookOpenIcon(props: ComponentProps<LucideIcon>) {
+  return <FileCheck2 {...props} />;
 }
 
-function SectionTitle({ eyebrow, title, detail, right }: { eyebrow?: string; title: string; detail?: string; right?: ReactNode }) {
-  return <div className="mb-6 flex items-end justify-between gap-4">
-    <div className="min-w-0">
-      {eyebrow && <div className="mb-2 text-[10px] font-bold uppercase tracking-[.16em] text-hesabu-green">{eyebrow}</div>}
-      <h1 className="font-display text-[26px] font-extrabold leading-[1.12] tracking-[-.045em] text-hesabu-ink sm:text-[30px]">{title}</h1>
-      {detail && <p className="mt-2 max-w-xl text-[13px] leading-5 text-hesabu-muted">{detail}</p>}
-    </div>
-    {right && <div className="shrink-0">{right}</div>}
-  </div>;
-}
+const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
+  overview: { title: 'Business overview', description: 'A live view of the money, stock and obligations moving through your business.' },
+  sales: { title: 'Sales & invoices', description: 'Every sale, invoice and outstanding customer balance in one register.' },
+  payments: { title: 'Payments', description: 'Track collections across M-Pesa, cash, bank and card — then reconcile each one.' },
+  inventory: { title: 'Inventory', description: 'Know what is on hand, what is moving and what needs to be reordered.' },
+  procurement: { title: 'Procurement', description: 'Control supplier orders, goods received and the bills attached to them.' },
+  accounts: { title: 'Accounts', description: 'A traceable financial record, from source transaction to account balance.' },
+  reports: { title: 'Reports', description: 'Understand trading performance, cash movement and working capital.' },
+  integrations: { title: 'Integrations', description: 'Connect Hesabu to your website, checkout and existing business systems.' },
+  settings: { title: 'Business settings', description: 'Manage your business profile, operating preferences and payment configuration.' },
+};
 
-function Button({ children, variant = 'primary', size = 'md', className, disabled, onClick, type = 'button' }: {
-  children: ReactNode; variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'; size?: 'sm' | 'md' | 'lg';
-  className?: string; disabled?: boolean; onClick?: () => void; type?: 'button' | 'submit';
+const money = (value: number) => new Intl.NumberFormat('en-KE', {
+  style: 'currency', currency: 'KES', maximumFractionDigits: 0,
+}).format(Math.round(value || 0)).replace('KES', 'KSh');
+
+const numberText = (value: number) => new Intl.NumberFormat('en-KE', { maximumFractionDigits: 0 }).format(value || 0);
+const dateKey = (date: Date) => {
+  const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return shifted.toISOString().slice(0, 10);
+};
+const today = () => dateKey(new Date());
+const addDays = (source: string, amount: number) => {
+  const date = new Date(source + 'T12:00:00');
+  date.setDate(date.getDate() + amount);
+  return dateKey(date);
+};
+const dateLabel = (value: string) => new Date(value + 'T12:00:00').toLocaleDateString('en-KE', {
+  day: 'numeric', month: 'short', year: 'numeric',
+});
+const dateTimeLabel = (value: string) => new Date(value).toLocaleString('en-KE', {
+  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+});
+const timeLabel = (value: string) => new Date(value).toLocaleTimeString('en-KE', {
+  hour: '2-digit', minute: '2-digit',
+});
+const makeId = (prefix: string) => prefix + '-' + Math.random().toString(36).slice(2, 9).toUpperCase();
+const channelLabel = (channel: PaymentChannel) => ({
+  mpesa: 'M-Pesa', cash: 'Cash', bank: 'Bank transfer', card: 'Card', credit: 'On credit',
+}[channel]);
+const statusLabel = (status: InvoiceStatus) => ({
+  draft: 'Draft', sent: 'Awaiting payment', partial: 'Part paid', paid: 'Paid', overdue: 'Overdue',
+}[status]);
+const statusClass = (status: string) => 'status-pill status-' + (status === 'succeeded' || status === 'received' ? 'delivered' : status === 'reversed' ? 'failed' : status.replaceAll('_', '-'));
+const channelClass = (channel: PaymentChannel) => 'channel-badge channel-' + channel;
+const shortRef = (value: string) => value.length > 15 ? value.slice(0, 13) + '…' : value;
+const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
+const invoiceBalance = (invoice: Invoice) => Math.max(0, invoice.total - invoice.paid);
+const productValue = (product: Product) => product.quantity * product.costPrice;
+const marginValue = (invoice: Invoice) => sum(invoice.lines.map(line => (line.unitPrice - line.unitCost) * line.quantity));
+const sourceLabel = (source: Invoice['source']) => ({
+  hesabu: 'Hesabu', website: 'Website', pos: 'Point of sale', manual: 'Manual',
+}[source]);
+
+function Button({
+  children, onClick, variant = 'primary', size = 'md', disabled = false, className = '', type = 'button',
+}: {
+  children: ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger';
+  size?: 'sm' | 'md' | 'lg'; disabled?: boolean; className?: string; type?: 'button' | 'submit';
 }) {
-  return <button type={type} disabled={disabled} onClick={onClick} className={cn('btn', `btn-${variant}`, `btn-${size}`, className)}>{children}</button>;
+  return <button type={type} onClick={onClick} disabled={disabled} className={'btn btn-' + variant + ' btn-' + size + ' ' + className}>
+    {children}
+  </button>;
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', min, step, required, help, autoFocus, inputMode }: {
-  label: string; value: string | number; onChange: (value: string) => void; placeholder?: string; type?: string;
-  min?: number; step?: number; required?: boolean; help?: string; autoFocus?: boolean; inputMode?: 'text' | 'decimal' | 'numeric' | 'tel' | 'search';
+function IconButton({ children, onClick, label, className = '' }: {
+  children: ReactNode; onClick?: () => void; label: string; className?: string;
 }) {
-  return <label className="field-wrap block">
+  return <button type="button" onClick={onClick} aria-label={label} title={label} className={'icon-button ' + className}>{children}</button>;
+}
+
+function Field({
+  label, value, onChange, placeholder, type = 'text', required = false, min, step, hint, disabled = false,
+}: {
+  label: string; value: string | number; onChange: (value: string) => void;
+  placeholder?: string; type?: string; required?: boolean; min?: number; step?: number;
+  hint?: string; disabled?: boolean;
+}) {
+  return <label className="field">
     <span className="field-label">{label}</span>
-    <input className="field-control" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type} min={min} step={step} required={required} autoFocus={autoFocus} inputMode={inputMode} />
-    {help && <span className="mt-1.5 block text-[11px] leading-4 text-hesabu-muted">{help}</span>}
+    <input className="field-input" value={value} type={type} onChange={event => onChange(event.target.value)}
+      placeholder={placeholder} required={required} min={min} step={step} disabled={disabled} />
+    {hint && <span className="field-hint">{hint}</span>}
   </label>;
 }
 
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
-  return <label className="field-wrap block">
+function SelectField({ label, value, onChange, options, hint }: {
+  label: string; value: string; onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>; hint?: string;
+}) {
+  return <label className="field">
     <span className="field-label">{label}</span>
-    <select className="field-control" value={value} onChange={e => onChange(e.target.value)}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+    <select className="field-input" value={value} onChange={event => onChange(event.target.value)}>
+      {options.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}
+    </select>
+    {hint && <span className="field-hint">{hint}</span>}
   </label>;
 }
 
-function Modal({ title, detail, onClose, children, size = 'md' }: { title: string; detail?: string; onClose: () => void; children: ReactNode; size?: 'md' | 'lg' }) {
+function Modal({ title, detail, children, onClose, size = 'md' }: {
+  title: string; detail?: string; children: ReactNode; onClose: () => void; size?: 'md' | 'lg';
+}) {
   useEffect(() => {
-    const handle = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', handle);
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', closeOnEscape);
     document.body.classList.add('modal-open');
-    return () => { window.removeEventListener('keydown', handle); document.body.classList.remove('modal-open'); };
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape);
+      document.body.classList.remove('modal-open');
+    };
   }, [onClose]);
-  return <div className="modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-    <section role="dialog" aria-modal="true" aria-label={title} className={cn('modal-panel', size === 'lg' && 'modal-panel-lg')}>
-      <header className="mb-5 flex items-start justify-between gap-4 border-b border-hesabu-line pb-4">
-        <div><h2 className="font-display text-xl font-extrabold tracking-[-.04em]">{title}</h2>{detail && <p className="mt-1.5 text-[12px] leading-5 text-hesabu-muted">{detail}</p>}</div>
-        <button className="icon-button -mr-1 -mt-1" onClick={onClose} aria-label="Close dialog"><X size={19} /></button>
+  return <div className="modal-backdrop" onMouseDown={event => {
+    if (event.target === event.currentTarget) onClose();
+  }}>
+    <section className={'modal modal-' + size} role="dialog" aria-modal="true" aria-label={title}>
+      <header className="modal-header">
+        <div>
+          <h2>{title}</h2>
+          {detail && <p>{detail}</p>}
+        </div>
+        <IconButton label="Close dialog" onClick={onClose}><X size={18} /></IconButton>
       </header>
       {children}
     </section>
   </div>;
 }
 
-function Toast({ message, onClose }: { message: string; onClose: () => void }) {
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(onClose, 2600);
-    return () => window.clearTimeout(timer);
-  }, [message, onClose]);
-  if (!message) return null;
-  return <div className="toast" role="status"><CheckCircle2 size={17} /><span>{message}</span></div>;
-}
-
-function EmptyState({ title, detail, action }: { title: string; detail: string; action?: ReactNode }) {
-  return <div className="empty-state"><div className="empty-icon"><ClipboardList size={23} /></div><div className="mt-3 font-display text-base font-bold">{title}</div><p className="mt-1 max-w-[260px] text-xs leading-5 text-hesabu-muted">{detail}</p>{action && <div className="mt-4">{action}</div>}</div>;
-}
-
-function ToneDot({ type }: { type: TransactionType }) {
-  const Icon = TYPE_META[type].icon;
-  return <div className={cn('transaction-icon', TYPE_TONE[type])}><Icon size={17} strokeWidth={1.8} /></div>;
-}
-
-function TransactionRow({ transaction, onClick, onDelete, compact = false }: { transaction: Transaction; onClick: () => void; onDelete: () => void; compact?: boolean }) {
-  const prefix = transaction.type === 'expense' ? '−' : transaction.type === 'credit' ? '' : '+';
-  return <div className={cn('transaction-row group', compact && 'transaction-row-compact')}>
-    <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={onClick}>
-      <ToneDot type={transaction.type} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-bold leading-[1.35] text-hesabu-ink">{transaction.customerName && transaction.type === 'credit' ? `${transaction.customerName} · ${transaction.description}` : transaction.description}</span>
-        <span className="mt-1 block truncate text-[10px] font-medium text-hesabu-muted">{timeText(transaction.time)} <span className="mx-1 text-[#CAD0CA]">·</span> {transactionLabel[transaction.type]}</span>
-      </span>
-      <span className="ml-2 shrink-0 text-right">
-        <span className={cn('block text-[13px] font-bold tabular-nums', `amount-${transaction.type}`)}>{prefix}{money(transaction.amount)}</span>
-        {transaction.type === 'credit' && <span className="mt-1 block text-[9px] font-semibold uppercase tracking-[.06em] text-[#A47731]">On credit</span>}
-      </span>
-    </button>
-    <button className="transaction-delete" onClick={onDelete} aria-label={`Delete ${transaction.description}`} title="Delete transaction"><Trash2 size={14} /></button>
-  </div>;
-}
-
-function Metric({ label, value, hint, tone, icon: Icon }: { label: string; value: number; hint: string; tone: 'green' | 'red' | 'amber'; icon: LucideIcon }) {
-  return <div className="metric-card">
-    <div className="flex items-center justify-between gap-2"><span className="text-[11px] font-semibold text-[#69776D]">{label}</span><span className={cn('metric-icon', `metric-${tone}`)}><Icon size={15} /></span></div>
-    <div className={cn('mt-3 font-display text-[22px] font-extrabold leading-none tracking-[-.055em] tabular-nums sm:text-[24px]', tone === 'red' ? 'text-[#B94C46]' : tone === 'amber' ? 'text-[#A4762A]' : 'text-hesabu-green')}>{money(value)}</div>
-    <div className="mt-2 text-[10px] font-medium text-[#89948B]">{hint}</div>
-  </div>;
-}
-
-function ActivityProgress({ transactions }: { transactions: Transaction[] }) {
-  const sales = transactions.filter(t => t.type === 'sale').length;
-  const credits = transactions.filter(t => t.type === 'credit').length;
-  const expenses = transactions.filter(t => t.type === 'expense').length;
-  return <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-hesabu-line pt-3 text-[10px] font-semibold text-hesabu-muted">
-    <span className="inline-flex items-center gap-1.5"><span className="legend-dot bg-[#1A7A4A]" />{sales} sales</span>
-    <span className="inline-flex items-center gap-1.5"><span className="legend-dot bg-[#C89A43]" />{credits} credit</span>
-    <span className="inline-flex items-center gap-1.5"><span className="legend-dot bg-[#D56A63]" />{expenses} expenses</span>
-  </div>;
-}
-
-function ReminderLine({ reminder, onDone, onEdit }: { reminder: Reminder; onDone: () => void; onEdit: () => void }) {
-  const days = daysUntil(reminder.dueDate);
-  const due = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `Due ${shortDay(reminder.dueDate)}`;
-  const Icon = reminder.kind === 'bill' ? ReceiptText : reminder.kind === 'supplier' ? Store : reminder.kind === 'customer' ? Users : Bell;
-  return <div className={cn('reminder-row', reminder.done && 'opacity-55')}>
-    <div className={cn('reminder-icon', days <= 1 && !reminder.done ? 'reminder-icon-due' : '')}><Icon size={16} /></div>
-    <div className="min-w-0 flex-1"><div className="truncate text-[12px] font-bold">{reminder.title}</div><div className="mt-1 text-[10px] text-hesabu-muted">{reminder.amount ? `${money(reminder.amount)} · ` : ''}{due}</div></div>
-    <button className="icon-button !h-7 !w-7" onClick={onEdit} title="Edit reminder" aria-label={`Edit reminder: ${reminder.title}`}><Settings2 size={13} /></button>{reminder.done ? <button className="tiny-done" onClick={onDone} title="Reopen reminder" aria-label={`Reopen reminder: ${reminder.title}`}><RotateCcw size={13} /></button> : <button className="tiny-done" onClick={onDone} title="Mark as done" aria-label={`Mark reminder as done: ${reminder.title}`}><Check size={14} /></button>}
-  </div>;
-}
-
-function StockStatus({ item }: { item: StockItem }) {
-  const critical = item.quantity <= Math.max(1, Math.floor(item.lowStockAt / 2));
-  const low = item.quantity <= item.lowStockAt;
-  const label = critical ? 'Almost out' : low ? 'Running low' : 'In stock';
-  return <span className={cn('stock-status', critical ? 'stock-critical' : low ? 'stock-low' : 'stock-good')}><span className="status-led" />{label}</span>;
-}
-
-function App() {
-  const [data, setData] = useState<AppData>(() => readSavedData());
-  const [showWelcome, setShowWelcome] = useState(() => !hasSavedData());
-  const [section, setSection] = useState<Section>('home');
-  const [modal, setModal] = useState<ModalState>(null);
-  const [pending, setPending] = useState<TransactionDraft | null>(null);
-  const [quickText, setQuickText] = useState('');
-  const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'unsupported'>('idle');
-  const voiceLanguage = 'en-KE';
-  const [typeChoice, setTypeChoice] = useState<TransactionType | 'auto'>('auto');
-  const [query, setQuery] = useState('');
-  const [debtDirection, setDebtDirection] = useState<'owed-to-us' | 'we-owe'>('owed-to-us');
-  const [reportPeriod, setReportPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
-  const [reportDate, setReportDate] = useState(today());
-  const [showAllTransactions, setShowAllTransactions] = useState(false);
-  const [showAllReminders, setShowAllReminders] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [filterTransactions, setFilterTransactions] = useState<'all' | TransactionType>('all');
-  const [transactionSearch, setTransactionSearch] = useState('');
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-
-  useEffect(() => { if (!showWelcome) saveData(data); }, [data, showWelcome]);
-
-  const notify = (message: string) => setToastMessage(message);
-  const closeToast = () => setToastMessage('');
-  const closeModal = () => setModal(null);
-  const updateData = (updater: (current: AppData) => AppData) => setData(current => updater(current));
-
-  const chooseDemo = () => {
-    const demo = makeDemoData();
-    setData(demo); saveData(demo); setShowWelcome(false); setSection('home');
-  };
-  const createLocalShop = (values: { name: string; owner: string; phone: string; businessType: string }) => {
-    const fresh: AppData = {
-      shopInfo: { name: values.name.trim(), owner: values.owner.trim(), phone: values.phone.trim(), businessType: values.businessType },
-      transactions: [], customers: [], stock: [], reminders: [],
-    };
-    setData(fresh); saveData(fresh); setShowWelcome(false); setSection('home');
-  };
-
-  const todayTransactions = useMemo(() => data.transactions.filter(t => t.date === today()), [data.transactions]);
-  const todaysIn = useMemo(() => cashIn(todayTransactions), [todayTransactions]);
-  const todaysOut = useMemo(() => cashOut(todayTransactions), [todayTransactions]);
-  const todaysCredit = useMemo(() => creditGiven(todayTransactions), [todayTransactions]);
-  const outstanding = useMemo(() => data.customers.filter(c => c.balance > 0).reduce((sum, c) => sum + c.balance, 0), [data.customers]);
-  const lowStock = useMemo(() => data.stock.filter(s => s.quantity <= s.lowStockAt), [data.stock]);
-  const allReminders = useMemo(() => [...data.reminders].sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [data.reminders]);
-  const activeReminders = useMemo(() => allReminders.filter(r => !r.done), [allReminders]);
-  const report = useMemo(() => buildReport(data, reportPeriod, reportDate), [data, reportPeriod, reportDate]);
-
-  const navigate = (next: Section) => {
-    setSection(next); setQuery(''); setPending(null); setProfileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const applyTransaction = (draft: TransactionDraft) => {
-    let createdName = draft.customerName?.trim();
-    const current = data;
-    let nextCustomers = [...current.customers];
-    let customer = createdName ? nextCustomers.find(c => c.name.toLowerCase() === createdName?.toLowerCase()) : undefined;
-    if ((draft.type === 'credit' || draft.type === 'payment') && createdName && !customer) {
-      customer = { id: id('person'), name: createdName, phone: '', balance: 0, dueDate: draft.dueDate, kind: 'customer' };
-      nextCustomers = [customer, ...nextCustomers];
-    }
-    if (customer) {
-      const balanceDelta = draft.type === 'credit' ? draft.amount : draft.type === 'payment' ? -draft.amount : 0;
-      // Keep any overpayment visible as customer credit instead of silently discarding it.
-      nextCustomers = nextCustomers.map(c => c.id === customer?.id ? { ...c, balance: c.balance + balanceDelta, dueDate: draft.type === 'credit' ? draft.dueDate : c.dueDate } : c);
-    }
-    const matchedStock = draft.stockItemName ? current.stock.find(s => s.name.toLowerCase() === draft.stockItemName?.toLowerCase()) : undefined;
-    const txn: Transaction = {
-      id: id('txn'), type: draft.type, description: draft.description.trim() || draft.summary,
-      amount: Math.max(0, Math.round(draft.amount)), date: today(), time: currentTime(),
-      customerId: customer?.id, customerName: createdName, dueDate: draft.dueDate,
-      stockItemId: matchedStock?.id, stockQuantityDelta: draft.stockQuantityDelta,
-      category: draft.category,
-    };
-    const effectiveStockDelta = matchedStock && draft.stockQuantityDelta !== undefined && draft.stockQuantityDelta < 0
-      ? -Math.min(matchedStock.quantity, Math.abs(draft.stockQuantityDelta))
-      : draft.stockQuantityDelta;
-    txn.stockQuantityDelta = effectiveStockDelta;
-    const nextStock = matchedStock && effectiveStockDelta !== undefined
-      ? current.stock.map(s => s.id === matchedStock.id ? { ...s, quantity: Math.max(0, s.quantity + effectiveStockDelta), lastRestocked: effectiveStockDelta > 0 ? today() : s.lastRestocked } : s)
-      : current.stock;
-    updateData(c => ({ ...c, customers: nextCustomers, stock: nextStock, transactions: [txn, ...c.transactions] }));
-    setPending(null); setQuickText(''); setTypeChoice('auto');
-    notify('Imeandikwa. Record saved.');
-    if (navigator.vibrate) navigator.vibrate(18);
-  };
-
-  const handleQuickSubmit = (event?: FormEvent) => {
-    event?.preventDefault();
-    const parsed = parseTransaction(quickText, data);
-    if (!parsed) { notify('Add the amount so Hesabu can record it.'); return; }
-    if (typeChoice !== 'auto') {
-      parsed.type = typeChoice;
-      if (typeChoice === 'credit' && !parsed.dueDate) parsed.dueDate = addDays(today(), 7);
-      const typeName = TYPE_META[typeChoice].label.toLowerCase();
-      parsed.summary = `${typeName}${parsed.customerName ? ` for ${parsed.customerName}` : ''} — ${money(parsed.amount)}`;
-      if (parsed.stockItemName && (typeChoice === 'sale' || typeChoice === 'credit')) parsed.stockQuantityDelta = -(parsed.stockQuantityDelta ? Math.abs(parsed.stockQuantityDelta) : 1);
-      else if (typeChoice === 'expense' && parsed.stockQuantityDelta !== undefined && parsed.stockQuantityDelta < 0) parsed.stockQuantityDelta = undefined;
-      else if (typeChoice === 'payment') parsed.stockQuantityDelta = undefined;
-    }
-    if (parsed.type === 'credit' && !parsed.customerName) {
-      const name = quickText.trim().match(/\b([A-Z][a-z]{2,})\b/)?.[1];
-      if (name && !['I', 'Bought', 'Supplier', 'Cash', 'Sale'].includes(name)) parsed.customerName = name;
-    }
-    setPending(parsed);
-  };
-
-  const startVoice = () => {
-    const Recognition = (window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition
-      ?? (window as Window & { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
-    if (!Recognition) { setVoiceState('unsupported'); notify('Voice typing is not available in this browser. Type the transaction instead.'); return; }
-    try {
-      const recognition = new Recognition();
-      recognition.lang = voiceLanguage; recognition.interimResults = false; recognition.maxAlternatives = 1;
-      setVoiceState('listening');
-      recognition.onresult = event => {
-        const text = event.results?.[0]?.[0]?.transcript ?? '';
-        setQuickText(text);
-        setVoiceState('idle');
-        const parsed = parseTransaction(text, data);
-        if (parsed) setPending(parsed);
-        else notify('I heard you, but could not find the amount. Check the words and try again.');
-      };
-      recognition.onerror = () => { setVoiceState('idle'); notify('Could not hear that clearly. Try again or type it.'); };
-      recognition.onend = () => setVoiceState(s => s === 'listening' ? 'idle' : s);
-      recognition.start();
-    } catch { setVoiceState('idle'); notify('Microphone is unavailable. Type the transaction instead.'); }
-  };
-
-  const deleteTransaction = (transaction: Transaction) => {
-    if (!window.confirm(`Remove “${transaction.description}” from the ledger?`)) return;
-    updateData(current => {
-      let customers = current.customers;
-      if (transaction.customerId && (transaction.type === 'credit' || transaction.type === 'payment' || (transaction.type === 'expense' && (transaction.category === 'Supplier payment' || transaction.category === 'Customer refund')))) {
-        const restore = transaction.type === 'credit' ? -transaction.amount : transaction.type === 'payment' ? transaction.amount : -transaction.amount;
-        customers = customers.map(c => c.id === transaction.customerId ? { ...c, balance: c.balance + restore } : c);
-      }
-      const stock = transaction.stockItemId && transaction.stockQuantityDelta !== undefined
-        ? current.stock.map(s => s.id === transaction.stockItemId ? { ...s, quantity: Math.max(0, s.quantity - transaction.stockQuantityDelta!) } : s)
-        : current.stock;
-      return { ...current, customers, stock, transactions: current.transactions.filter(t => t.id !== transaction.id) };
-    });
-    setModal(null); notify('Transaction removed.');
-  };
-
-  const saveTransactionEdit = (transaction: Transaction, values: { description: string; amount: string; date: string; time: string; dueDate: string }) => {
-    const amount = Number(values.amount);
-    if (!Number.isFinite(amount) || amount <= 0) { notify('Amount must be greater than zero.'); return; }
-    if (!values.date || !values.time) { notify('Choose the date and time for this entry.'); return; }
-    const updated: Transaction = {
-      ...transaction,
-      description: values.description.trim() || transaction.description,
-      amount: Math.round(amount),
-      date: values.date,
-      time: values.time,
-      dueDate: values.dueDate || undefined,
-    };
-    const balanceEffect = (tx: Transaction) => {
-      if (tx.type === 'credit') return tx.amount;
-      if (tx.type === 'payment') return -tx.amount;
-      if (tx.type === 'expense' && (tx.category === 'Supplier payment' || tx.category === 'Customer refund')) return tx.amount;
-      return 0;
-    };
-    const balanceAdjustment = balanceEffect(updated) - balanceEffect(transaction);
-    updateData(current => ({
-      ...current,
-      customers: transaction.customerId && balanceAdjustment !== 0
-        ? current.customers.map(c => c.id === transaction.customerId ? { ...c, balance: c.balance + balanceAdjustment } : c)
-        : current.customers,
-      transactions: current.transactions.map(tx => tx.id === transaction.id ? updated : tx),
-    }));
-    setModal(null);
-    notify('Transaction details updated. Account balances were adjusted.');
-  };
-
-  const addCustomer = (values: { name: string; phone: string; balance: string; direction: 'owed-to-us' | 'we-owe'; kind: 'customer' | 'supplier'; dueDate: string; note: string }) => {
-    const personName = values.name.trim();
-    if (data.customers.some(c => c.name.trim().toLowerCase() === personName.toLowerCase())) { notify('A person with that name is already saved. Open their existing record instead.'); return; }
-    const amount = Math.max(0, Number(values.balance) || 0);
-    const record: Customer = { id: id('person'), name: values.name.trim(), phone: values.phone.trim(), balance: values.direction === 'owed-to-us' ? amount : -amount, kind: values.kind, dueDate: values.dueDate || undefined, note: values.note.trim() || undefined };
-    updateData(current => ({ ...current, customers: [record, ...current.customers] }));
-    setModal(null); notify('Contact added.');
-  };
-
-  const recordPayment = (customer: Customer, amountValue: string, note: string) => {
-    const entered = Math.max(0, Number(amountValue) || 0);
-    const supplierPayment = customer.kind === 'supplier' || (!customer.kind && customer.balance < 0);
-    const refundingCustomerCredit = customer.kind === 'customer' && customer.balance < 0;
-    const amount = supplierPayment || refundingCustomerCredit ? Math.min(Math.abs(customer.balance), entered) : entered;
-    if (!amount) return;
-    const txn: Transaction = { id: id('txn'), type: supplierPayment || refundingCustomerCredit ? 'expense' : 'payment', description: note.trim() || (supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer credit refund' : 'Debt payment received'), amount, date: today(), time: currentTime(), customerId: customer.id, customerName: customer.name, category: supplierPayment ? 'Supplier payment' : refundingCustomerCredit ? 'Customer refund' : undefined };
-    updateData(current => ({ ...current, customers: current.customers.map(c => c.id === customer.id ? { ...c, balance: supplierPayment || refundingCustomerCredit ? Math.min(0, c.balance + amount) : c.balance - amount } : c), transactions: [txn, ...current.transactions] }));
-    setModal(null); setSection('debts'); notify(`${money(amount)} ${supplierPayment ? 'paid to' : refundingCustomerCredit ? 'returned to' : 'received from'} ${customer.name}.`);
-  };
-
-  const saveStock = (values: { name: string; quantity: string; unit: string; threshold: string; cost: string }) => {
-    const itemName = values.name.trim();
-    if (data.stock.some(s => s.name.trim().toLowerCase() === itemName.toLowerCase())) { notify('That item is already tracked. Open its stock card to restock or adjust it.'); return; }
-    const record: StockItem = { id: id('stock'), name: itemName, quantity: Math.max(0, Number(values.quantity) || 0), unit: values.unit.trim() || 'pcs', lowStockAt: Math.max(0, Number(values.threshold) || 0), lastRestocked: today(), costPerUnit: Number(values.cost) || undefined };
-    updateData(current => ({ ...current, stock: [record, ...current.stock] }));
-    setModal(null); notify(`${record.name} added to stock.`);
-  };
-
-  const saveStockDetails = (item: StockItem, values: { name: string; unit: string; threshold: string; cost: string }) => {
-    const name = values.name.trim();
-    if (!name) { notify('Enter a product name.'); return; }
-    if (data.stock.some(s => s.id !== item.id && s.name.trim().toLowerCase() === name.toLowerCase())) { notify('Another stock item already uses that name.'); return; }
-    updateData(current => ({ ...current, stock: current.stock.map(s => s.id === item.id ? {
-      ...s,
-      name,
-      unit: values.unit.trim() || s.unit,
-      lowStockAt: Math.max(0, Number(values.threshold) || 0),
-      costPerUnit: values.cost.trim() ? Math.max(0, Number(values.cost) || 0) : undefined,
-    } : s) }));
-    setModal(null);
-    notify(`${name} details updated.`);
-  };
-
-  const updateStock = (item: StockItem, amountValue: string, mode: 'restock' | 'adjust') => {
-    const amount = Math.max(0, Number(amountValue) || 0);
-    updateData(current => ({ ...current, stock: current.stock.map(s => s.id === item.id ? { ...s, quantity: mode === 'restock' ? s.quantity + amount : amount, lastRestocked: mode === 'restock' ? today() : s.lastRestocked } : s) }));
-    setModal(null); notify(mode === 'restock' ? `${item.name} stock updated.` : `${item.name} quantity adjusted.`);
-  };
-
-  const saveReminder = (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }, existing?: Reminder) => {
-    const reminder: Reminder = { id: existing?.id ?? id('rem'), title: values.title.trim(), detail: values.detail.trim(), amount: values.amount.trim() ? Math.max(0, Number(values.amount) || 0) : undefined, dueDate: values.dueDate || today(), kind: values.kind, done: existing?.done ?? false };
-    updateData(current => ({ ...current, reminders: existing ? current.reminders.map(r => r.id === existing.id ? reminder : r) : [reminder, ...current.reminders] }));
-    setModal(null); notify(existing ? 'Reminder updated.' : 'Reminder added.');
-  };
-
-  const deleteReminder = (reminder: Reminder) => {
-    if (!window.confirm(`Delete reminder “${reminder.title}”? This cannot be undone.`)) return;
-    updateData(current => ({ ...current, reminders: current.reminders.filter(r => r.id !== reminder.id) }));
-    setModal(null); notify('Reminder deleted.');
-  };
-
-  const toggleReminder = (reminder: Reminder) => {
-    updateData(current => ({ ...current, reminders: current.reminders.map(r => r.id === reminder.id ? { ...r, done: !r.done } : r) }));
-    notify(reminder.done ? 'Reminder reopened.' : 'Marked as done.');
-  };
-
-  const shareReport = async () => {
-    const url = `https://wa.me/?text=${encodeURIComponent(report.text)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
-  const copyReport = async () => {
-    try {
-      await navigator.clipboard.writeText(report.text);
-      notify('Report copied to clipboard.');
-    } catch {
-      const textarea = document.createElement('textarea'); textarea.value = report.text; document.body.appendChild(textarea); textarea.select();
-      const ok = document.execCommand('copy'); textarea.remove(); notify(ok ? 'Report copied to clipboard.' : 'Copy is not available in this browser.');
-    }
-  };
-
-  const updateProfile = (name: string, owner: string, phone: string, businessType: string) => {
-    updateData(current => ({ ...current, shopInfo: { name: name.trim(), owner: owner.trim(), phone: phone.trim(), businessType } }));
-    setModal(null); notify('Shop details saved.');
-  };
-
-  const resetDemo = () => {
-    if (!window.confirm('Reset this browser to the original Mama Grace demo ledger? Your saved changes will be lost.')) return;
-    const original = makeDemoData(); setData(original); saveData(original); setModal(null); setSection('home'); notify('Demo ledger reset.');
-  };
-
-  const downloadFile = (filename: string, contents: string, mimeType: string) => {
-    const blob = new Blob([contents], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a'); link.href = url; link.download = filename;
-    document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1200);
-  };
-  const exportBackup = () => {
-    downloadFile(`hesabu-backup-${today()}.json`, JSON.stringify(data, null, 2), 'application/json');
-    notify('Backup downloaded. Keep it somewhere safe.');
-  };
-  const exportCsv = () => {
-    const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const rows = [['Date', 'Time', 'Type', 'Description', 'Amount KES', 'Person', 'Due date', 'Category'], ...data.transactions.map(t => [t.date, t.time, t.type, t.description, t.amount, t.customerName ?? '', t.dueDate ?? '', t.category ?? ''])];
-    downloadFile(`hesabu-transactions-${today()}.csv`, rows.map(row => row.map(escape).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
-    notify('Transactions exported to CSV.');
-  };
-  const importBackup = async (file: File) => {
-    try {
-      const parsed = JSON.parse(await file.text()) as Partial<AppData>;
-      if (!parsed.shopInfo || typeof parsed.shopInfo.name !== 'string' || !Array.isArray(parsed.transactions) || !Array.isArray(parsed.customers) || !Array.isArray(parsed.stock)) throw new Error('invalid backup');
-      if (!window.confirm('Restore this backup and replace the data in this browser?')) return;
-      const backup: AppData = { ...makeDemoData(), ...parsed, shopInfo: { ...makeDemoData().shopInfo, ...parsed.shopInfo }, customers: parsed.customers.map(c => ({ ...c, kind: c.kind ?? (c.balance < 0 ? 'supplier' as const : 'customer' as const) })), transactions: parsed.transactions, stock: parsed.stock, reminders: Array.isArray(parsed.reminders) ? parsed.reminders : [] };
-      setData(backup); saveData(backup); setModal(null); notify('Backup restored successfully.');
-    } catch { notify('That file does not look like a Hesabu backup. Nothing was changed.'); }
-  };
-
-  const editDraft = (values: { type: TransactionType; description: string; amount: string; customerName: string; dueDate: string; stockItemName: string }) => {
-    if (!pending) return;
-    const item = data.stock.find(s => s.name === values.stockItemName);
-    const amount = Math.max(0, Number(values.amount) || 0);
-    const next: TransactionDraft = {
-      ...pending, type: values.type, description: values.description.trim(), amount,
-      customerName: values.customerName.trim() || undefined, dueDate: values.type === 'credit' ? values.dueDate || addDays(today(), 7) : undefined,
-      stockItemName: item?.name,
-      stockQuantityDelta: item ? (values.type === 'sale' || values.type === 'credit' ? -(pending.stockQuantityDelta ? Math.abs(pending.stockQuantityDelta) : 1) : values.type === 'expense' ? (pending.stockQuantityDelta && pending.stockQuantityDelta > 0 ? pending.stockQuantityDelta : undefined) : undefined) : undefined,
-      summary: `${TYPE_META[values.type].label}${values.customerName ? ` for ${values.customerName}` : ''} — ${money(amount)}`,
-    };
-    setPending(next); setModal(null);
-  };
-
-  const sortedTransactions = useMemo(() => [...data.transactions].sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`)), [data.transactions]);
-  const pendingStockItem = pending?.stockItemName ? data.stock.find(s => s.name.toLowerCase() === pending.stockItemName?.toLowerCase()) : undefined;
-  const pendingStockExceedsCount = Boolean(pendingStockItem && pending?.stockQuantityDelta !== undefined && pending.stockQuantityDelta < 0 && Math.abs(pending.stockQuantityDelta) > pendingStockItem.quantity);
-
-  return <div className="app-shell">
-    <header className="app-header">
-      <div className="header-inner">
-        <button className="brand-button" onClick={() => navigate('home')} aria-label="Hesabu home"><Logo /></button>
-        <nav className="desktop-nav" aria-label="Main navigation">
-          {NAV.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => navigate(item.id)} className={cn('nav-link', section === item.id && 'nav-link-active')}><Icon size={16} strokeWidth={1.9} />{item.label}</button>; })}
-        </nav>
-        <div className="header-tools">
-          <div className="hidden text-right sm:block"><div className="text-[11px] font-bold text-hesabu-ink">{shortDay(today())}</div><div className="mt-0.5 text-[10px] text-hesabu-muted">Local ledger</div></div>
-          <button className="profile-chip" onClick={() => setProfileMenuOpen(v => !v)} aria-label="Shop settings"><span className="profile-avatar">{(data.shopInfo.owner || data.shopInfo.name || 'H').slice(0, 1).toUpperCase()}</span><ChevronDown size={14} className="text-hesabu-muted" /></button>
-          {profileMenuOpen && <div className="profile-menu"><div className="border-b border-hesabu-line px-3 pb-3 pt-1"><div className="text-xs font-bold">{data.shopInfo.name}</div><div className="mt-1 text-[10px] text-hesabu-muted">{data.shopInfo.businessType}</div></div><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'profile' }); }}><Settings2 size={15} /> Shop details</button><button onClick={() => { setProfileMenuOpen(false); setModal({ kind: 'settings' }); }}><SlidersHorizontal size={15} /> Preferences</button></div>}
-        </div>
-      </div>
-    </header>
-
-    <main className="app-main">
-      {section === 'home' && <>
-
-        <section className="welcome-row">
-          <div><div className="eyebrow">{fullDateText()}</div><h1 className="welcome-title">Business overview</h1><p className="welcome-copy">{data.shopInfo.name} · {data.shopInfo.owner ? `Welcome, ${data.shopInfo.owner}` : 'Your daily overview'}</p></div>
-          <button className="today-pill" onClick={() => { setReportDate(today()); setReportPeriod('daily'); navigate('reports'); }}><CalendarDays size={15}/><span>Today's report</span><ArrowRight size={13}/></button>
-        </section>
-        <section className="balance-panel" aria-label="Today's net cash position">
-          <div className="balance-panel-copy"><span className="balance-eyebrow"><span className="balance-status"/> TODAY'S NET CASH</span><div className="balance-total">{money(todaysIn - todaysOut)}</div><div className="balance-caption">Cash received less expenses recorded today</div></div>
-          <div className="balance-panel-bottom"><div><span>Money in</span><strong>+{money(todaysIn)}</strong></div><span className="balance-divider"/><div><span>Money out</span><strong>−{money(todaysOut)}</strong></div><button aria-label="Open financial reports" className="balance-view" onClick={() => navigate('reports')}><ArrowUpRight size={19}/></button></div>
-        </section>
-        <section className="action-panel" aria-label="Quick actions"><div className="action-panel-top"><strong>Quick actions</strong><span>Your everyday tools</span></div>
-          <div className="quick-actions">
-            <button onClick={() => {setTypeChoice('sale'); document.getElementById('transaction-entry')?.scrollIntoView({behavior:'smooth'});}}><span className="qa-icon qa-sale"><ArrowDownLeft size={21}/></span><span>Record sale</span></button>
-            <button onClick={() => {setTypeChoice('expense'); document.getElementById('transaction-entry')?.scrollIntoView({behavior:'smooth'});}}><span className="qa-icon qa-expense"><ReceiptText size={21}/></span><span>Add expense</span></button>
-            <button onClick={() => navigate('stock')}><span className="qa-icon qa-stock"><Package size={21}/></span><span>Inventory</span></button>
-            <button onClick={() => navigate('reports')}><span className="qa-icon qa-reports"><FileSpreadsheet size={21}/></span><span>Reports</span></button>
-            <button onClick={() => navigate('debts')}><span className="qa-icon qa-customers"><Users size={21}/></span><span>Customers</span></button>
-            <button onClick={shareReport}><span className="qa-icon qa-whatsapp"><Share2 size={21}/></span><span>WhatsApp</span></button>
-          </div>
-        </section>
-        <section className="metrics-grid" aria-label="Today's accounting summary">
-          <Metric label="Cash sales" value={todayTransactions.filter(t => t.type === 'sale').reduce((sum,t) => sum + t.amount, 0)} hint="Sales paid today" tone="green" icon={TrendingUp}/>
-          <Metric label="Expenses" value={todaysOut} hint="Money paid out" tone="red" icon={TrendingDown}/>
-          <Metric label="Credit sales" value={todaysCredit} hint="Not yet collected" tone="amber" icon={HandCoins}/>
-        </section>
-        <div className="home-grid">
-          <div className="home-primary">
-            <section id="transaction-entry" className="surface log-surface">
-              <div className="section-heading-row"><div><div className="eyebrow">QUICK ENTRY</div><h2 className="surface-title">Record a transaction</h2><p className="surface-subtitle">Record sales, expenses and payments in one place.</p></div><span className="keyboard-shortcut">FAST ENTRY</span></div>
-              <div className="type-picker" role="group" aria-label="Transaction type">
-                {(['auto', 'sale', 'credit', 'expense', 'payment'] as const).map(type => <button key={type} onClick={() => setTypeChoice(type)} className={cn('type-pick', typeChoice === type && 'type-pick-active')}>
-                  {type === 'auto' ? <Sparkles size={15} /> : (() => { const Icon = TYPE_META[type].icon; return <Icon size={15} />; })()}
-                  <span>{type === 'auto' ? 'Auto' : TYPE_META[type].label}</span>
-                </button>)}
-              </div>
-              <form onSubmit={handleQuickSubmit}>
-                <label className="quick-input-wrap"><span className="sr-only">Describe the transaction</span><input value={quickText} onChange={e => setQuickText(e.target.value)} placeholder="e.g. Sold groceries for KES 1,200" className="quick-input" /><button type="button" className={cn('mic-button', voiceState === 'listening' && 'mic-button-listening')} onClick={startVoice} aria-label="Record by voice">{voiceState === 'listening' ? <span className="listening-dot" /> : <Mic2 size={19} />}</button></label>
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row"><Button type="submit" className="flex-1">Review transaction <ArrowRight size={16} /></Button><Button variant="secondary" onClick={() => { setQuickText(''); setPending(null); setTypeChoice('auto'); }} className="sm:!w-[100px]">Clear</Button></div>
-              </form>
-              
-              <div className="helper-row"><span><CheckCircle2 size={13} /> Confirm before it’s saved</span><span className="helper-divider" /><span>English voice input where supported</span></div>
-              {pending && <div className="draft-review" aria-live="polite">
-                <div className="flex items-start gap-3"><div className="draft-check"><Check size={17} /></div><div className="min-w-0 flex-1"><div className="text-[10px] font-bold uppercase tracking-[.13em] text-hesabu-green">Review before saving</div><div className="mt-1 text-[13px] font-bold leading-5 text-hesabu-ink">{pending.summary}</div>{pending.type === 'credit' && <div className="mt-1 text-[11px] text-hesabu-muted">Due {dateText(pending.dueDate ?? addDays(today(), 7), { weekday: 'long', day: 'numeric', month: 'short' })}. This creates a receivable, not cash collected.</div>}{pending.stockQuantityDelta !== undefined && <div className="mt-1 text-[11px] text-hesabu-muted">Stock adjustment: {pending.stockQuantityDelta > 0 ? '+' : ''}{pending.stockQuantityDelta} {pending.stockItemName ?? 'item'}</div>}{pendingStockExceedsCount && pendingStockItem && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-[#8D6321]">Only <b>{pendingStockItem.quantity} {pendingStockItem.unit}</b> tracked. Saving will bring this item’s tracked count to zero. Use “Edit details” if the quantity or product is wrong.</div>}</div><button onClick={() => setPending(null)} className="icon-button !h-7 !w-7" aria-label="Dismiss review"><X size={14} /></button></div>
-                <div className="mt-4 grid grid-cols-2 gap-2"><Button onClick={() => applyTransaction(pending)}><Check size={15} /> Confirm & save</Button><Button variant="outline" onClick={() => setModal({ kind: 'edit-draft' })}>Edit details</Button></div>
-              </div>}
-              <div className="voice-note"><Mic size={15} /><span>Try: “Njeri paid 500 towards her balance” or “Bought stock for 800”.</span></div>
-            </section>
-
-            <section className="surface activity-surface">
-              <div className="section-heading-row"><div><h2 className="surface-title">Recent transactions</h2><p className="surface-subtitle">Your latest entries, in one place.</p></div><button className="text-action" onClick={() => { setShowAllTransactions(v => !v); setFilterTransactions('all'); }}>{showAllTransactions ? 'Show less' : 'View all'} <ArrowRight size={14} /></button></div>
-              {showAllTransactions && <div className="mb-3 flex gap-2"><label className="search-field flex-1"><Search size={15} /><input value={transactionSearch} onChange={e => setTransactionSearch(e.target.value)} placeholder="Search transactions" /></label><select className="filter-select" value={filterTransactions} onChange={e => setFilterTransactions(e.target.value as 'all' | TransactionType)} aria-label="Filter transaction type"><option value="all">All</option>{Object.entries(TYPE_META).map(([type, meta]) => <option key={type} value={type}>{meta.label}</option>)}</select></div>}
-              {sortedTransactions.length === 0 ? <EmptyState title="No entries yet" detail="Your transactions will appear here as soon as you log the first one." /> : <div className="divide-y divide-hesabu-line/80">{sortedTransactions.filter(t => !showAllTransactions || (filterTransactions === 'all' || t.type === filterTransactions)).filter(t => !showAllTransactions || `${t.description} ${t.customerName ?? ''}`.toLowerCase().includes(transactionSearch.toLowerCase())).slice(0, showAllTransactions ? 80 : 5).map(tx => <TransactionRow key={tx.id} transaction={tx} onClick={() => setModal({ kind: 'transaction', transactionId: tx.id })} onDelete={() => deleteTransaction(tx)} compact={!showAllTransactions} />)}</div>}
-              <ActivityProgress transactions={todayTransactions} />
-            </section>
-          </div>
-
-          <aside className="home-aside">
-            <section className="surface aside-surface debt-summary">
-              <div className="flex items-start justify-between gap-3"><div><div className="eyebrow">CREDIT BOOK</div><h2 className="surface-title mt-1">Customer balances</h2></div><span className="aside-icon"><Users size={18} /></span></div>
-              <div className="mt-5 font-display text-[28px] font-extrabold tracking-[-.06em] text-hesabu-ink">{money(outstanding)}</div>
-              <div className="mt-1 text-[11px] text-hesabu-muted">Owed to your shop by {data.customers.filter(c => c.balance > 0).length} people</div>
-              <div className="mt-4 flex items-center justify-between border-t border-hesabu-line pt-3"><span className="text-[10px] font-semibold text-hesabu-muted">Oldest outstanding</span><span className="text-[11px] font-bold text-[#B96D3C]">{data.customers.filter(c => c.balance > 0 && c.dueDate).some(c => daysUntil(c.dueDate!) < 0) ? 'Needs follow-up' : 'On track'}</span></div>
-              <Button variant="secondary" className="mt-4 w-full" onClick={() => navigate('debts')}>Manage balances <ArrowRight size={15} /></Button>
-            </section>
-
-            <section className="surface aside-surface">
-              <div className="section-heading-row !items-start"><div><div className="eyebrow">DON’T FORGET</div><h2 className="surface-title mt-1">Upcoming</h2></div><button className="icon-button" onClick={() => setModal({ kind: 'reminder' })} aria-label="Add reminder"><Plus size={18} /></button></div>
-              {(showAllReminders ? allReminders : activeReminders.slice(0, 3)).length ? <div className="mt-2">{(showAllReminders ? allReminders : activeReminders.slice(0, 3)).map(reminder => <ReminderLine key={reminder.id} reminder={reminder} onDone={() => toggleReminder(reminder)} onEdit={() => setModal({ kind: 'reminder', reminder })} />)}</div> : <p className="py-4 text-xs text-hesabu-muted">{allReminders.length ? 'You’re all caught up. Open all reminders to review completed items.' : 'No reminders yet. Add a bill or follow-up so it doesn’t get forgotten.'}</p>}
-              <div className="mt-3 flex items-center justify-between border-t border-hesabu-line pt-3"><button onClick={() => setShowAllReminders(v => !v)} className="text-action">{showAllReminders ? 'Show fewer' : 'All reminders'} <ArrowRight size={13} /></button><button onClick={() => setModal({ kind: 'reminder' })} className="text-action">Add new <Plus size={13} /></button></div>
-            </section>
-
-            <section className="stock-callout">
-              <div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold uppercase tracking-[.14em] text-[#A0C9AE]">STOCK CHECK</div><div className="mt-2 font-display text-[17px] font-bold text-white">{lowStock.length ? `${lowStock.length} items need a look` : 'Stock is looking good'}</div></div><div className="stock-callout-icon"><Package size={19} /></div></div>
-              {lowStock.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{lowStock.slice(0, 3).map(s => <span key={s.id} className="stock-callout-chip">{s.name}</span>)}</div>}
-              <button className="stock-callout-action" onClick={() => navigate('stock')}>View inventory <ArrowRight size={14} /></button>
-            </section>
-            <div className="privacy-note"><div className="privacy-lock"><Settings2 size={14} /></div><span><b>Your ledger stays on this device.</b><br />This prototype saves data in this browser only.</span></div>
-          </aside>
-        </div>
-      </>}
-
-      {section === 'debts' && <DebtsSection data={data} query={query} setQuery={setQuery} direction={debtDirection} setDirection={setDebtDirection} onAdd={() => setModal({ kind: 'customer' })} onPayment={customerId => setModal({ kind: 'payment', customerId })} onReminder={customer => { const text = `Hello ${customer.name}, this is a friendly reminder from ${data.shopInfo.name} regarding your balance of ${money(customer.balance)}. Please let us know when you expect to make payment. Thank you.`; const digits = customer.phone.replace(/\D/g, ''); const phone = digits.startsWith('0') ? `254${digits.slice(1)}` : digits.startsWith('254') ? digits : `254${digits}`; if (!/^254[17]\d{8}$/.test(phone)) { notify('Please add a valid Kenyan phone number for this customer.'); return; } window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); }} />}
-      {section === 'stock' && <StockSection data={data} query={query} setQuery={setQuery} onAdd={() => setModal({ kind: 'stock' })} onEdit={itemId => setModal({ kind: 'stock-edit', itemId })} onUpdate={(itemId, mode) => setModal({ kind: 'stock-update', itemId, mode })} />}
-      {section === 'reports' && <ReportsSection data={data} report={report} reportPeriod={reportPeriod} setReportPeriod={setReportPeriod} reportDate={reportDate} setReportDate={setReportDate} onShare={shareReport} onCopy={copyReport} />}
-    </main>
-
-    <nav className="mobile-nav" aria-label="Primary navigation">{NAV.map(item => { const Icon = item.icon; return <button key={item.id} onClick={() => navigate(item.id)} className={cn('mobile-nav-item', section === item.id && 'mobile-nav-active')}><span className="mobile-nav-icon"><Icon size={21} strokeWidth={section === item.id ? 2.2 : 1.8} /></span><span>{item.label}</span>{section === item.id && <span className="mobile-nav-dot" />}</button>; })}</nav>
-
-    {modal?.kind === 'customer' && <CustomerModal onClose={closeModal} onSave={addCustomer} />}
-    {modal?.kind === 'payment' && data.customers.find(c => c.id === modal.customerId) && <PaymentModal customer={data.customers.find(c => c.id === modal.customerId)!} onClose={closeModal} onSave={recordPayment} />}
-    {modal?.kind === 'stock' && <StockModal onClose={closeModal} onSave={saveStock} />}
-    {modal?.kind === 'stock-update' && data.stock.find(s => s.id === modal.itemId) && <StockUpdateModal item={data.stock.find(s => s.id === modal.itemId)!} mode={modal.mode} onClose={closeModal} onSave={updateStock} />}
-    {modal?.kind === 'stock-edit' && data.stock.find(s => s.id === modal.itemId) && <StockEditModal item={data.stock.find(s => s.id === modal.itemId)!} onClose={closeModal} onSave={saveStockDetails} />}
-    {modal?.kind === 'reminder' && <ReminderModal reminder={modal.reminder} onClose={closeModal} onSave={values => saveReminder(values, modal.reminder)} onDelete={deleteReminder} />}
-    {modal?.kind === 'profile' && <ProfileModal data={data} onClose={closeModal} onSave={updateProfile} />}
-    {modal?.kind === 'settings' && <SettingsModal onClose={closeModal} onReset={resetDemo} onProfile={() => setModal({ kind: 'profile' })} onExportBackup={exportBackup} onExportCsv={exportCsv} onImportBackup={importBackup} />}
-    {modal?.kind === 'edit-draft' && pending && <EditDraftModal draft={pending} items={data.stock} onClose={closeModal} onSave={editDraft} />}
-    {modal?.kind === 'transaction' && data.transactions.find(t => t.id === modal.transactionId) && <TransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} customer={data.customers.find(c => c.id === data.transactions.find(t => t.id === modal.transactionId)?.customerId)} onClose={closeModal} onEdit={transaction => setModal({ kind: 'edit-transaction', transactionId: transaction.id })} onDelete={deleteTransaction} />}
-    {modal?.kind === 'edit-transaction' && data.transactions.find(t => t.id === modal.transactionId) && <EditTransactionModal transaction={data.transactions.find(t => t.id === modal.transactionId)!} onClose={closeModal} onSave={saveTransactionEdit} />}
-    <WelcomeScreen show={showWelcome} onUseDemo={chooseDemo} onCreateShop={createLocalShop} />
-    <Toast message={toastMessage} onClose={closeToast} />
-  </div>;
-}
-
-interface SpeechRecognitionLike {
-  lang: string; interimResults: boolean; maxAlternatives: number;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: (() => void) | null; onend: (() => void) | null;
-  start: () => void;
-}
-
-function DebtsSection({ data, query, setQuery, direction, setDirection, onAdd, onPayment, onReminder }: {
-  data: AppData; query: string; setQuery: (v: string) => void; direction: 'owed-to-us' | 'we-owe'; setDirection: (v: 'owed-to-us' | 'we-owe') => void;
-  onAdd: () => void; onPayment: (id: string) => void; onReminder: (customer: Customer) => void;
+function PageHeader({ eyebrow, title, description, actions }: {
+  eyebrow?: string; title: string; description: string; actions?: ReactNode;
 }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const customerList = data.customers.filter(c => direction === 'owed-to-us' ? c.balance > 0 : c.balance < 0).filter(c => `${c.name} ${c.phone}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
-  const total = customerList.reduce((sum, c) => sum + Math.abs(c.balance), 0);
-  return <>
-    <SectionTitle eyebrow="THE CREDIT BOOK" title="Customer & supplier balances" detail="Know who owes you, who you owe, and what needs following up." right={<Button onClick={onAdd}><Plus size={16} /> Add person</Button>} />
-    <div className="debt-overview"><div><div className="text-[10px] font-bold uppercase tracking-[.12em] text-[#B9D8C2]">{direction === 'owed-to-us' ? 'Owed to your shop' : 'Owed by your shop'}</div><div className="mt-2 font-display text-[28px] font-extrabold tracking-[-.06em] text-white">{money(total)}</div><div className="mt-1 text-[11px] text-[#C0D7C7]">{customerList.length} {customerList.length === 1 ? 'person' : 'people'} on this list</div></div><div className="debt-overview-mark"><HandCoins size={27} strokeWidth={1.6} /></div></div>
-    <div className="section-tabs mt-5" role="tablist"><button role="tab" aria-selected={direction === 'owed-to-us'} className={cn(direction === 'owed-to-us' && 'section-tab-active')} onClick={() => setDirection('owed-to-us')}>Wananidai <span>{data.customers.filter(c => c.balance > 0).length}</span></button><button role="tab" aria-selected={direction === 'we-owe'} className={cn(direction === 'we-owe' && 'section-tab-active')} onClick={() => setDirection('we-owe')}>Ninawadai <span>{data.customers.filter(c => c.balance < 0).length}</span></button></div>
-    <div className="debt-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search a name or phone number" /></label><div className="text-[11px] font-medium text-hesabu-muted">Sorted by amount</div></div>
-    <section className="surface list-surface">
-      {customerList.length === 0 ? <EmptyState title={query ? 'No matching person' : 'No outstanding balances'} detail={query ? 'Try another name or phone number.' : direction === 'owed-to-us' ? 'When someone takes goods on credit, they will appear here.' : 'Any unpaid supplier balances will show up here.'} action={!query ? <Button variant="secondary" onClick={onAdd}><Plus size={15} /> Add a person</Button> : undefined} /> : customerList.map(customer => {
-        const overdue = customer.dueDate && daysUntil(customer.dueDate) < 0;
-        const expandedNow = expanded === customer.id;
-        const history = data.transactions.filter(t => t.customerId === customer.id || t.customerName?.toLowerCase() === customer.name.toLowerCase()).sort((a, b) => `${b.date}T${b.time}`.localeCompare(`${a.date}T${a.time}`)).slice(0, 5);
-        return <div key={customer.id} className="person-record">
-          <button className="person-main" onClick={() => setExpanded(expandedNow ? null : customer.id)} aria-expanded={expandedNow}>
-            <span className={cn('person-avatar', customer.balance < 0 && 'person-avatar-supplier')}>{customer.name.slice(0, 1).toUpperCase()}</span>
-            <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="text-[14px] font-bold text-hesabu-ink">{customer.name}</span>{overdue && <span className="overdue-badge">{Math.abs(daysUntil(customer.dueDate!))}d overdue</span>}</span><span className="mt-1 block text-[11px] text-hesabu-muted">{customer.phone || (customer.balance < 0 ? 'Supplier / business' : 'No phone added')}{customer.dueDate ? ` · Due ${shortDay(customer.dueDate)}` : ''}</span></span>
-            <span className="ml-2 shrink-0 text-right"><span className={cn('block text-[14px] font-bold tabular-nums', customer.balance < 0 ? 'text-[#597B9A]' : 'text-[#B94C46]')}>{money(Math.abs(customer.balance))}</span><span className="mt-1 block text-[10px] text-hesabu-muted">{customer.balance < 0 ? (customer.kind === 'customer' ? 'Customer credit' : 'You owe') : 'Owes you'}</span></span><ChevronDown size={16} className={cn('ml-1 shrink-0 text-[#9AA69D] transition-transform', expandedNow && 'rotate-180')} />
-          </button>
-          {expandedNow && <div className="person-expanded"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[11px] font-semibold text-hesabu-muted">Recent history</span><span className="text-[10px] text-hesabu-muted">{history.length} entries</span></div>{history.length ? <div className="mt-2">{history.map(t => <div key={t.id} className="history-line"><span className="truncate">{t.description}</span><span className={cn(t.type === 'expense' ? 'text-[#B94C46]' : t.type === 'credit' ? 'text-[#A4762A]' : 'text-hesabu-green')}>{money(t.amount)}</span></div>)}</div> : <p className="mt-2 text-xs text-hesabu-muted">No linked transactions yet. This balance was entered manually.</p>}
-            <div className="mt-4 flex flex-wrap gap-2">{customer.balance !== 0 && <Button size="sm" onClick={() => onPayment(customer.id)}><Wallet size={14} /> {customer.balance < 0 ? (customer.kind === 'customer' ? 'Return customer credit' : 'Record payment made') : 'Record payment received'}</Button>}{customer.balance > 0 && customer.phone && <Button size="sm" variant="secondary" onClick={() => onReminder(customer)}><Share2 size={14} /> WhatsApp reminder</Button>}</div>
-          </div>}
-        </div>;
-      })}
-    </section>
-    <p className="mx-auto mt-5 max-w-xl text-center text-[10px] leading-4 text-hesabu-muted">A credit adds to the amount owed. A repayment reduces it. Open a transaction to correct its description, amount or date; delete and re-enter it to change its type or linked person.</p>
-  </>;
+  return <div className="page-header">
+    <div className="page-header-copy">
+      {eyebrow && <div className="eyebrow">{eyebrow}</div>}
+      <h1>{title}</h1>
+      <p>{description}</p>
+    </div>
+    {actions && <div className="page-actions">{actions}</div>}
+  </div>;
 }
 
-function StockSection({ data, query, setQuery, onAdd, onEdit, onUpdate }: { data: AppData; query: string; setQuery: (v: string) => void; onAdd: () => void; onEdit: (id: string) => void; onUpdate: (id: string, mode: 'restock' | 'adjust') => void }) {
-  const [filter, setFilter] = useState<'all' | 'low'>('all');
-  const shown = data.stock.filter(s => s.name.toLowerCase().includes(query.toLowerCase())).filter(s => filter === 'all' || s.quantity <= s.lowStockAt).sort((a, b) => (a.quantity / Math.max(1, a.lowStockAt)) - (b.quantity / Math.max(1, b.lowStockAt)));
-  return <>
-    <SectionTitle eyebrow="WHAT’S ON YOUR SHELVES" title="Bidhaa" detail={`${data.stock.length} items on your shelf. Keep an eye on the ones running low.`} right={<Button onClick={onAdd}><Plus size={16} /> Add item</Button>} />
-    <div className="stock-summary-row"><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Items tracked</span><b>{data.stock.length.toString().padStart(2, '0')}</b></div><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Running low</span><b className={lowStockCount(data.stock) ? 'text-[#B8782D]' : 'text-hesabu-green'}>{lowStockCount(data.stock).toString().padStart(2, '0')}</b></div><div className="stock-summary-cell"><span className="text-[10px] font-semibold text-hesabu-muted">Last updated</span><b className="!text-[13px]">Today</b></div></div>
-    <div className="stock-toolbar"><label className="search-field"><Search size={16} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search your stock" /></label><div className="segmented-control"><button className={cn(filter === 'all' && 'segment-active')} onClick={() => setFilter('all')}>All items</button><button className={cn(filter === 'low' && 'segment-active')} onClick={() => setFilter('low')}>Low stock <span className="count-badge">{lowStockCount(data.stock)}</span></button></div></div>
-    {shown.length === 0 ? <section className="surface"><EmptyState title={filter === 'low' ? 'No stock alerts' : 'No matching item'} detail={filter === 'low' ? 'Your quantities are above their reorder levels.' : 'Try another product name or add the item to your shelf list.'} action={filter === 'all' ? <Button onClick={onAdd}><Plus size={15} /> Add item</Button> : undefined} /></section> : <div className="stock-grid">{shown.map(item => <StockCard key={item.id} item={item} onEdit={() => onEdit(item.id)} onRestock={() => onUpdate(item.id, 'restock')} onAdjust={() => onUpdate(item.id, 'adjust')} />)}</div>}
-    <div className="mt-5 flex items-start gap-2 rounded-xl bg-[#EEF4EF] px-4 py-3.5 text-[11px] leading-5 text-[#5F7465]"><CircleHelp size={15} className="mt-0.5 shrink-0" /><span>When a sale or credit includes a known item, Hesabu can adjust its quantity. You can always correct stock counts manually.</span></div>
-  </>;
+function MetricCard({ label, value, note, icon: Icon, tone = 'green', trend }: {
+  label: string; value: string; note: string; icon: LucideIcon;
+  tone?: 'green' | 'blue' | 'amber' | 'slate'; trend?: string;
+}) {
+  return <div className="metric-card">
+    <div className="metric-top">
+      <span>{label}</span>
+      <span className={'metric-icon metric-icon-' + tone}><Icon size={17} strokeWidth={1.9} /></span>
+    </div>
+    <div className="metric-value">{value}</div>
+    <div className="metric-foot">
+      <span>{note}</span>
+      {trend && <span className="metric-trend"><TrendingUp size={12} /> {trend}</span>}
+    </div>
+  </div>;
 }
-function lowStockCount(items: StockItem[]) { return items.filter(s => s.quantity <= s.lowStockAt).length; }
 
-function StockCard({ item, onEdit, onRestock, onAdjust }: { item: StockItem; onEdit: () => void; onRestock: () => void; onAdjust: () => void }) {
-  const percent = Math.min(100, Math.max(0, item.quantity / Math.max(item.lowStockAt * 2, 1) * 100));
-  const critical = item.quantity <= Math.max(1, Math.floor(item.lowStockAt / 2));
-  const low = item.quantity <= item.lowStockAt;
-  return <section className="surface stock-card">
-    <div className="flex items-start justify-between gap-2"><div className="stock-product-icon"><Package size={19} strokeWidth={1.7} /></div><div className="flex items-center gap-2"><StockStatus item={item} /><button type="button" className="icon-button !h-8 !w-8" onClick={onEdit} aria-label={`Edit ${item.name} details`} title="Edit item details"><Settings2 size={14} /></button></div></div>
-    <h3 className="mt-4 font-display text-[16px] font-extrabold tracking-[-.03em]">{item.name}</h3><div className="mt-1 text-[10px] text-hesabu-muted">Last restocked {dateText(item.lastRestocked)}</div>
-    <div className="mt-5 flex items-end justify-between gap-2"><div><span className={cn('font-display text-[28px] font-extrabold leading-none tracking-[-.06em]', critical ? 'text-[#B94C46]' : low ? 'text-[#A4762A]' : 'text-hesabu-ink')}>{item.quantity}</span><span className="ml-1.5 text-[11px] font-semibold text-hesabu-muted">{item.unit}</span></div><div className="text-right text-[10px] leading-4 text-hesabu-muted">Reorder at<br /><b className="text-hesabu-ink">{item.lowStockAt} {item.unit}</b></div></div>
-    <div className="stock-progress"><span className={cn(critical ? 'progress-critical' : low ? 'progress-low' : 'progress-good')} style={{ width: `${percent}%` }} /></div>
-    <div className="mt-4 grid grid-cols-[1.1fr_.9fr] gap-2"><Button size="sm" onClick={onRestock}><Plus size={14} /> Restock</Button><Button size="sm" variant="secondary" onClick={onAdjust}>Edit quantity</Button></div>
+function StatusPill({ children, status }: { children: ReactNode; status: string }) {
+  return <span className={statusClass(status)}><span className="status-dot" />{children}</span>;
+}
+
+function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
+  return <div className="empty-state">
+    <div className="empty-state-icon"><Package size={20} /></div>
+    <strong>{title}</strong>
+    <p>{body}</p>
+    {action && <div className="empty-state-action">{action}</div>}
+  </div>;
+}
+
+function DataTable({ children, headers, className = '' }: {
+  children: ReactNode; headers: string[]; className?: string;
+}) {
+  return <div className={'table-scroll ' + className}>
+    <table className="data-table">
+      <thead><tr>{headers.map(header => <th key={header}>{header}</th>)}</tr></thead>
+      <tbody>{children}</tbody>
+    </table>
+  </div>;
+}
+
+function SectionCard({ title, detail, action, children, className = '' }: {
+  title: string; detail?: string; action?: ReactNode; children: ReactNode; className?: string;
+}) {
+  return <section className={'surface-card ' + className}>
+    <div className="surface-card-header">
+      <div><h2>{title}</h2>{detail && <p>{detail}</p>}</div>
+      {action && <div>{action}</div>}
+    </div>
+    {children}
   </section>;
 }
 
-function ReportsSection({ data, report, reportPeriod, setReportPeriod, reportDate, setReportDate, onShare, onCopy }: {
-  data: AppData; report: ReturnType<typeof buildReport>; reportPeriod: 'daily' | 'weekly' | 'monthly'; setReportPeriod: (v: 'daily' | 'weekly' | 'monthly') => void;
-  reportDate: string; setReportDate: (v: string) => void; onShare: () => void; onCopy: () => void;
-}) {
-  const periodLabel = reportPeriod === 'daily'
-    ? (reportDate === today() ? 'Today’s report' : `Report for ${dateText(reportDate, { day: 'numeric', month: 'short', year: 'numeric' })}`)
-    : reportPeriod === 'weekly' ? `Week ending ${dateText(reportDate, { day: 'numeric', month: 'short' })}`
-    : `Month to ${dateText(reportDate, { day: 'numeric', month: 'short' })}`;
-  return <>
-    <SectionTitle eyebrow="KNOW HOW THE DAY WENT" title="Reports" detail="A clear summary you can send to yourself or someone you trust." right={<span className="report-date-chip"><CalendarDays size={14} /> {dateText(reportDate, { day: 'numeric', month: 'short' })}</span>} />
-    <div className="report-workspace">
-      <section className="report-controls surface">
-        <div className="eyebrow">CHOOSE YOUR VIEW</div>
-        <div className="period-tabs">{(['daily', 'weekly', 'monthly'] as const).map(period => <button key={period} className={cn(reportPeriod === period && 'period-tab-active')} onClick={() => setReportPeriod(period)}>{period[0].toUpperCase() + period.slice(1)}</button>)}</div>
-        <label className="field-wrap mt-5 block"><span className="field-label">Report date</span><input type="date" className="field-control" value={reportDate} max={today()} onChange={e => setReportDate(e.target.value)} /></label>
-        <div className="report-mini-stats"><div><span>Cash in</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div><div><span>Cash out</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div><div><span>Net cash</span><b>{money(report.net)}</b></div></div>
-        <div className="mt-4 rounded-xl bg-[#F5F7F4] px-3.5 py-3 text-[10px] leading-5 text-hesabu-muted">Net cash is money in minus money out. It is not profit because cost of goods sold and other accounting adjustments are not calculated here.</div>
-        <Button className="mt-5 w-full" onClick={onShare}><Share2 size={16} /> Share on WhatsApp</Button><Button variant="secondary" className="mt-2 w-full" onClick={onCopy}><ClipboardList size={16} /> Copy report text</Button>
-      </section>
-      <section className="report-preview-wrap"><div className="mb-3 flex items-center justify-between gap-3"><div><div className="eyebrow">MESSAGE PREVIEW</div><h2 className="mt-1 font-display text-[17px] font-extrabold tracking-[-.03em]">{periodLabel}</h2></div><span className="share-ready"><span className="share-ready-dot" /> Ready to share</span></div>
-        <div className="whatsapp-sheet"><div className="wa-header"><span className="wa-avatar"><span className="brand-mark brand-mark-small"><span /><span /><span /></span></span><span><b>Hesabu</b><small>Shop summary</small></span><MoreHorizontal size={18} className="ml-auto text-[#6C8275]" /></div>
-          <div className="wa-date-divider"><span>{dateText(reportDate, { weekday: 'short', day: 'numeric', month: 'short' })}</span></div>
-          <div className="wa-message">
-            <div className="flex items-center gap-2"><span className="report-symbol"><TrendingUp size={16} /></span><div><div className="text-[10px] font-bold uppercase tracking-[.1em] text-[#6B8172]">{data.shopInfo.name}</div><h3 className="mt-0.5 font-display text-[18px] font-extrabold tracking-[-.04em]">{periodLabel}</h3></div></div>
-            <div className="wa-metric-list"><div><span><ArrowDownRight size={14} /> Money received</span><b className="text-hesabu-green">{money(report.cashIn)}</b></div><div><span><ArrowUpRight size={14} /> Expenses</span><b className="text-[#B94C46]">{money(report.cashOut)}</b></div><div><span><Wallet size={14} /> Net cash</span><b>{money(report.net)}</b></div><div><span><HandCoins size={14} /> New credit sales</span><b className="text-[#A4762A]">{money(report.credit)}</b></div></div>
-            <div className="wa-divider" /><div className="wa-subhead"><Users size={15} /> New credit sales</div>
-            {report.transactions.filter(t => t.type === 'credit').length ? <div className="wa-list">{report.transactions.filter(t => t.type === 'credit').slice(0, 4).map(t => <div key={t.id}><span>{t.customerName ?? 'Customer'}{t.dueDate ? ` · ${dateText(t.dueDate)}` : ''}</span><b>{money(t.amount)}</b></div>)}</div> : <p className="wa-muted-line">No credit sales in this period.</p>}
-            <div className="wa-divider" /><div className="wa-subhead"><Bell size={15} /> Vitu vya kufuatilia</div>
-            {report.lowStock.length || report.due.length ? <div className="wa-list wa-alert-list">{report.lowStock.slice(0, 3).map(item => <div key={item.id}><span>{item.name} is running low ({item.quantity} {item.unit})</span><b>Restock</b></div>)}{report.due.slice(0, 3).map(rem => <div key={rem.id}><span>{rem.title}{rem.amount ? ` · ${money(rem.amount)}` : ''}</span><b>{daysUntil(rem.dueDate) < 0 ? 'Overdue' : daysUntil(rem.dueDate) === 0 ? 'Today' : dateText(rem.dueDate)}</b></div>)}</div> : <p className="wa-muted-line">Stock na bills ziko sawa.</p>}
-            <div className="mt-4 rounded-lg bg-[#EEF6EF] px-3 py-2.5 text-[11px] leading-5 text-[#55725F]">Your records are up to date. Keep the day moving.</div><div className="mt-2 flex justify-end text-[9px] text-[#8EA496]">Hesabu · preview</div>
-          </div>
-          <div className="wa-composer"><Plus size={17} className="text-[#7D9485]" /><span>Message</span><Headphones size={17} className="text-[#7D9485]" /></div>
-        </div>
-      </section>
-    </div>
-  </>;
-}
-
-function CustomerModal({ onClose, onSave }: { onClose: () => void; onSave: (values: { name: string; phone: string; balance: string; direction: 'owed-to-us' | 'we-owe'; kind: 'customer' | 'supplier'; dueDate: string; note: string }) => void }) {
-  const [name, setName] = useState(''); const [phone, setPhone] = useState(''); const [balance, setBalance] = useState(''); const [direction, setDirection] = useState<'owed-to-us' | 'we-owe'>('owed-to-us'); const [kind, setKind] = useState<'customer' | 'supplier'>('customer'); const [dueDate, setDueDate] = useState(''); const [note, setNote] = useState('');
-  return <Modal title="Add a person" detail="Customers, suppliers and anyone you keep a balance with." onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ name, phone, balance, direction, kind, dueDate, note }); }}>
-      <Field label="Name" value={name} onChange={setName} placeholder="e.g. Kamau or Madam Annette" required autoFocus />
-      <Field label="Phone number (optional)" value={phone} onChange={setPhone} placeholder="07xx xxx xxx" inputMode="tel" />
-      <SelectField label="Person type" value={kind} onChange={v => { const next = v as 'customer' | 'supplier'; setKind(next); setDirection(next === 'supplier' ? 'we-owe' : 'owed-to-us'); }} options={[{ value: 'customer', label: 'Customer' }, { value: 'supplier', label: 'Supplier / business' }]} />
-      <div><span className="field-label">Opening balance</span><div className="choice-two mt-2"><button type="button" className={cn(direction === 'owed-to-us' && 'choice-two-active')} onClick={() => setDirection('owed-to-us')}>They owe me</button><button type="button" className={cn(direction === 'we-owe' && 'choice-two-active')} onClick={() => setDirection('we-owe')}>I owe them</button></div></div>
-      <Field label="Amount (KES)" value={balance} onChange={setBalance} placeholder="0" type="number" min={0} inputMode="numeric" />
-      <Field label="Due date (optional)" value={dueDate} onChange={setDueDate} type="date" />
-      <Field label="Note (optional)" value={note} onChange={setNote} placeholder="Anything useful to remember" />
-      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim()}><Plus size={15} /> Save person</Button></div>
-    </form>
-  </Modal>;
-}
-
-function PaymentModal({ customer, onClose, onSave }: { customer: Customer; onClose: () => void; onSave: (customer: Customer, amount: string, note: string) => void }) {
-  const supplierPayment = customer.kind === 'supplier' || (!customer.kind && customer.balance < 0);
-  const customerCredit = customer.kind === 'customer' && customer.balance < 0;
-  const [amount, setAmount] = useState(String(Math.abs(customer.balance)));
-  const [note, setNote] = useState(supplierPayment ? 'Supplier payment' : customerCredit ? 'Customer credit refund' : 'Debt payment received');
-  const capped = supplierPayment || customerCredit;
-  const direction = supplierPayment ? 'paid out' : customerCredit ? 'returned to the customer' : 'received';
-  return <Modal title={supplierPayment ? `Record payment to ${customer.name}` : customerCredit ? `Return balance to ${customer.name}` : `Payment from ${customer.name}`} detail={`${customerCredit ? 'Customer credit held' : 'Outstanding balance'}: ${money(Math.abs(customer.balance))}. This entry will be ${direction}.`} onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(customer, amount, note); }}>
-      <Field label={supplierPayment || customerCredit ? 'Amount paid (KES)' : 'Amount received (KES)'} type="number" min={1} value={amount} onChange={setAmount} required autoFocus inputMode="numeric" />
-      <div className="flex flex-wrap gap-2"><button type="button" className="quick-amount" onClick={() => setAmount(String(Math.min(Math.abs(customer.balance), 100)))}>KES 100</button><button type="button" className="quick-amount" onClick={() => setAmount(String(Math.ceil(Math.abs(customer.balance) / 2)))}>Half balance</button><button type="button" className="quick-amount" onClick={() => setAmount(String(Math.abs(customer.balance)))}>Full balance</button></div>
-      <Field label="Description" value={note} onChange={setNote} />
-      {capped && Number(amount) > Math.abs(customer.balance) && <p className="text-[11px] text-[#B94C46]">This amount is higher than the balance and will be capped at {money(Math.abs(customer.balance))}.</p>}
-      {!capped && Number(amount) > customer.balance && <p className="text-[11px] text-[#8A6B32]">The extra will stay on the customer account as credit for their next purchase.</p>}
-      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={Number(amount) <= 0}><Check size={15} /> {supplierPayment ? 'Record payment' : customerCredit ? 'Record refund' : 'Record payment'}</Button></div>
-    </form>
-  </Modal>;
-}
-function StockModal({ onClose, onSave }: { onClose: () => void; onSave: (values: { name: string; quantity: string; unit: string; threshold: string; cost: string }) => void }) {
-  const [name, setName] = useState(''); const [quantity, setQuantity] = useState('0'); const [unit, setUnit] = useState('pcs'); const [threshold, setThreshold] = useState('5'); const [cost, setCost] = useState('');
-  return <Modal title="Add an item" detail="Start with the quantity on your shelf and when you want a reminder to reorder." onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ name, quantity, unit, threshold, cost }); }}>
-      <Field label="Product name" value={name} onChange={setName} placeholder="e.g. Maziwa" required autoFocus />
-      <div className="grid grid-cols-2 gap-3"><Field label="Current quantity" value={quantity} onChange={setQuantity} type="number" min={0} required /><Field label="Unit" value={unit} onChange={setUnit} placeholder="pcs, kg, packets" required /></div>
-      <div className="grid grid-cols-2 gap-3"><Field label="Reorder at" value={threshold} onChange={setThreshold} type="number" min={0} required /><Field label="Cost per unit (KES)" value={cost} onChange={setCost} type="number" min={0} /></div>
-      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim()}><Plus size={15} /> Add to stock</Button></div>
-    </form>
-  </Modal>;
-}
-
-function StockEditModal({ item, onClose, onSave }: { item: StockItem; onClose: () => void; onSave: (item: StockItem, values: { name: string; unit: string; threshold: string; cost: string }) => void }) {
-  const [name, setName] = useState(item.name);
-  const [unit, setUnit] = useState(item.unit);
-  const [threshold, setThreshold] = useState(String(item.lowStockAt));
-  const [cost, setCost] = useState(item.costPerUnit === undefined ? '' : String(item.costPerUnit));
-  return <Modal title={`Edit ${item.name}`} detail="Update the product name, unit and reorder level. The current shelf count will stay unchanged." onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(item, { name, unit, threshold, cost }); }}>
-      <Field label="Product name" value={name} onChange={setName} required autoFocus />
-      <Field label="Unit" value={unit} onChange={setUnit} required placeholder="pcs, kg, packets" />
-      <div className="grid grid-cols-2 gap-3"><Field label="Reorder at" value={threshold} onChange={setThreshold} type="number" min={0} required /><Field label="Cost per unit (KES)" value={cost} onChange={setCost} type="number" min={0} /></div>
-      <div className="rounded-xl bg-hesabu-surface px-3 py-3 text-[11px] leading-5 text-hesabu-muted">Current tracked count: <b>{item.quantity} {item.unit}</b>. Editing the reorder level changes when Hesabu flags it as running low.</div>
-      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || !unit.trim()}><Check size={15} /> Save item details</Button></div>
-    </form>
-  </Modal>;
-}
-
-function StockUpdateModal({ item, mode, onClose, onSave }: { item: StockItem; mode: 'restock' | 'adjust'; onClose: () => void; onSave: (item: StockItem, amount: string, mode: 'restock' | 'adjust') => void }) {
-  const [amount, setAmount] = useState(mode === 'restock' ? '1' : String(item.quantity));
-  return <Modal title={mode === 'restock' ? `Restock ${item.name}` : `Adjust ${item.name}`} detail={mode === 'restock' ? `Current quantity: ${item.quantity} ${item.unit}. Enter how many you received.` : 'Enter the actual quantity currently on the shelf.'} onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(item, amount, mode); }}>
-      <Field label={mode === 'restock' ? `Quantity received (${item.unit})` : `Actual quantity (${item.unit})`} value={amount} onChange={setAmount} type="number" min={0} required autoFocus />
-      {mode === 'restock' && <div className="rounded-xl bg-[#F1F6F1] px-4 py-3 text-[12px] text-[#5C7162]">New quantity will be <b>{item.quantity + Math.max(0, Number(amount) || 0)} {item.unit}</b>.</div>}
-      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit"><Check size={15} /> Save quantity</Button></div>
-    </form>
-  </Modal>;
-}
-
-function ReminderModal({ reminder, onClose, onSave, onDelete }: { reminder?: Reminder; onClose: () => void; onSave: (values: { title: string; detail: string; amount: string; dueDate: string; kind: Reminder['kind'] }) => void; onDelete: (reminder: Reminder) => void }) {
-  const [title, setTitle] = useState(reminder?.title ?? ''); const [detail, setDetail] = useState(reminder?.detail ?? ''); const [amount, setAmount] = useState(reminder?.amount === undefined ? '' : String(reminder.amount)); const [dueDate, setDueDate] = useState(reminder?.dueDate ?? today()); const [kind, setKind] = useState<Reminder['kind']>(reminder?.kind ?? 'bill');
-  return <Modal title={reminder ? 'Edit reminder' : 'Add a reminder'} detail="A bill, supplier follow-up or a customer you need to call." onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ title, detail, amount, dueDate, kind }); }}>
-      <Field label="Reminder" value={title} onChange={setTitle} placeholder="e.g. Pay electricity tokens" required autoFocus />
-      <SelectField label="Type" value={kind} onChange={v => setKind(v as Reminder['kind'])} options={[{ value: 'bill', label: 'Bill / expense' }, { value: 'supplier', label: 'Supplier' }, { value: 'customer', label: 'Customer follow-up' }, { value: 'other', label: 'Other' }]} />
-      <div className="grid grid-cols-2 gap-3"><Field label="Amount (optional)" value={amount} onChange={setAmount} type="number" min={0} placeholder="KES" /><Field label="Due date" value={dueDate} onChange={setDueDate} type="date" required /></div>
-      <Field label="Details (optional)" value={detail} onChange={setDetail} placeholder="Any extra detail" />
-      <div className="modal-actions">{reminder && <Button variant="danger" onClick={() => onDelete(reminder)}><Trash2 size={14} /> Delete</Button>}<div className="ml-auto flex gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!title.trim()}><Check size={15} /> {reminder ? 'Save changes' : 'Save reminder'}</Button></div></div>
-    </form>
-  </Modal>;
-}
-
-function ProfileModal({ data, onClose, onSave }: { data: AppData; onClose: () => void; onSave: (name: string, owner: string, phone: string, businessType: string) => void }) {
-  const [name, setName] = useState(data.shopInfo.name); const [owner, setOwner] = useState(data.shopInfo.owner); const [phone, setPhone] = useState(data.shopInfo.phone); const [businessType, setBusinessType] = useState(data.shopInfo.businessType);
-  return <Modal title="Your shop details" detail="These details are used in your reports and shop header." onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(name, owner, phone, businessType); }}>
-      <Field label="Shop name" value={name} onChange={setName} required autoFocus /><Field label="Your name" value={owner} onChange={setOwner} required /><Field label="Phone number" value={phone} onChange={setPhone} inputMode="tel" />
-      <SelectField label="Business type" value={businessType} onChange={setBusinessType} options={[{ value: 'General shop', label: 'General shop' }, { value: 'Mama Mboga', label: 'Mama Mboga' }, { value: 'Hardware', label: 'Hardware' }, { value: 'Pharmacy', label: 'Pharmacy' }, { value: 'Other', label: 'Other' }]} />
-      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit"><Check size={15} /> Save details</Button></div>
-    </form>
-  </Modal>;
-}
-
-function SettingsModal({ onClose, onReset, onProfile, onExportBackup, onExportCsv, onImportBackup }: { onClose: () => void; onReset: () => void; onProfile: () => void; onExportBackup: () => void; onExportCsv: () => void; onImportBackup: (file: File) => void }) {
-  return <Modal title="Preferences" detail="Keep your shop details current and protect the records on this device." onClose={onClose}>
-    <div className="settings-list">
-      <button onClick={onProfile}><span className="settings-item-icon"><Store size={17} /></span><span><b>Shop profile</b><small>Name, phone number and business type</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
-      <div className="settings-info"><span className="settings-item-icon"><Settings2 size={17} /></span><span><b>Stored on this device</b><small>Hesabu uses this browser’s local storage. Clearing browser data removes this ledger.</small></span></div>
-      <div className="settings-info"><span className="settings-item-icon"><Bell size={17} /></span><span><b>Reminders</b><small>Shown inside the app. Automatic WhatsApp delivery is not connected in this prototype.</small></span></div>
-      <button onClick={onExportBackup}><span className="settings-item-icon"><Download size={17} /></span><span><b>Download a backup</b><small>Save your shop, transactions, people, stock and reminders as a JSON file.</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
-      <button onClick={onExportCsv}><span className="settings-item-icon"><FileSpreadsheet size={17} /></span><span><b>Export transactions (CSV)</b><small>Open your ledger in Excel, Google Sheets or another spreadsheet.</small></span><ChevronRight size={17} className="ml-auto text-hesabu-muted" /></button>
-      <label className="settings-info settings-upload"><span className="settings-item-icon"><Upload size={17} /></span><span><b>Restore from backup</b><small>Choose a Hesabu JSON backup. Your current browser data will be replaced after confirmation.</small><input className="settings-file-input" type="file" accept="application/json,.json" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) onImportBackup(file); e.currentTarget.value = ''; }} /></span></label>
-      <button className="settings-danger" onClick={onReset}><span className="settings-item-icon"><RotateCcw size={17} /></span><span><b>Reset demo shop</b><small>Replace saved changes with the original sample ledger.</small></span><ChevronRight size={17} className="ml-auto" /></button>
-    </div><div className="modal-actions mt-5"><Button variant="secondary" onClick={onClose}>Close</Button></div>
-  </Modal>;
-}
-function EditDraftModal({ draft, items, onClose, onSave }: { draft: TransactionDraft; items: StockItem[]; onClose: () => void; onSave: (values: { type: TransactionType; description: string; amount: string; customerName: string; dueDate: string; stockItemName: string }) => void }) {
-  const [type, setType] = useState<TransactionType>(draft.type); const [description, setDescription] = useState(draft.description); const [amount, setAmount] = useState(String(draft.amount)); const [customerName, setCustomerName] = useState(draft.customerName ?? ''); const [dueDate, setDueDate] = useState(draft.dueDate ?? addDays(today(), 7)); const [stockItemName, setStockItemName] = useState(draft.stockItemName ?? '');
-  return <Modal title="Edit transaction" detail="Check the details before they enter your ledger." onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave({ type, description, amount, customerName, dueDate, stockItemName }); }}>
-      <SelectField label="Transaction type" value={type} onChange={v => setType(v as TransactionType)} options={Object.entries(TYPE_META).map(([key, value]) => ({ value: key, label: value.label }))} />
-      <Field label="Description" value={description} onChange={setDescription} required />
-      <Field label="Amount (KES)" value={amount} onChange={setAmount} type="number" min={1} required />
-      {(type === 'credit' || type === 'payment') && <Field label="Customer name" value={customerName} onChange={setCustomerName} placeholder="Customer name" required />}
-      {type === 'credit' && <Field label="Due date" value={dueDate} onChange={setDueDate} type="date" required />}
-      <SelectField label="Stock item (optional)" value={stockItemName} onChange={setStockItemName} options={[{ value: '', label: 'Do not adjust stock' }, ...items.map(i => ({ value: i.name, label: i.name }))]} />
-      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={Number(amount) <= 0}><Check size={15} /> Update review</Button></div>
-    </form>
-  </Modal>;
-}
-
-function EditTransactionModal({ transaction, onClose, onSave }: { transaction: Transaction; onClose: () => void; onSave: (transaction: Transaction, values: { description: string; amount: string; date: string; time: string; dueDate: string }) => void }) {
-  const [description, setDescription] = useState(transaction.description);
-  const [amount, setAmount] = useState(String(transaction.amount));
-  const [date, setDate] = useState(transaction.date);
-  const [time, setTime] = useState(transaction.time);
-  const [dueDate, setDueDate] = useState(transaction.dueDate ?? '');
-  return <Modal title="Correct transaction" detail="The original transaction type, linked person and stock movement stay unchanged. To change those, delete this record and add it again." onClose={onClose}>
-    <form className="space-y-4" onSubmit={e => { e.preventDefault(); onSave(transaction, { description, amount, date, time, dueDate }); }}>
-      <Field label="Description" value={description} onChange={setDescription} required autoFocus />
-      <Field label="Amount (KES)" value={amount} onChange={setAmount} type="number" min={1} required inputMode="numeric" />
-      <div className="grid grid-cols-2 gap-3"><Field label="Date" value={date} onChange={setDate} type="date" required /><Field label="Time" value={time} onChange={setTime} type="time" required /></div>
-      {transaction.type === 'credit' && <Field label="Due date (optional)" value={dueDate} onChange={setDueDate} type="date" />}
-      <div className="rounded-xl border border-hesabu-line bg-hesabu-surface px-3 py-3 text-[11px] leading-5 text-hesabu-muted">
-        {transaction.customerId && (transaction.type === 'credit' || transaction.type === 'payment' || transaction.category === 'Supplier payment' || transaction.category === 'Customer refund')
-          ? 'Changing the amount will adjust the linked customer or supplier balance.'
-          : 'Changing the date will move this entry between report periods.'}
+function MiniBars({ values, labels }: { values: number[]; labels: string[] }) {
+  const maximum = Math.max(1, ...values);
+  return <div className="mini-bars">
+    {values.map((value, index) => <div className="mini-bar-col" key={labels[index]}>
+      <div className="mini-bar-track">
+        <div className="mini-bar" style={{ height: Math.max(3, (value / maximum) * 100) + '%' }} />
       </div>
-      <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!description.trim() || Number(amount) <= 0 || !date || !time}><Check size={15} /> Save correction</Button></div>
+      <span>{labels[index]}</span>
+    </div>)}
+  </div>;
+}
+
+function ProgressLine({ label, value, maximum, color = 'green', suffix = '' }: {
+  label: string; value: number; maximum: number; color?: string; suffix?: string;
+}) {
+  const width = maximum <= 0 ? 0 : Math.min(100, (value / maximum) * 100);
+  return <div className="progress-line">
+    <div className="progress-line-copy"><span>{label}</span><strong>{numberText(value) + suffix}</strong></div>
+    <div className="progress-track"><div className={'progress-fill progress-' + color} style={{ width: width + '%' }} /></div>
+  </div>;
+}
+
+function Initials({ name }: { name: string }) {
+  const letters = name.split(' ').filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+  return <span className="avatar">{letters || 'H'}</span>;
+}
+
+function SaleDialog({ products, onClose, onCreate }: {
+  products: Product[]; onClose: () => void; onCreate: (input: NewInvoiceInput) => void;
+}) {
+  const [customer, setCustomer] = useState('Walk-in customer');
+  const [phone, setPhone] = useState('');
+  const [dueDate, setDueDate] = useState(addDays(today(), 7));
+  const [discount, setDiscount] = useState('0');
+  const [channel, setChannel] = useState<PaymentChannel>('mpesa');
+  const [source, setSource] = useState<Invoice['source']>('pos');
+  const [items, setItems] = useState([{ productId: products[0]?.id || '', quantity: 1 }]);
+  const productFor = (id: string) => products.find(product => product.id === id);
+  const subtotal = sum(items.map(item => (productFor(item.productId)?.sellingPrice || 0) * item.quantity));
+  const total = Math.max(0, subtotal - Math.max(0, Number(discount) || 0));
+  const addItem = () => setItems(current => [...current, { productId: products[0]?.id || '', quantity: 1 }]);
+  const updateItem = (index: number, patch: Partial<{ productId: string; quantity: number }>) => {
+    setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  };
+  const removeItem = (index: number) => setItems(current => current.filter((_, itemIndex) => itemIndex !== index));
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const validItems = items.filter(item => item.productId && item.quantity > 0);
+    if (!validItems.length) return;
+    for (const item of validItems) {
+      const product = productFor(item.productId);
+      if (!product || item.quantity > product.quantity) return;
+    }
+    onCreate({
+      customer: customer.trim() || 'Walk-in customer', phone, dueDate,
+      discount: Math.max(0, Number(discount) || 0), channel, items: validItems, source,
+    });
+  };
+
+  return <Modal title="Record a sale" detail="Post one sale and update the invoice, payment record and stock ledger together." onClose={onClose} size="lg">
+    <form className="modal-body" onSubmit={submit}>
+      <div className="form-grid form-grid-two">
+        <Field label="Customer or account" value={customer} onChange={setCustomer} placeholder="Walk-in customer" />
+        <Field label="Customer phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
+      </div>
+      <div className="subsection-label">Items sold</div>
+      <div className="sale-items">
+        {items.map((item, index) => {
+          const product = productFor(item.productId);
+          return <div className="sale-item-row" key={index}>
+            <label className="field sale-product-field">
+              <span className="field-label">Product</span>
+              <select className="field-input" value={item.productId} onChange={event => updateItem(index, { productId: event.target.value })}>
+                {products.map(option => <option key={option.id} value={option.id}>{option.name} · {money(option.sellingPrice)}</option>)}
+              </select>
+            </label>
+            <Field label="Qty" type="number" min={1} step={1} value={item.quantity} onChange={value => updateItem(index, { quantity: Math.max(1, Number(value) || 1) })} />
+            <div className="sale-line-total"><span>Line total</span><strong>{money((product?.sellingPrice || 0) * item.quantity)}</strong></div>
+            {items.length > 1 && <IconButton label="Remove item" onClick={() => removeItem(index)}><X size={15} /></IconButton>}
+          </div>;
+        })}
+      </div>
+      <div className="inline-form-actions">
+        <Button variant="outline" size="sm" onClick={addItem}><Plus size={14} /> Add another item</Button>
+        <span className="field-hint">Available quantity is checked before the sale is posted.</span>
+      </div>
+      <div className="form-grid form-grid-three">
+        <Field label="Discount (KSh)" type="number" min={0} value={discount} onChange={setDiscount} />
+        <SelectField label="Payment method" value={channel} onChange={value => setChannel(value as PaymentChannel)} options={[
+          { value: 'mpesa', label: 'M-Pesa received' }, { value: 'cash', label: 'Cash received' },
+          { value: 'bank', label: 'Bank transfer' }, { value: 'card', label: 'Card payment' },
+          { value: 'credit', label: 'On credit' },
+        ]} />
+        <SelectField label="Sales source" value={source} onChange={value => setSource(value as Invoice['source'])} options={[
+          { value: 'pos', label: 'Point of sale' }, { value: 'website', label: 'Website' },
+          { value: 'hesabu', label: 'Hesabu checkout' }, { value: 'manual', label: 'Manual entry' },
+        ]} />
+      </div>
+      {channel === 'credit' && <Field label="Payment due date" type="date" value={dueDate} onChange={setDueDate} />}
+      <div className="dialog-total">
+        <span><span>Subtotal</span><strong>{money(subtotal)}</strong></span>
+        <span><span>Discount</span><strong>−{money(Number(discount) || 0)}</strong></span>
+        <span className="dialog-total-final"><span>Total to record</span><strong>{money(total)}</strong></span>
+      </div>
+      <div className="modal-footer">
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button type="submit" disabled={!items.length || total <= 0}><Check size={16} /> Post sale</Button>
+      </div>
     </form>
   </Modal>;
 }
 
-function TransactionModal({ transaction, customer, onClose, onEdit, onDelete }: { transaction: Transaction; customer?: Customer; onClose: () => void; onEdit: (tx: Transaction) => void; onDelete: (tx: Transaction) => void }) {
-  const Icon = TYPE_META[transaction.type].icon;
-  return <Modal title="Transaction details" detail={shortDay(transaction.date)} onClose={onClose}>
-    <div className="transaction-detail-card"><div className={cn('transaction-detail-icon', TYPE_TONE[transaction.type])}><Icon size={22} /></div><div className="mt-4 text-[10px] font-bold uppercase tracking-[.14em] text-hesabu-muted">{TYPE_META[transaction.type].label}</div><div className={cn('mt-1 font-display text-[28px] font-extrabold tracking-[-.06em]', `amount-${transaction.type}`)}>{transaction.type === 'expense' ? '−' : transaction.type === 'credit' ? '' : '+'}{money(transaction.amount)}</div><div className="mt-2 text-sm font-bold">{transaction.description}</div><div className="mt-1 text-[11px] text-hesabu-muted">{dateText(transaction.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} at {timeText(transaction.time)}</div></div>
-    <div className="mt-4 space-y-3">{transaction.customerName && <div className="detail-line"><span>Person</span><b>{transaction.customerName}</b></div>}{transaction.dueDate && <div className="detail-line"><span>Due date</span><b>{dateText(transaction.dueDate, { weekday: 'short', day: 'numeric', month: 'short' })}</b></div>}{transaction.category && <div className="detail-line"><span>Category</span><b>{transaction.category}</b></div>}{transaction.stockQuantityDelta !== undefined && <div className="detail-line"><span>Stock adjustment</span><b>{transaction.stockQuantityDelta > 0 ? '+' : ''}{transaction.stockQuantityDelta} item(s)</b></div>}{customer && <div className="detail-line"><span>Remaining balance</span><b>{money(customer.balance)}</b></div>}</div>
-    <div className="mt-5 grid grid-cols-2 gap-2"><Button variant="secondary" onClick={onClose}>Close</Button><Button variant="outline" onClick={() => onEdit(transaction)}><Settings2 size={15} /> Edit details</Button><Button variant="danger" className="col-span-2" onClick={() => onDelete(transaction)}><Trash2 size={15} /> Delete entry</Button></div>
+function StkDialog({ invoices, initialInvoiceId, onClose, onCreate }: {
+  invoices: Invoice[]; initialInvoiceId?: string; onClose: () => void; onCreate: (input: NewPaymentInput) => void;
+}) {
+  const outstandingInvoices = invoices.filter(invoice => invoiceBalance(invoice) > 0);
+  const [invoiceId, setInvoiceId] = useState(initialInvoiceId || outstandingInvoices[0]?.id || '');
+  const invoice = outstandingInvoices.find(item => item.id === invoiceId);
+  const [phone, setPhone] = useState(invoice?.phone || '');
+  const [amount, setAmount] = useState(String(invoice ? invoiceBalance(invoice) : 0));
+  const [channel, setChannel] = useState<PaymentChannel>('mpesa');
+  useEffect(() => {
+    const selected = outstandingInvoices.find(item => item.id === invoiceId);
+    if (selected) setAmount(String(invoiceBalance(selected)));
+  }, [invoiceId]);
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const value = Number(amount);
+    if (!invoice || value <= 0 || value > invoiceBalance(invoice)) return;
+    onCreate({ invoiceId, phone, amount: value, channel, origin: 'daraja_demo' });
+  };
+  return <Modal title="Request a payment" detail="Simulate a customer payment request. No live M-Pesa prompt will be sent in this preview." onClose={onClose}>
+    <form className="modal-body" onSubmit={submit}>
+      {outstandingInvoices.length === 0 ? <EmptyState title="No unpaid invoices" body="Create an invoice with a balance before requesting payment." /> : <>
+        <div className="demo-notice"><Smartphone size={17} /><span><strong>Daraja sandbox simulation</strong><small>Customer approval and the callback are simulated locally.</small></span></div>
+        <SelectField label="Invoice" value={invoiceId} onChange={setInvoiceId} options={outstandingInvoices.map(item => ({
+          value: item.id, label: item.number + ' · ' + item.customer + ' · ' + money(invoiceBalance(item)),
+        }))} />
+        <Field label="Customer M-Pesa number" value={phone} onChange={setPhone} placeholder="2547XXXXXXXX" required />
+        <Field label="Amount (KSh)" type="number" min={1} value={amount} onChange={setAmount} required />
+        {invoice && <div className="balance-hint"><span>Unpaid invoice balance</span><strong>{money(invoiceBalance(invoice))}</strong></div>}
+        <div className="payment-flow-note">
+          <span className="flow-step flow-step-active">1 <small>Request</small></span>
+          <span className="flow-line" />
+          <span className="flow-step">2 <small>Customer PIN</small></span>
+          <span className="flow-line" />
+          <span className="flow-step">3 <small>Callback</small></span>
+          <span className="flow-line" />
+          <span className="flow-step">4 <small>Reconcile</small></span>
+        </div>
+        <div className="modal-footer">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={!invoice || Number(amount) <= 0 || Number(amount) > invoiceBalance(invoice)}><Send size={15} /> Simulate STK request</Button>
+        </div>
+      </>}
+    </form>
   </Modal>;
 }
 
+function ExpenseDialog({ onClose, onCreate }: {
+  onClose: () => void; onCreate: (expense: { category: string; description: string; amount: number; channel: 'cash' | 'mpesa' | 'bank' }) => void;
+}) {
+  const [category, setCategory] = useState('Operating costs');
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [channel, setChannel] = useState<'cash' | 'mpesa' | 'bank'>('mpesa');
+  return <Modal title="Record an expense" detail="Record the expense and the account it was paid from." onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      if (Number(amount) > 0 && description.trim()) onCreate({ category, description: description.trim(), amount: Number(amount), channel });
+    }}>
+      <SelectField label="Expense category" value={category} onChange={setCategory} options={[
+        { value: 'Operating costs', label: 'Operating costs' }, { value: 'Rent', label: 'Rent' },
+        { value: 'Utilities', label: 'Utilities' }, { value: 'Staff costs', label: 'Staff costs' },
+        { value: 'Transport', label: 'Transport' }, { value: 'Repairs', label: 'Repairs' },
+        { value: 'Other', label: 'Other' },
+      ]} />
+      <Field label="Description" value={description} onChange={setDescription} placeholder="What was this expense for?" required />
+      <div className="form-grid form-grid-two">
+        <Field label="Amount (KSh)" type="number" min={1} value={amount} onChange={setAmount} required />
+        <SelectField label="Paid from" value={channel} onChange={value => setChannel(value as 'cash' | 'mpesa' | 'bank')} options={[
+          { value: 'cash', label: 'Cash on hand' }, { value: 'mpesa', label: 'M-Pesa' }, { value: 'bank', label: 'Bank account' },
+        ]} />
+      </div>
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!description.trim() || Number(amount) <= 0}>Save expense</Button></div>
+    </form>
+  </Modal>;
+}
 
-function WelcomeScreen({ show, onUseDemo, onCreateShop }: { show: boolean; onUseDemo: () => void; onCreateShop: (values: { name: string; owner: string; phone: string; businessType: string }) => void }) {
+function ProductDialog({ onClose, onCreate }: {
+  onClose: () => void; onCreate: (product: Omit<Product, 'id' | 'updatedAt'>) => void;
+}) {
   const [name, setName] = useState('');
-  const [owner, setOwner] = useState('');
-  const [phone, setPhone] = useState('');
-  const [businessType, setBusinessType] = useState('General shop');
-  if (!show) return null;
-  return <main className="welcome-screen">
-    <div className="welcome-layout">
-      <section className="welcome-story">
-        <Logo />
-        <div className="welcome-copy">
-          <div className="eyebrow">ACCOUNTING FOR EVERYDAY BUSINESS</div>
-          <h1>Know your numbers. Run your business.</h1>
-          <p>Keep sales, expenses, customer debts, stock and reminders together. No accounting lessons. No more hunting through yesterday’s pages.</p>
-        </div>
-        <div className="welcome-points">
-          <div className="welcome-point"><span className="welcome-point-icon"><Wallet size={18} /></span><div><b>Know what came in and went out</b><span>Keep cash sales separate from goods taken on credit.</span></div></div>
-          <div className="welcome-point"><span className="welcome-point-icon"><Users size={18} /></span><div><b>Remember who owes what</b><span>Record repayments and follow-ups without searching the book.</span></div></div>
-          <div className="welcome-point"><span className="welcome-point-icon"><Package size={18} /></span><div><b>See what is running low</b><span>Set reorder levels and keep the shelves in view.</span></div></div>
-        </div>
-      </section>
-      <section className="welcome-setup">
-        <div className="welcome-form-head"><div className="eyebrow">LET’S SET THINGS UP</div><h2>Set up your business.</h2><p>Use your own details to get started, or explore the sample shop first.</p></div>
-        <form className="welcome-form" onSubmit={event => { event.preventDefault(); onCreateShop({ name, owner, phone, businessType }); }}>
-          <Field label="Shop name" value={name} onChange={setName} placeholder="e.g. Mwende General Shop" required autoFocus />
-          <Field label="Your name (optional)" value={owner} onChange={setOwner} placeholder="What should Hesabu call you?" />
-          <Field label="Phone number (optional)" value={phone} onChange={setPhone} placeholder="07… or 01…" type="tel" inputMode="tel" />
-          <SelectField label="Type of business" value={businessType} onChange={setBusinessType} options={[{value:'General shop',label:'General shop / duka'},{value:'Kiosk',label:'Kiosk'},{value:'Grocery',label:'Grocery / food shop'},{value:'Hardware',label:'Hardware'},{value:'Clothing',label:'Clothing / boutique'},{value:'Other',label:'Other small business'}]} />
-          <Button type="submit" className="welcome-start-button" disabled={!name.trim()}>Start my business ledger <ArrowRight size={16} /></Button>
-        </form>
-        <div className="welcome-device-note"><CheckCircle2 size={15} /><span>Device-only setup, not an online account. Download backups until cloud sign-up and sync are connected.</span></div>
-        <div className="welcome-demo-row"><span>Just looking around?</span><button type="button" onClick={onUseDemo}>Explore the sample ledger <ArrowRight size={14} /></button></div>
-      </section>
+  const [sku, setSku] = useState('');
+  const [category, setCategory] = useState('General');
+  const [unit, setUnit] = useState('piece');
+  const [quantity, setQuantity] = useState('0');
+  const [reorder, setReorder] = useState('5');
+  const [cost, setCost] = useState('');
+  const [price, setPrice] = useState('');
+  return <Modal title="Add inventory item" detail="Create a product record with its current quantity and unit economics." onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      if (!name.trim() || Number(price) <= 0) return;
+      onCreate({
+        name: name.trim(), sku: sku.trim() || makeId('SKU'), category, unit,
+        quantity: Math.max(0, Number(quantity) || 0), reorderLevel: Math.max(0, Number(reorder) || 0),
+        costPrice: Math.max(0, Number(cost) || 0), sellingPrice: Number(price),
+      });
+    }}>
+      <Field label="Product name" value={name} onChange={setName} placeholder="e.g. Long-grain rice 2kg" required />
+      <div className="form-grid form-grid-two">
+        <Field label="SKU / product code" value={sku} onChange={setSku} placeholder="Assigned if empty" />
+        <Field label="Category" value={category} onChange={setCategory} placeholder="Food staples" />
+      </div>
+      <div className="form-grid form-grid-three">
+        <Field label="Unit" value={unit} onChange={setUnit} placeholder="packet" required />
+        <Field label="Opening quantity" type="number" min={0} value={quantity} onChange={setQuantity} />
+        <Field label="Reorder at" type="number" min={0} value={reorder} onChange={setReorder} />
+      </div>
+      <div className="form-grid form-grid-two">
+        <Field label="Cost price (KSh)" type="number" min={0} value={cost} onChange={setCost} required />
+        <Field label="Selling price (KSh)" type="number" min={1} value={price} onChange={setPrice} required />
+      </div>
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || Number(price) <= 0}>Add item</Button></div>
+    </form>
+  </Modal>;
+}
+
+function PurchaseDialog({ suppliers, products, onClose, onCreate }: {
+  suppliers: Supplier[]; products: Product[]; onClose: () => void; onCreate: (input: NewPurchaseInput) => void;
+}) {
+  const [supplierId, setSupplierId] = useState(suppliers[0]?.id || '');
+  const [productId, setProductId] = useState(products[0]?.id || '');
+  const [quantity, setQuantity] = useState('10');
+  const [unitCost, setUnitCost] = useState(String(products[0]?.costPrice || 0));
+  const [expectedAt, setExpectedAt] = useState(addDays(today(), 2));
+  const product = products.find(item => item.id === productId);
+  const total = Math.max(0, Number(quantity) || 0) * Math.max(0, Number(unitCost) || 0);
+  return <Modal title="Create purchase order" detail="Prepare a supplier order. Inventory and accounts payable update when goods are received." onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      const qty = Number(quantity);
+      const cost = Number(unitCost);
+      if (supplierId && productId && qty > 0 && cost > 0) onCreate({
+        supplierId, expectedAt, items: [{ productId, quantity: qty, unitCost: cost }],
+      });
+    }}>
+      <SelectField label="Supplier" value={supplierId} onChange={setSupplierId} options={suppliers.map(item => ({ value: item.id, label: item.name }))} />
+      <SelectField label="Product" value={productId} onChange={value => {
+        setProductId(value);
+        const selected = products.find(item => item.id === value);
+        if (selected) setUnitCost(String(selected.costPrice));
+      }} options={products.map(item => ({ value: item.id, label: item.name + ' · ' + item.sku }))} />
+      <div className="form-grid form-grid-three">
+        <Field label="Order quantity" type="number" min={1} value={quantity} onChange={setQuantity} />
+        <Field label="Unit cost (KSh)" type="number" min={1} value={unitCost} onChange={setUnitCost} />
+        <Field label="Expected delivery" type="date" value={expectedAt} onChange={setExpectedAt} />
+      </div>
+      <div className="dialog-total"><span className="dialog-total-final"><span>Purchase order total</span><strong>{money(total)}</strong></span></div>
+      {product && <div className="field-hint">Current recorded cost: {money(product.costPrice)} per {product.unit}.</div>}
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!supplierId || !productId || total <= 0}>Create purchase order</Button></div>
+    </form>
+  </Modal>;
+}
+
+function InvoiceDialog({ invoice, onClose, onRequestPayment }: {
+  invoice: Invoice; onClose: () => void; onRequestPayment: () => void;
+}) {
+  return <Modal title={invoice.number} detail="Invoice record and settlement history." onClose={onClose} size="lg">
+    <div className="modal-body">
+      <div className="invoice-detail-top">
+        <div><span className="field-label">Bill to</span><strong>{invoice.customer}</strong><small>{invoice.phone || 'No phone recorded'}</small></div>
+        <div className="invoice-detail-status"><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill><small>Issued {dateLabel(invoice.date)}</small></div>
+      </div>
+      <DataTable headers={['Item', 'Qty', 'Unit price', 'Amount']}>
+        {invoice.lines.map(line => <tr key={line.productId}>
+          <td><strong>{line.name}</strong><small className="cell-sub">{line.sku}</small></td>
+          <td>{line.quantity}</td><td>{money(line.unitPrice)}</td><td className="amount-cell">{money(line.lineTotal)}</td>
+        </tr>)}
+      </DataTable>
+      <div className="invoice-total-box">
+        <div><span>Subtotal</span><strong>{money(invoice.subtotal)}</strong></div>
+        <div><span>Discount</span><strong>−{money(invoice.discount)}</strong></div>
+        <div className="grand-total"><span>Invoice total</span><strong>{money(invoice.total)}</strong></div>
+        <div><span>Paid to date</span><strong>{money(invoice.paid)}</strong></div>
+        <div className="grand-total balance-total"><span>Balance due</span><strong>{money(invoiceBalance(invoice))}</strong></div>
+      </div>
+      <div className="invoice-detail-meta">
+        <span>Source <strong>{sourceLabel(invoice.source)}</strong></span>
+        <span>Payment terms <strong>{dateLabel(invoice.dueDate)}</strong></span>
+        <span>Preferred channel <strong>{channelLabel(invoice.channel)}</strong></span>
+      </div>
+      <div className="modal-footer">
+        <Button variant="ghost" onClick={onClose}>Close</Button>
+        {invoiceBalance(invoice) > 0 && <Button onClick={onRequestPayment}><Send size={15} /> Request balance</Button>}
+      </div>
     </div>
-  </main>;
+  </Modal>;
+}
+
+function SupplierPaymentDialog({ supplier, onClose, onPay }: {
+  supplier: Supplier; onClose: () => void; onPay: (amount: number) => void;
+}) {
+  const [amount, setAmount] = useState(String(supplier.balance));
+  return <Modal title="Record supplier payment" detail={supplier.name} onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      const value = Number(amount);
+      if (value > 0 && value <= supplier.balance) onPay(value);
+    }}>
+      <div className="balance-hint"><span>Outstanding supplier balance</span><strong>{money(supplier.balance)}</strong></div>
+      <Field label="Payment amount (KSh)" type="number" min={1} value={amount} onChange={setAmount} />
+      <div className="field-hint">This records a bank payment and reduces the supplier payable. It does not initiate a bank transfer.</div>
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={Number(amount) <= 0 || Number(amount) > supplier.balance}>Record payment</Button></div>
+    </form>
+  </Modal>;
+}
+
+function AdjustStockDialog({ product, onClose, onAdjust }: {
+  product: Product; onClose: () => void; onAdjust: (quantity: number, reason: string) => void;
+}) {
+  const [quantity, setQuantity] = useState(String(product.quantity));
+  const [reason, setReason] = useState('Stock count adjustment');
+  return <Modal title="Adjust stock quantity" detail={product.name} onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      const next = Number(quantity);
+      if (Number.isFinite(next) && next >= 0) onAdjust(next, reason);
+    }}>
+      <div className="balance-hint"><span>Currently recorded</span><strong>{numberText(product.quantity) + ' ' + product.unit}</strong></div>
+      <Field label="New counted quantity" type="number" min={0} value={quantity} onChange={setQuantity} required />
+      <SelectField label="Adjustment reason" value={reason} onChange={setReason} options={[
+        { value: 'Stock count adjustment', label: 'Physical stock count' },
+        { value: 'Damaged or expired', label: 'Damaged or expired goods' },
+        { value: 'Opening balance correction', label: 'Opening balance correction' },
+        { value: 'Other stock movement', label: 'Other stock movement' },
+      ]} />
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit">Save stock count</Button></div>
+    </form>
+  </Modal>;
+}
+
+function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice, onRecordExpense }: {
+  data: AppData; metrics: ReturnType<typeof getMetrics>; onCreateSale: () => void;
+  onNavigate: (section: ModuleKey) => void; onSelectInvoice: (id: string) => void; onRecordExpense: () => void;
+}) {
+  const chartDays = Array.from({ length: 7 }, (_, index) => addDays(today(), index - 6));
+  const chartValues = chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
+  const chartLabels = chartDays.map(day => new Date(day + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }));
+  const todayInvoices = data.invoices.filter(invoice => invoice.date === today());
+  const recentInvoices = [...data.invoices].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
+  const unsettled = data.invoices.filter(invoice => invoiceBalance(invoice) > 0).sort((a, b) => invoice.dueDate.localeCompare(b.dueDate)).slice(0, 4);
+  return <div className="page-stack">
+    <div className="overview-welcome">
+      <div><div className="eyebrow">YOUR BUSINESS AT A GLANCE</div><h2>Good morning, {data.profile.owner === 'Business owner' ? 'there' : data.profile.owner.split(' ')[0]}.</h2><p>Here is what is happening across {data.profile.name}.</p></div>
+      <div className="overview-welcome-actions">
+        <span className="date-chip"><CalendarDays size={14} /> {dateLabel(today())}</span>
+        <Button variant="outline" onClick={onRecordExpense}><Plus size={15} /> Expense</Button>
+        <Button onClick={onCreateSale}><Plus size={16} /> Record sale</Button>
+      </div>
+    </div>
+
+    <div className="metric-grid metric-grid-five">
+      <MetricCard label="Sales today" value={money(metrics.salesToday)} note={todayInvoices.length + ' invoices posted'} icon={TrendingUp} tone="green" trend="Trading activity" />
+      <MetricCard label="Gross profit · MTD" value={money(metrics.grossProfitMonth)} note="Revenue less recorded item cost" icon={Activity} tone="blue" />
+      <MetricCard label="Cash position" value={money(metrics.cashPosition)} note="Cash, M-Pesa and bank balances" icon={Wallet} tone="slate" />
+      <MetricCard label="Customer balances" value={money(metrics.receivables)} note="Unpaid and part-paid invoices" icon={ArrowDownLeft} tone="amber" />
+      <MetricCard label="Stock at cost" value={money(metrics.inventoryValue)} note={lowStock.length + ' items at or below reorder'} icon={Boxes} tone="blue" />
+    </div>
+
+    <div className="content-grid content-grid-main">
+      <SectionCard title="Sales performance" detail="Invoice value recorded over the last seven days." action={<button className="text-link" onClick={() => onNavigate('reports')}>Full report <ArrowRight size={13} /></button>}>
+        <div className="chart-summary"><strong>{money(sum(chartValues))}</strong><span>Sales · 7 days</span></div>
+        <MiniBars values={chartValues} labels={chartLabels} />
+      </SectionCard>
+      <SectionCard title="Money by channel" detail="Recorded collection balances">
+        <div className="channel-balances">
+          <div><span className="channel-icon channel-icon-mpesa"><Smartphone size={15} /></span><span>M-Pesa</span><strong>{money(metrics.channelBalances.mpesa)}</strong></div>
+          <div><span className="channel-icon channel-icon-cash"><Wallet size={15} /></span><span>Cash on hand</span><strong>{money(metrics.channelBalances.cash)}</strong></div>
+          <div><span className="channel-icon channel-icon-bank"><Building2 size={15} /></span><span>Bank</span><strong>{money(metrics.channelBalances.bank)}</strong></div>
+        </div>
+        <div className="channel-total"><span>Total recorded funds</span><strong>{money(metrics.cashPosition)}</strong></div>
+      </SectionCard>
+    </div>
+
+    <div className="content-grid content-grid-main">
+      <SectionCard title="Recent invoices" detail="Latest sales across POS, website and manual entry." action={<button className="text-link" onClick={() => onNavigate('sales')}>All invoices <ArrowRight size={13} /></button>}>
+        {recentInvoices.length ? <DataTable headers={['Invoice', 'Customer', 'Date', 'Status', 'Total']}>
+          {recentInvoices.map(invoice => <tr key={invoice.id} className="clickable-row" onClick={() => onSelectInvoice(invoice.id)}>
+            <td><strong>{invoice.number}</strong><small className="cell-sub">{sourceLabel(invoice.source)}</small></td>
+            <td>{invoice.customer}</td><td>{dateLabel(invoice.date)}</td>
+            <td><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill></td>
+            <td className="amount-cell">{money(invoice.total)}</td>
+          </tr>)}
+        </DataTable> : <EmptyState title="No invoices yet" body="Record the first sale to start building your business record." />}
+      </SectionCard>
+      <div className="side-stack">
+        <SectionCard title="Needs attention" detail="Actions that may affect today's operations.">
+          <div className="attention-list">
+            <button onClick={() => onNavigate('inventory')}>
+              <span className="attention-icon attention-amber"><Package size={16} /></span>
+              <span><strong>{lowStock.length} low-stock items</strong><small>Review reorder quantities</small></span>
+              <ChevronRight size={15} />
+            </button>
+            <button onClick={() => onNavigate('sales')}>
+              <span className="attention-icon attention-blue"><Receipt size={16} /></span>
+              <span><strong>{money(metrics.receivables)} receivable</strong><small>{metrics.unpaidInvoices} unpaid invoices</small></span>
+              <ChevronRight size={15} />
+            </button>
+            <button onClick={() => onNavigate('procurement')}>
+              <span className="attention-icon attention-red"><Truck size={16} /></span>
+              <span><strong>{money(metrics.payables)} supplier balances</strong><small>Review payments due</small></span>
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        </SectionCard>
+        <SectionCard title="Collection follow-up" detail="Invoices with balances remaining.">
+          <div className="followup-list">
+            {unsettled.length ? unsettled.slice(0, 3).map(invoice => <button key={invoice.id} onClick={() => onSelectInvoice(invoice.id)}>
+              <span><strong>{invoice.customer}</strong><small>{invoice.number} · Due {dateLabel(invoice.dueDate)}</small></span>
+              <strong>{money(invoiceBalance(invoice))}</strong>
+            </button>) : <p className="muted-copy">No outstanding invoices.</p>}
+          </div>
+        </SectionCard>
+      </div>
+    </div>
+    <div className="overview-footnote"><ShieldCheck size={15} /> Figures are calculated from the records currently in this demo workspace. No external bank or M-Pesa balance is being queried.</div>
+  </div>;
+}
+
+function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
+  data: AppData; search: string; onSearch: (value: string) => void; onCreateSale: () => void; onSelectInvoice: (id: string) => void;
+}) {
+  const [filter, setFilter] = useState('all');
+  const list = data.invoices.filter(invoice => {
+    const text = (invoice.number + ' ' + invoice.customer + ' ' + sourceLabel(invoice.source)).toLowerCase();
+    const matchesSearch = text.includes(search.toLowerCase());
+    const matchesFilter = filter === 'all' || invoice.status === filter;
+    return matchesSearch && matchesFilter;
+  }).sort((a, b) => b.date.localeCompare(a.date));
+  const totalInvoiced = sum(data.invoices.map(invoice => invoice.total));
+  const totalCollected = sum(data.invoices.map(invoice => invoice.paid));
+  return <div className="page-stack">
+    <PageHeader title="Sales & invoices" description="Keep every sale traceable, whether it starts at the counter, on your website or in Hesabu." actions={<Button onClick={onCreateSale}><Plus size={16} /> Record sale</Button>} />
+    <div className="metric-grid metric-grid-four compact-metrics">
+      <MetricCard label="Invoiced" value={money(totalInvoiced)} note="All recorded invoices" icon={Receipt} tone="blue" />
+      <MetricCard label="Collected" value={money(totalCollected)} note="Payments confirmed" icon={CheckCircle2} tone="green" />
+      <MetricCard label="Outstanding" value={money(totalInvoiced - totalCollected)} note="Customer balances" icon={Clock3} tone="amber" />
+      <MetricCard label="Invoices" value={numberText(data.invoices.length)} note="Across all sales sources" icon={FileText} tone="slate" />
+    </div>
+    <SectionCard title="Invoice register" detail="Search by invoice number, customer or source.">
+      <div className="table-toolbar">
+        <div className="table-search"><Search size={15} /><input value={search} onChange={event => onSearch(event.target.value)} placeholder="Search invoices…" /></div>
+        <div className="filter-control"><Filter size={14} /><select value={filter} onChange={event => setFilter(event.target.value)}>
+          <option value="all">All statuses</option><option value="paid">Paid</option><option value="partial">Part paid</option><option value="sent">Awaiting payment</option>
+        </select></div>
+        <span className="table-count">{list.length} records</span>
+      </div>
+      {list.length ? <DataTable headers={['Invoice', 'Customer', 'Issue date', 'Source', 'Payment channel', 'Status', 'Total', 'Balance']}>
+        {list.map(invoice => <tr key={invoice.id} className="clickable-row" onClick={() => onSelectInvoice(invoice.id)}>
+          <td><strong>{invoice.number}</strong></td><td>{invoice.customer}<small className="cell-sub">{invoice.phone || 'No phone recorded'}</small></td>
+          <td>{dateLabel(invoice.date)}</td><td>{sourceLabel(invoice.source)}</td><td><span className={channelClass(invoice.channel)}>{channelLabel(invoice.channel)}</span></td>
+          <td><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill></td>
+          <td className="amount-cell">{money(invoice.total)}</td><td className="amount-cell">{money(invoiceBalance(invoice))}</td>
+        </tr>)}
+      </DataTable> : <EmptyState title="No matching invoices" body="Change the search or status filter, or record a sale to create an invoice." action={<Button onClick={onCreateSale}><Plus size={15} /> Record sale</Button>} />}
+    </SectionCard>
+  </div>;
+}
+
+function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onResolvePayment }: {
+  data: AppData; metrics: ReturnType<typeof getMetrics>; search: string; onSearch: (value: string) => void;
+  onRequestPayment: () => void; onResolvePayment: (id: string, success: boolean) => void;
+}) {
+  const list = [...data.payments].filter(payment =>
+    (payment.invoiceNumber + ' ' + payment.customer + ' ' + payment.reference).toLowerCase().includes(search.toLowerCase()),
+  ).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const pending = data.payments.filter(payment => payment.status === 'pending').length;
+  const failed = data.payments.filter(payment => payment.status === 'failed').length;
+  return <div className="page-stack">
+    <PageHeader title="Payments" description="Collection records across payment channels, with a clear path from payment request to reconciliation." actions={<Button onClick={onRequestPayment}><Send size={15} /> Request payment</Button>} />
+    <div className="metric-grid metric-grid-four compact-metrics">
+      <MetricCard label="Collected today" value={money(metrics.collectedToday)} note="Confirmed receipts" icon={CircleDollarSign} tone="green" />
+      <MetricCard label="Awaiting confirmation" value={numberText(pending)} note="Requests not yet resolved" icon={Clock3} tone="amber" />
+      <MetricCard label="Failed requests" value={numberText(failed)} note="Requests not confirmed" icon={AlertTriangle} tone="blue" />
+      <MetricCard label="Collection channels" value="4" note="M-Pesa, cash, bank and card" icon={CreditCard} tone="slate" />
+    </div>
+    <div className="content-grid content-grid-main">
+      <SectionCard title="Payment activity" detail="A payment only changes an invoice after it is confirmed.">
+        <div className="channel-balances payment-channel-balances">
+          <div><span className="channel-icon channel-icon-mpesa"><Smartphone size={15} /></span><span>M-Pesa</span><strong>{money(metrics.channelBalances.mpesa)}</strong></div>
+          <div><span className="channel-icon channel-icon-cash"><Wallet size={15} /></span><span>Cash</span><strong>{money(metrics.channelBalances.cash)}</strong></div>
+          <div><span className="channel-icon channel-icon-bank"><Building2 size={15} /></span><span>Bank</span><strong>{money(metrics.channelBalances.bank)}</strong></div>
+          <div><span className="channel-icon channel-icon-card"><CreditCard size={15} /></span><span>Card</span><strong>{money(metrics.channelBalances.card)}</strong></div>
+        </div>
+      </SectionCard>
+      <SectionCard title="Collection controls" detail="Payment handling status">
+        <div className="control-list">
+          <div><span className="control-led control-led-green" /><span><strong>Invoice matching</strong><small>Match by invoice, amount and receipt reference</small></span><StatusPill status="delivered">Enabled</StatusPill></div>
+          <div><span className="control-led control-led-amber" /><span><strong>Daraja connection</strong><small>Preview simulator only</small></span><StatusPill status="pending">Not connected</StatusPill></div>
+          <div><span className="control-led control-led-blue" /><span><strong>Reconciliation checks</strong><small>Callback + manual exception review</small></span><StatusPill status="delivered">Preview</StatusPill></div>
+        </div>
+      </SectionCard>
+    </div>
+    <SectionCard title="Payment register" detail="Pending payments can be resolved with the preview simulator to demonstrate a callback.">
+      <div className="table-toolbar">
+        <div className="table-search"><Search size={15} /><input value={search} onChange={event => onSearch(event.target.value)} placeholder="Search payment, invoice or receipt…" /></div>
+        <span className="table-count">{list.length} records</span>
+      </div>
+      {list.length ? <DataTable headers={['Payment', 'Customer', 'Invoice', 'Channel', 'Reference', 'Time', 'Amount', 'Status', 'Action']}>
+        {list.map(payment => <tr key={payment.id}>
+          <td><strong>{payment.id.toUpperCase()}</strong><small className="cell-sub">{payment.origin === 'daraja_demo' ? 'STK simulation' : payment.origin === 'integration' ? 'Website integration' : 'Manual record'}</small></td>
+          <td>{payment.customer}<small className="cell-sub">{payment.phone}</small></td>
+          <td>{payment.invoiceNumber}</td><td><span className={channelClass(payment.channel)}>{channelLabel(payment.channel)}</span></td>
+          <td className="mono-text">{shortRef(payment.reference)}</td><td>{dateTimeLabel(payment.createdAt)}</td>
+          <td className="amount-cell">{money(payment.amount)}</td>
+          <td><StatusPill status={payment.status}>{payment.status === 'succeeded' ? 'Confirmed' : payment.status === 'pending' ? 'Pending' : payment.status === 'failed' ? 'Failed' : 'Reversed'}</StatusPill></td>
+          <td>{payment.status === 'pending' ? <div className="row-actions">
+            <Button size="sm" variant="secondary" onClick={() => onResolvePayment(payment.id, true)}>Approve</Button>
+            <Button size="sm" variant="ghost" onClick={() => onResolvePayment(payment.id, false)}>Fail</Button>
+          </div> : <span className="muted-copy">—</span>}</td>
+        </tr>)}
+      </DataTable> : <EmptyState title="No payment records" body="Payment confirmations and cash records will appear here." />}
+    </SectionCard>
+  </div>;
+}
+
+function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust }: {
+  data: AppData; search: string; onSearch: (value: string) => void; onAddProduct: () => void; onAdjust: (id: string) => void;
+}) {
+  const [view, setView] = useState<'all' | 'low'>('all');
+  const list = data.products.filter(product => {
+    const matches = (product.name + ' ' + product.sku + ' ' + product.category).toLowerCase().includes(search.toLowerCase());
+    return matches && (view === 'all' || product.quantity <= product.reorderLevel);
+  });
+  const low = data.products.filter(product => product.quantity <= product.reorderLevel);
+  const value = sum(data.products.map(productValue));
+  const potential = sum(data.products.map(product => product.quantity * product.sellingPrice));
+  return <div className="page-stack">
+    <PageHeader title="Inventory" description="Track stock quantities and product economics across the business." actions={<Button onClick={onAddProduct}><Plus size={16} /> Add product</Button>} />
+    <div className="metric-grid metric-grid-four compact-metrics">
+      <MetricCard label="Stock at cost" value={money(value)} note="Current quantity × unit cost" icon={Boxes} tone="blue" />
+      <MetricCard label="Retail value" value={money(potential)} note="At current selling prices" icon={TrendingUp} tone="green" />
+      <MetricCard label="Tracked products" value={numberText(data.products.length)} note="Unique product records" icon={Package} tone="slate" />
+      <MetricCard label="Reorder needed" value={numberText(low.length)} note="At or below reorder level" icon={AlertTriangle} tone="amber" />
+    </div>
+    <SectionCard title="Product register" detail="Quantities are updated when a sale is posted or a purchase order is received.">
+      <div className="table-toolbar">
+        <div className="table-search"><Search size={15} /><input value={search} onChange={event => onSearch(event.target.value)} placeholder="Search name, SKU or category…" /></div>
+        <div className="segmented-control">
+          <button className={view === 'all' ? 'active' : ''} onClick={() => setView('all')}>All items</button>
+          <button className={view === 'low' ? 'active' : ''} onClick={() => setView('low')}>Reorder list <span>{low.length}</span></button>
+        </div>
+        <span className="table-count">{list.length} products</span>
+      </div>
+      {list.length ? <DataTable headers={['Product', 'SKU', 'Category', 'On hand', 'Reorder level', 'Cost price', 'Selling price', 'Stock value', 'Status', '']}>
+        {list.map(product => {
+          const isLow = product.quantity <= product.reorderLevel;
+          const isCritical = product.quantity <= Math.max(1, Math.floor(product.reorderLevel / 2));
+          return <tr key={product.id}>
+            <td><strong>{product.name}</strong><small className="cell-sub">{product.unit}</small></td>
+            <td className="mono-text">{product.sku}</td><td>{product.category}</td>
+            <td><strong>{numberText(product.quantity)}</strong> <small>{product.unit}</small></td>
+            <td>{numberText(product.reorderLevel)} <small>{product.unit}</small></td>
+            <td>{money(product.costPrice)}</td><td>{money(product.sellingPrice)}</td>
+            <td className="amount-cell">{money(productValue(product))}</td>
+            <td><StatusPill status={isCritical ? 'failed' : isLow ? 'pending' : 'delivered'}>{isCritical ? 'Critical' : isLow ? 'Low stock' : 'In stock'}</StatusPill></td>
+            <td><button className="table-action" onClick={() => onAdjust(product.id)}>Adjust</button></td>
+          </tr>;
+        })}
+      </DataTable> : <EmptyState title="No products match" body="Try another search or switch to all items." />}
+    </SectionCard>
+  </div>;
+}
+
+function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier }: {
+  data: AppData; onCreatePurchase: () => void; onReceiveOrder: (id: string) => void; onPaySupplier: (id: string) => void;
+}) {
+  const openOrders = data.purchaseOrders.filter(order => order.status === 'sent' || order.status === 'partially_received');
+  const payables = sum(data.suppliers.map(supplier => supplier.balance));
+  return <div className="page-stack">
+    <PageHeader title="Procurement" description="Manage supplier orders, goods received and the amounts your business still owes." actions={<Button onClick={onCreatePurchase}><Plus size={16} /> New purchase order</Button>} />
+    <div className="metric-grid metric-grid-four compact-metrics">
+      <MetricCard label="Supplier balances" value={money(payables)} note="Recorded accounts payable" icon={Truck} tone="amber" />
+      <MetricCard label="Open purchase orders" value={numberText(openOrders.length)} note="Sent or part received" icon={ShoppingCart} tone="blue" />
+      <MetricCard label="Orders in register" value={numberText(data.purchaseOrders.length)} note="Draft through received" icon={FileCheck2} tone="slate" />
+      <MetricCard label="Suppliers" value={numberText(data.suppliers.length)} note="Active supplier records" icon={Store} tone="green" />
+    </div>
+    <SectionCard title="Purchase orders" detail="Receiving goods increases inventory and records the supplier payable.">
+      {data.purchaseOrders.length ? <DataTable headers={['Order', 'Supplier', 'Created', 'Expected', 'Items', 'Order value', 'Status', 'Action']}>
+        {[...data.purchaseOrders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(order => <tr key={order.id}>
+          <td><strong>{order.number}</strong></td><td>{order.supplierName}</td><td>{dateLabel(order.createdAt)}</td>
+          <td>{dateLabel(order.expectedAt)}</td><td>{order.lines.length} lines</td><td className="amount-cell">{money(order.total)}</td>
+          <td><StatusPill status={order.status}>{order.status === 'partially_received' ? 'Part received' : order.status === 'received' ? 'Received' : order.status === 'sent' ? 'Sent to supplier' : order.status}</StatusPill></td>
+          <td>{order.status === 'sent' || order.status === 'partially_received' ? <Button size="sm" variant="secondary" onClick={() => onReceiveOrder(order.id)}>Receive goods</Button> : <span className="muted-copy">Complete</span>}</td>
+        </tr>)}
+      </DataTable> : <EmptyState title="No purchase orders" body="Create a purchase order when your business is ready to replenish stock." />}
+    </SectionCard>
+    <SectionCard title="Supplier accounts" detail="Open balances are tracked separately from customer receivables.">
+      <DataTable headers={['Supplier', 'Contact', 'Payment terms', 'Outstanding', '']}>
+        {data.suppliers.map(supplier => <tr key={supplier.id}>
+          <td><strong>{supplier.name}</strong><small className="cell-sub">{supplier.email}</small></td>
+          <td>{supplier.phone}</td><td>{supplier.terms}</td>
+          <td className="amount-cell">{money(supplier.balance)}</td>
+          <td>{supplier.balance > 0 ? <button className="table-action" onClick={() => onPaySupplier(supplier.id)}>Record payment</button> : <span className="muted-copy">Up to date</span>}</td>
+        </tr>)}
+      </DataTable>
+    </SectionCard>
+  </div>;
+}
+
+function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typeof getMetrics> }) {
+  const [tab, setTab] = useState<'balances' | 'journal'>('balances');
+  const accounts = [
+    { name: 'Cash on hand', group: 'Current asset', amount: metrics.channelBalances.cash, type: 'asset' },
+    { name: 'M-Pesa clearing', group: 'Current asset', amount: metrics.channelBalances.mpesa, type: 'asset' },
+    { name: 'Bank account', group: 'Current asset', amount: metrics.channelBalances.bank, type: 'asset' },
+    { name: 'Inventory', group: 'Current asset', amount: metrics.inventoryValue, type: 'asset' },
+    { name: 'Accounts receivable', group: 'Current asset', amount: metrics.receivables, type: 'asset' },
+    { name: 'Accounts payable', group: 'Current liability', amount: metrics.payables, type: 'liability' },
+    { name: 'Sales revenue', group: 'Income', amount: metrics.totalRevenue, type: 'income' },
+    { name: 'Cost of goods sold', group: 'Direct cost', amount: metrics.costOfGoodsSold, type: 'expense' },
+    { name: 'Operating expenses', group: 'Operating cost', amount: metrics.expenses, type: 'expense' },
+  ];
+  const journal = [...data.journal].sort((a, b) => b.date.localeCompare(a.date));
+  const debitTotal = sum(journal.map(line => line.debit));
+  const creditTotal = sum(journal.map(line => line.credit));
+  return <div className="page-stack">
+    <PageHeader title="Accounts" description="The business record behind every invoice, expense and stock movement." actions={<span className="accounting-balance"><ShieldCheck size={15} /> Double-entry preview</span>} />
+    <div className="metric-grid metric-grid-four compact-metrics">
+      <MetricCard label="Accounts receivable" value={money(metrics.receivables)} note="Due from customers" icon={ArrowDownLeft} tone="amber" />
+      <MetricCard label="Accounts payable" value={money(metrics.payables)} note="Due to suppliers" icon={ArrowUpRight} tone="blue" />
+      <MetricCard label="Operating expenses" value={money(metrics.expenses)} note="Recorded expenses" icon={TrendingDown} tone="slate" />
+      <MetricCard label="Gross profit · MTD" value={money(metrics.grossProfitMonth)} note="Sales less item cost" icon={TrendingUp} tone="green" />
+    </div>
+    <SectionCard title="Accounting register" detail="Account balances are derived from opening balances and posted demo transactions.">
+      <div className="section-tabs">
+        <button className={tab === 'balances' ? 'active' : ''} onClick={() => setTab('balances')}>Account balances</button>
+        <button className={tab === 'journal' ? 'active' : ''} onClick={() => setTab('journal')}>Journal entries <span>{journal.length}</span></button>
+      </div>
+      {tab === 'balances' ? <DataTable headers={['Account', 'Classification', 'Balance', '']}>
+        {accounts.map(account => <tr key={account.name}>
+          <td><strong>{account.name}</strong></td><td>{account.group}</td>
+          <td className="amount-cell">{money(account.amount)}</td>
+          <td><span className={'account-type account-type-' + account.type}>{account.type}</span></td>
+        </tr>)}
+      </DataTable> : <>
+        <div className="journal-summary">
+          <div><span>Debits posted</span><strong>{money(debitTotal)}</strong></div>
+          <div><span>Credits posted</span><strong>{money(creditTotal)}</strong></div>
+          <div><span>Difference</span><strong className={Math.round(debitTotal - creditTotal) === 0 ? 'positive-text' : 'negative-text'}>{money(Math.abs(debitTotal - creditTotal))}</strong></div>
+        </div>
+        <DataTable headers={['Date', 'Account', 'Description', 'Reference', 'Debit', 'Credit']}>
+          {journal.map(line => <tr key={line.id}>
+            <td>{dateLabel(line.date)}</td><td><strong>{line.account}</strong></td><td>{line.description}</td>
+            <td className="mono-text">{line.reference}</td><td className="amount-cell">{line.debit ? money(line.debit) : '—'}</td>
+            <td className="amount-cell">{line.credit ? money(line.credit) : '—'}</td>
+          </tr>)}
+        </DataTable>
+      </>}
+    </SectionCard>
+    <div className="accounting-note"><ShieldCheck size={16} /><span>Journal entries in this preview demonstrate the accounting model. Before production, account mappings, tax treatment, inventory costing and period-close controls need formal validation by an accountant.</span></div>
+  </div>;
+}
+
+function ReportsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typeof getMetrics> }) {
+  const [period, setPeriod] = useState<'week' | 'month'>('week');
+  const days = period === 'week' ? 7 : 30;
+  const dayRows = Array.from({ length: days }, (_, index) => {
+    const date = addDays(today(), index - (days - 1));
+    const invoices = data.invoices.filter(invoice => invoice.date === date);
+    return { date, sales: sum(invoices.map(invoice => invoice.total)), cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))) };
+  });
+  const filteredInvoices = data.invoices.filter(invoice => invoice.date >= addDays(today(), -(days - 1)) && invoice.date <= today());
+  const sales = sum(filteredInvoices.map(invoice => invoice.total));
+  const cogs = sum(filteredInvoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity))));
+  const max = Math.max(1, ...dayRows.map(row => row.sales));
+  return <div className="page-stack">
+    <PageHeader title="Reports" description="A practical view of sales, margin, cash movement and inventory value." actions={<Button variant="outline" onClick={() => window.print()}><Download size={15} /> Print report</Button>} />
+    <div className="metric-grid metric-grid-four compact-metrics">
+      <MetricCard label="Sales recorded" value={money(sales)} note={period === 'week' ? 'Last seven days' : 'Last 30 days'} icon={TrendingUp} tone="green" />
+      <MetricCard label="Gross margin" value={money(sales - cogs)} note="Sales value less recorded product cost" icon={Activity} tone="blue" />
+      <MetricCard label="Margin rate" value={(sales > 0 ? ((sales - cogs) / sales) * 100 : 0).toFixed(1) + '%'} note="Based on item cost data" icon={BarChart3} tone="slate" />
+      <MetricCard label="Inventory value" value={money(metrics.inventoryValue)} note="Current stock at cost" icon={Package} tone="amber" />
+    </div>
+    <SectionCard title="Trading performance" detail="Sales and cost of goods sold by day." action={<div className="segmented-control"><button className={period === 'week' ? 'active' : ''} onClick={() => setPeriod('week')}>7 days</button><button className={period === 'month' ? 'active' : ''} onClick={() => setPeriod('month')}>30 days</button></div>}>
+      <div className="report-chart-legend"><span><i className="legend-dot legend-green" /> Sales</span><span><i className="legend-dot legend-blue" /> Cost of goods sold</span></div>
+      <div className="report-bars">
+        {dayRows.map(row => <div className="report-bar-column" key={row.date} title={dateLabel(row.date) + ': ' + money(row.sales)}>
+          <div className="report-bar-space">
+            <div className="report-bar report-bar-sales" style={{ height: Math.max(2, row.sales / max * 100) + '%' }} />
+            <div className="report-bar report-bar-cost" style={{ height: Math.max(2, row.cost / max * 100) + '%' }} />
+          </div>
+          <span>{period === 'week' ? new Date(row.date + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }) : String(new Date(row.date + 'T12:00:00').getDate())}</span>
+        </div>)}
+      </div>
+    </SectionCard>
+    <div className="content-grid content-grid-main">
+      <SectionCard title="Sales by channel" detail="Value according to invoice payment channel">
+        {(['mpesa', 'cash', 'bank', 'card', 'credit'] as PaymentChannel[]).map(channel => {
+          const value = sum(filteredInvoices.filter(invoice => invoice.channel === channel).map(invoice => invoice.total));
+          return <ProgressLine key={channel} label={channelLabel(channel)} value={value} maximum={sales} suffix=" KSh" color={channel === 'mpesa' ? 'green' : channel === 'credit' ? 'amber' : channel === 'bank' ? 'blue' : 'slate'} />;
+        })}
+      </SectionCard>
+      <SectionCard title="Working capital" detail="Short-term funds tied up in operations">
+        <div className="working-capital-list">
+          <div><span>Cash and bank balances</span><strong>{money(metrics.cashPosition)}</strong></div>
+          <div><span>Customer receivables</span><strong>{money(metrics.receivables)}</strong></div>
+          <div><span>Inventory at cost</span><strong>{money(metrics.inventoryValue)}</strong></div>
+          <div><span>Supplier payables</span><strong className="negative-text">{money(metrics.payables)}</strong></div>
+          <div className="working-capital-total"><span>Net operating working capital</span><strong>{money(metrics.cashPosition + metrics.receivables + metrics.inventoryValue - metrics.payables)}</strong></div>
+        </div>
+      </SectionCard>
+    </div>
+    <div className="report-footnote">Reports use the dates and costs recorded in this workspace. They are not audited financial statements or tax returns.</div>
+  </div>;
+}
+
+function IntegrationsPage({ data, onCopy, onNotice }: {
+  data: AppData; onCopy: (value: string) => void; onNotice: (title: string, detail?: string) => void;
+}) {
+  const [tab, setTab] = useState<'payments' | 'developer' | 'events'>('payments');
+  const code = '<script src="https://cdn.hesabu.ai/v1/checkout.js" data-business="hs_demo_northstar"></script>';
+  const events = [...data.events].sort((a, b) => b.time.localeCompare(a.time));
+  return <div className="page-stack">
+    <PageHeader title="Integrations" description="Use Hesabu as the finance and control layer behind an existing business website or checkout." actions={<span className="integration-mode"><span className="status-dot" /> Sandbox preview</span>} />
+    <div className="integration-hero">
+      <div className="integration-hero-copy">
+        <div className="eyebrow">HESABU PLATFORM</div>
+        <h2>One financial record.<br />Every place you sell.</h2>
+        <p>Connect an existing checkout or website to Hesabu. A completed sale can create an invoice, record the payment, update inventory and post to accounts — without rebuilding the merchant's website.</p>
+        <div className="integration-hero-actions">
+          <Button onClick={() => setTab('developer')}><Code2 size={15} /> Developer setup</Button>
+          <Button variant="outline" onClick={() => setTab('payments')}>Payment connections</Button>
+        </div>
+      </div>
+      <div className="integration-graphic">
+        <div className="integration-node integration-node-site"><Globe2 size={18} /><span>Business website</span><small>Online checkout</small></div>
+        <div className="integration-connect"><i /><i /><i /></div>
+        <div className="integration-node integration-node-hesabu"><div className="mini-brand">H</div><span>Hesabu</span><small>Finance engine</small></div>
+        <div className="integration-connect"><i /><i /><i /></div>
+        <div className="integration-node integration-node-core"><Boxes size={18} /><span>Business records</span><small>Accounts · Stock · Reports</small></div>
+      </div>
+    </div>
+    <SectionCard title="Connected services" detail="Configure the services your business uses. Current connections are demonstrative only.">
+      <div className="section-tabs integration-tabs">
+        <button className={tab === 'payments' ? 'active' : ''} onClick={() => setTab('payments')}>Payment connections</button>
+        <button className={tab === 'developer' ? 'active' : ''} onClick={() => setTab('developer')}>Website & API</button>
+        <button className={tab === 'events' ? 'active' : ''} onClick={() => setTab('events')}>Event log <span>{events.length}</span></button>
+      </div>
+      {tab === 'payments' && <div className="integration-payment-layout">
+        <div className="integration-provider">
+          <div className="provider-logo provider-mpesa">M</div>
+          <div className="provider-copy"><strong>M-Pesa · Daraja</strong><p>Request a payment, receive the asynchronous result and reconcile the receipt against an invoice.</p><div className="provider-tags"><span>STK Push</span><span>Callbacks</span><span>Transaction status</span></div></div>
+          <div className="provider-status"><StatusPill status="pending">Not connected</StatusPill><small>Sandbox preview only</small></div>
+          <Button variant="outline" size="sm" onClick={() => onNotice('Daraja credentials not connected', 'Add your Safaricom Daraja application credentials and merchant shortcode when the backend is ready. This preview cannot send a real prompt.')}>Configure</Button>
+        </div>
+        <div className="integration-provider">
+          <div className="provider-logo provider-tax">T</div>
+          <div className="provider-copy"><strong>KRA eTIMS · System integration</strong><p>Future tax-invoice connectivity through the applicable OSCU or VSCU route. Hesabu is not certified and does not issue eTIMS invoices in this preview.</p><div className="provider-tags"><span>OSCU</span><span>VSCU</span><span>Certification required</span></div></div>
+          <div className="provider-status"><StatusPill status="pending">Not certified</StatusPill><small>Roadmap item</small></div>
+          <Button variant="outline" size="sm" onClick={() => onNotice('eTIMS integration requirements', 'KRA requires system-to-system integrations to be developed, tested, vetted and certified before production use.')}>Requirements</Button>
+        </div>
+        <div className="merchant-methods">
+          <div><span className="channel-icon channel-icon-mpesa"><Smartphone size={15} /></span><span><strong>Merchant Till / PayBill</strong><small>Supported merchant shortcode destination</small></span><StatusPill status="pending">Not configured</StatusPill></div>
+          <div><span className="channel-icon channel-icon-cash"><Wallet size={15} /></span><span><strong>Cash collections</strong><small>Record cash received at the counter</small></span><StatusPill status="delivered">Available</StatusPill></div>
+          <div><span className="channel-icon channel-icon-bank"><Building2 size={15} /></span><span><strong>Bank reconciliation</strong><small>Import statements or connect a provider later</small></span><StatusPill status="pending">Not connected</StatusPill></div>
+        </div>
+        <div className="integration-compliance-note"><ShieldCheck size={16} /><span>In the intended flow, a merchant's own shortcode receives the M-Pesa settlement. Hesabu requests and reconciles supported merchant payments; it does not hold or pool merchant funds. Pochi and Send Money need separately verified feeds or partner connections.</span></div>
+      </div>}
+      {tab === 'developer' && <div className="developer-panel">
+        <div className="developer-copy"><div className="eyebrow">EMBED OR CONNECT</div><h3>Keep the storefront.<br />Connect the operations.</h3><p>When production APIs are available, a merchant can use the Hesabu API from their backend or embed a payment and invoice element into the checkout they already own.</p>
+          <div className="developer-stat-grid"><div><small>Business ID</small><strong className="mono-text">hs_demo_northstar</strong></div><div><small>Environment</small><strong>Sandbox</strong></div><div><small>Webhook delivery</small><strong>Event driven</strong></div></div>
+        </div>
+        <div className="code-card">
+          <div className="code-card-top"><span><i /> <i /> <i /> Integration snippet</span><button onClick={() => onCopy(code)}><Copy size={13} /> Copy</button></div>
+          <pre><code>{code}</code></pre>
+          <div className="code-card-note"><LockKeyholeFallback /> Secret keys remain server-side and are never embedded in a public website.</div>
+        </div>
+        <div className="api-endpoints">
+          <div className="api-endpoints-head"><strong>Planned API surface</strong><span>Design reference · Not live</span></div>
+          <div><span className="http-method">POST</span><code>/v1/invoices</code><small>Create an invoice from an external sale</small></div>
+          <div><span className="http-method">POST</span><code>/v1/payment-intents</code><small>Start a payment request using a merchant rail</small></div>
+          <div><span className="http-method">GET</span><code>/v1/invoices/:id</code><small>Retrieve the latest invoice and settlement state</small></div>
+          <div><span className="http-method">POST</span><code>/v1/webhooks</code><small>Register an endpoint for payment and stock events</small></div>
+        </div>
+      </div>}
+      {tab === 'events' && <DataTable headers={['Event', 'Source', 'Reference', 'Received', 'Delivery']}>
+        {events.map(event => <tr key={event.id}>
+          <td><strong className="mono-text">{event.type}</strong><small className="cell-sub">{event.detail}</small></td>
+          <td>{event.source}</td><td className="mono-text">{event.reference}</td><td>{dateTimeLabel(event.time)}</td>
+          <td><StatusPill status={event.status}>{event.status === 'delivered' ? 'Processed' : event.status === 'pending' ? 'Needs review' : 'Failed'}</StatusPill></td>
+        </tr>)}
+      </DataTable>}
+    </SectionCard>
+    <div className="integration-footer-note"><ShieldCheck size={15} /> API keys, webhook signing, idempotency, replay protection and production payment credentials require a secure backend. The displayed developer surface is a product design preview, not a live API.</div>
+  </div>;
+}
+
+function LockKeyholeFallback() {
+  return <ShieldCheck size={13} />;
+}
+
+function SettingsPage({ profile, onSave, onReset, onNotice }: {
+  profile: BusinessProfile; onSave: (profile: BusinessProfile) => void; onReset: () => void;
+  onNotice: (title: string, detail?: string) => void;
+}) {
+  const [form, setForm] = useState(profile);
+  const [saved, setSaved] = useState(false);
+  const update = (key: keyof BusinessProfile, value: string) => {
+    setSaved(false);
+    setForm(current => ({ ...current, [key]: value }));
+  };
+  return <div className="page-stack">
+    <PageHeader title="Business settings" description="The core business identity and operating configuration used across Hesabu." />
+    <div className="content-grid content-grid-main settings-grid">
+      <SectionCard title="Business profile" detail="These details appear on invoices and business reports.">
+        <form className="settings-form" onSubmit={event => {
+          event.preventDefault();
+          onSave(form); setSaved(true);
+        }}>
+          <Field label="Business display name" value={form.name} onChange={value => update('name', value)} required />
+          <Field label="Registered business name" value={form.legalName} onChange={value => update('legalName', value)} />
+          <div className="form-grid form-grid-two">
+            <Field label="Business contact" value={form.phone} onChange={value => update('phone', value)} />
+            <Field label="Accounts email" value={form.email} onChange={value => update('email', value)} />
+          </div>
+          <div className="form-grid form-grid-two">
+            <Field label="Location" value={form.location} onChange={value => update('location', value)} />
+            <Field label="Industry" value={form.industry} onChange={value => update('industry', value)} />
+          </div>
+          <Field label="KRA PIN" value={form.taxPin} onChange={value => update('taxPin', value)} hint="The preview does not validate or transmit tax details." />
+          <div className="settings-form-footer">{saved && <span className="saved-inline"><CheckCircle2 size={14} /> Saved to this browser</span>}<Button type="submit">Save business profile</Button></div>
+        </form>
+      </SectionCard>
+      <div className="side-stack">
+        <SectionCard title="Payment configuration" detail="Merchant payment details for future live integration.">
+          <div className="settings-connection">
+            <div className="provider-logo provider-mpesa">M</div><div><strong>Safaricom Daraja</strong><small>Sandbox and production credentials not supplied</small></div>
+            <StatusPill status="pending">Not connected</StatusPill>
+          </div>
+          <Button variant="outline" block onClick={() => onNotice('Payment backend required', 'The production flow needs a secure server, merchant shortcode, callback URLs, credentials and payment reconciliation controls.')}>View setup requirements</Button>
+        </SectionCard>
+        <SectionCard title="Data & workspace" detail="This preview is stored locally on this device.">
+          <div className="workspace-detail"><span>Workspace mode</span><strong>Local demo</strong></div>
+          <div className="workspace-detail"><span>Database connection</span><strong>Not connected</strong></div>
+          <div className="workspace-detail"><span>Data scope</span><strong>This browser only</strong></div>
+          <Button variant="outline" block onClick={() => onNotice('Data export', 'The local demo workspace stores records in browser storage. A structured export is planned with the production data layer.') }><Download size={14} /> Export options</Button>
+          <Button variant="danger" block onClick={onReset}><RefreshCw size={14} /> Reset demo workspace</Button>
+        </SectionCard>
+        <div className="settings-footer-note">Demo records are illustrative. Do not enter real customer information, credentials or confidential business data.</div>
+      </div>
+    </div>
+  </div>;
+}
+
+function getMetrics(data: AppData) {
+  const currentMonth = today().slice(0, 7);
+  const monthInvoices = data.invoices.filter(invoice => invoice.date.slice(0, 7) === currentMonth);
+  const salesToday = sum(data.invoices.filter(invoice => invoice.date === today()).map(invoice => invoice.total));
+  const collectedToday = sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.createdAt.slice(0, 10) === today()).map(payment => payment.amount));
+  const totalRevenue = sum(data.invoices.map(invoice => invoice.total));
+  const grossProfitMonth = sum(monthInvoices.map(marginValue));
+  const receivables = sum(data.invoices.map(invoiceBalance));
+  const payables = sum(data.suppliers.map(supplier => supplier.balance));
+  const inventoryValue = sum(data.products.map(productValue));
+  const totalExpenses = sum(data.expenses.map(expense => expense.amount));
+  const channelBalances = {
+    cash: data.openingBalances.cash + sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'cash').map(payment => payment.amount)) - sum(data.expenses.filter(expense => expense.channel === 'cash').map(expense => expense.amount)),
+    mpesa: data.openingBalances.mpesa + sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'mpesa').map(payment => payment.amount)) - sum(data.expenses.filter(expense => expense.channel === 'mpesa').map(expense => expense.amount)),
+    bank: data.openingBalances.bank + sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'bank').map(payment => payment.amount)) - sum(data.expenses.filter(expense => expense.channel === 'bank').map(expense => expense.amount)),
+    card: sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'card').map(payment => payment.amount)),
+  };
+  const cashPosition = channelBalances.cash + channelBalances.mpesa + channelBalances.bank + channelBalances.card;
+  const costOfGoodsSold = sum(data.invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity))));
+  return {
+    salesToday, collectedToday, grossProfitMonth, cashPosition, receivables, payables,
+    inventoryValue, expenses: totalExpenses, totalRevenue, costOfGoodsSold,
+    channelBalances, unpaidInvoices: data.invoices.filter(invoice => invoiceBalance(invoice) > 0).length,
+  };
+}
+
+function recordJournal(
+  data: AppData, accountDebit: string, accountCredit: string, amount: number,
+  description: string, reference: string,
+): AppData['journal'] {
+  const journalId = makeId('JRN');
+  const date = today();
+  return [
+    ...data.journal,
+    { id: makeId('JL'), journalId, date, account: accountDebit, debit: amount, credit: 0, description, reference },
+    { id: makeId('JL'), journalId, date, account: accountCredit, debit: 0, credit: amount, description, reference },
+  ];
+}
+
+function App() {
+  const [data, setData] = useState<AppData>(() => readWorkspace());
+  const [active, setActive] = useState<ModuleKey>('overview');
+  const [dialog, setDialog] = useState<DialogState>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [notice, setNotice] = useState<Notice>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => { saveWorkspace(data); }, [data]);
+
+  const metrics = useMemo(() => getMetrics(data), [data]);
+  const selectedInvoice = selectedInvoiceId ? data.invoices.find(invoice => invoice.id === selectedInvoiceId) : undefined;
+  const selectedSupplier = dialog?.kind === 'supplier-payment' ? data.suppliers.find(supplier => supplier.id === dialog.supplierId) : undefined;
+  const selectedProduct = dialog?.kind === 'adjust' ? data.products.find(product => product.id === dialog.productId) : undefined;
+
+  const notify = (title: string, detail?: string) => setNotice({ title, detail });
+  const closeNotice = () => setNotice(null);
+  const navigate = (section: ModuleKey) => {
+    setActive(section);
+    setSearch('');
+    setDialog(null);
+    setSelectedInvoiceId(null);
+    setMobileMenuOpen(false);
+    setSearchOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const createInvoice = (input: NewInvoiceInput) => {
+    const lines = input.items.map(item => {
+      const product = data.products.find(candidate => candidate.id === item.productId);
+      if (!product) return null;
+      return {
+        productId: product.id, name: product.name, sku: product.sku,
+        quantity: item.quantity, unitPrice: product.sellingPrice,
+        unitCost: product.costPrice, lineTotal: item.quantity * product.sellingPrice,
+      };
+    }).filter((line): line is NonNullable<typeof line> => line !== null);
+    if (!lines.length) return;
+    const subtotal = sum(lines.map(line => line.lineTotal));
+    const total = Math.max(0, subtotal - input.discount);
+    const number = 'HS-' + String(data.nextInvoice).padStart(4, '0');
+    const invoiceId = makeId('INV');
+    const paid = input.channel === 'credit' ? 0 : total;
+    const invoice: Invoice = {
+      id: invoiceId, number, customer: input.customer, phone: input.phone,
+      date: today(), dueDate: input.dueDate, lines, subtotal, discount: input.discount,
+      total, paid, channel: input.channel,
+      status: paid >= total ? 'paid' : paid > 0 ? 'partial' : 'sent',
+      source: input.source,
+    };
+    let next: AppData = {
+      ...data,
+      nextInvoice: data.nextInvoice + 1,
+      invoices: [invoice, ...data.invoices],
+      products: data.products.map(product => {
+        const sold = sum(lines.filter(line => line.productId === product.id).map(line => line.quantity));
+        return sold ? { ...product, quantity: Math.max(0, product.quantity - sold), updatedAt: today() } : product;
+      }),
+    };
+    if (paid > 0) {
+      const payment: Payment = {
+        id: makeId('PAY'), invoiceId, invoiceNumber: number, customer: input.customer,
+        phone: input.phone, amount: paid, channel: input.channel, status: 'succeeded',
+        reference: input.channel === 'mpesa' ? 'DEMO-' + makeId('MP') : makeId(input.channel.toUpperCase()),
+        createdAt: new Date().toISOString(), confirmedAt: new Date().toISOString(),
+        origin: 'manual',
+      };
+      const debitAccount = input.channel === 'mpesa' ? 'M-Pesa clearing' : input.channel === 'cash' ? 'Cash on hand' : input.channel === 'bank' ? 'Bank account' : 'Card clearing';
+      next = {
+        ...next,
+        payments: [payment, ...next.payments],
+        journal: recordJournal(next, debitAccount, 'Sales revenue', paid, 'Sale · ' + number, payment.reference),
+        events: [{
+          id: makeId('EVT'), time: new Date().toISOString(), type: 'invoice.paid',
+          source: sourceLabel(input.source), status: 'delivered', reference: number,
+          detail: 'Sale payment recorded and stock adjusted',
+        }, ...next.events],
+      };
+    } else {
+      next = {
+        ...next,
+        journal: recordJournal(next, 'Accounts receivable', 'Sales revenue', total, 'Credit sale · ' + number, number),
+        events: [{
+          id: makeId('EVT'), time: new Date().toISOString(), type: 'invoice.created',
+          source: sourceLabel(input.source), status: 'delivered', reference: number,
+          detail: 'Credit invoice posted to accounts receivable',
+        }, ...next.events],
+      };
+    }
+    next = {
+      ...next,
+      journal: recordJournal(next, 'Cost of goods sold', 'Inventory', sum(lines.map(line => line.unitCost * line.quantity)), 'Cost of sale · ' + number, number),
+    };
+    setData(next);
+    setDialog(null);
+    notify('Sale posted', number + ' has been recorded and inventory has been updated.');
+  };
+
+  const createPaymentRequest = (input: NewPaymentInput) => {
+    const invoice = data.invoices.find(item => item.id === input.invoiceId);
+    if (!invoice) return;
+    const payment: Payment = {
+      id: makeId('PAY'), invoiceId: invoice.id, invoiceNumber: invoice.number,
+      customer: invoice.customer, phone: input.phone, amount: input.amount,
+      channel: input.channel, status: 'pending',
+      reference: 'STK-' + makeId('REQ').replaceAll('-', ''),
+      createdAt: new Date().toISOString(), origin: 'daraja_demo',
+      note: 'Local simulation only — no real Safaricom request was sent.',
+    };
+    setData(current => ({
+      ...current,
+      payments: [payment, ...current.payments],
+      events: [{
+        id: makeId('EVT'), time: new Date().toISOString(), type: 'payment.requested',
+        source: 'Daraja simulator', status: 'pending', reference: payment.reference,
+        detail: 'A simulated STK prompt is awaiting a customer decision',
+      }, ...current.events],
+    }));
+    setDialog(null);
+    setActive('payments');
+    notify('Payment request created', 'The payment is pending. Use Approve or Fail in the register to simulate the callback.');
+  };
+
+  const resolvePayment = (paymentId: string, success: boolean) => {
+    const payment = data.payments.find(item => item.id === paymentId);
+    if (!payment || payment.status !== 'pending') return;
+    const invoice = data.invoices.find(item => item.id === payment.invoiceId);
+    const now = new Date().toISOString();
+    const status = success ? 'succeeded' : 'failed';
+    let next: AppData = {
+      ...data,
+      payments: data.payments.map(item => item.id === paymentId ? {
+        ...item, status, confirmedAt: success ? now : undefined,
+        note: success ? 'Simulated callback result received.' : 'Simulated customer cancellation or failed request.',
+        reference: success ? 'RCP' + Math.random().toString(36).slice(2, 9).toUpperCase() : item.reference,
+      } : item),
+      events: [{
+        id: makeId('EVT'), time: now, type: success ? 'payment.confirmed' : 'payment.failed',
+        source: 'Daraja simulator', status: success ? 'delivered' : 'failed',
+        reference: payment.reference,
+        detail: success ? 'Callback matched and payment posted against ' + payment.invoiceNumber : 'No successful payment was confirmed',
+      }, ...data.events],
+    };
+    if (success && invoice) {
+      const paid = Math.min(invoice.total, invoice.paid + payment.amount);
+      next = {
+        ...next,
+        invoices: next.invoices.map(item => item.id === invoice.id ? {
+          ...item, paid, status: paid >= item.total ? 'paid' : 'partial',
+        } : item),
+        journal: recordJournal(
+          next,
+          payment.channel === 'mpesa' ? 'M-Pesa clearing' : payment.channel === 'cash' ? 'Cash on hand' : payment.channel === 'bank' ? 'Bank account' : 'Card clearing',
+          'Accounts receivable', payment.amount, 'Payment matched · ' + payment.invoiceNumber, payment.reference,
+        ),
+      };
+    }
+    setData(next);
+    notify(success ? 'Payment confirmed' : 'Payment marked as failed', success ? 'The invoice balance and ledger have been updated.' : 'The invoice remains unpaid.');
+  };
+
+  const createExpense = (input: { category: string; description: string; amount: number; channel: 'cash' | 'mpesa' | 'bank' }) => {
+    const expense = { ...input, id: makeId('EXP'), date: today(), reference: makeId('EXP') };
+    const debitAccount = input.category === 'Rent' ? 'Rent expense' : input.category === 'Utilities' ? 'Utilities expense' : input.category === 'Staff costs' ? 'Staff expense' : input.category === 'Transport' ? 'Transport expense' : 'Operating expenses';
+    const creditAccount = input.channel === 'cash' ? 'Cash on hand' : input.channel === 'mpesa' ? 'M-Pesa clearing' : 'Bank account';
+    setData(current => ({
+      ...current,
+      expenses: [expense, ...current.expenses],
+      journal: recordJournal(current, debitAccount, creditAccount, input.amount, input.description, expense.reference),
+    }));
+    setDialog(null);
+    notify('Expense recorded', money(input.amount) + ' has been posted to ' + input.category.toLowerCase() + '.');
+  };
+
+  const createProduct = (input: Omit<Product, 'id' | 'updatedAt'>) => {
+    const product: Product = { ...input, id: makeId('PRD'), updatedAt: today() };
+    setData(current => ({
+      ...current, products: [product, ...current.products],
+      events: [{
+        id: makeId('EVT'), time: new Date().toISOString(), type: 'inventory.item_created',
+        source: 'Inventory', status: 'delivered', reference: product.sku,
+        detail: product.name + ' added to the product register',
+      }, ...current.events],
+    }));
+    setDialog(null);
+    notify('Product added', product.name + ' is now in the inventory register.');
+  };
+
+  const createPurchaseOrder = (input: NewPurchaseInput) => {
+    const supplier = data.suppliers.find(item => item.id === input.supplierId);
+    if (!supplier) return;
+    const lines = input.items.map(item => {
+      const product = data.products.find(candidate => candidate.id === item.productId);
+      if (!product) return null;
+      return {
+        productId: product.id, name: product.name, quantity: item.quantity,
+        received: 0, unitCost: item.unitCost, lineTotal: item.quantity * item.unitCost,
+      };
+    }).filter((line): line is NonNullable<typeof line> => line !== null);
+    if (!lines.length) return;
+    const order: PurchaseOrder = {
+      id: makeId('PO'), number: 'PO-' + String(data.nextPurchaseOrder).padStart(3, '0'),
+      supplierId: supplier.id, supplierName: supplier.name, createdAt: today(),
+      expectedAt: input.expectedAt, lines, total: sum(lines.map(line => line.lineTotal)), status: 'sent',
+    };
+    setData(current => ({
+      ...current, nextPurchaseOrder: current.nextPurchaseOrder + 1,
+      purchaseOrders: [order, ...current.purchaseOrders],
+      events: [{
+        id: makeId('EVT'), time: new Date().toISOString(), type: 'purchase_order.sent',
+        source: 'Procurement', status: 'delivered', reference: order.number,
+        detail: 'Purchase order created for ' + supplier.name,
+      }, ...current.events],
+    }));
+    setDialog(null);
+    notify('Purchase order created', order.number + ' is ready for supplier follow-up.');
+  };
+
+  const receivePurchaseOrder = (orderId: string) => {
+    const order = data.purchaseOrders.find(item => item.id === orderId);
+    if (!order || order.status === 'received') return;
+    const value = sum(order.lines.map(line => (line.quantity - line.received) * line.unitCost));
+    let next: AppData = {
+      ...data,
+      products: data.products.map(product => {
+        const line = order.lines.find(item => item.productId === product.id);
+        if (!line) return product;
+        return {
+          ...product,
+          quantity: product.quantity + Math.max(0, line.quantity - line.received),
+          costPrice: line.unitCost,
+          updatedAt: today(),
+        };
+      }),
+      purchaseOrders: data.purchaseOrders.map(item => item.id === orderId ? {
+        ...item, status: 'received', lines: item.lines.map(line => ({ ...line, received: line.quantity })),
+      } : item),
+      suppliers: data.suppliers.map(supplier => supplier.id === order.supplierId ? { ...supplier, balance: supplier.balance + value } : supplier),
+      journal: recordJournal(data, 'Inventory', 'Accounts payable', value, 'Goods received · ' + order.number, order.number),
+      events: [{
+        id: makeId('EVT'), time: new Date().toISOString(), type: 'purchase_order.received',
+        source: 'Procurement', status: 'delivered', reference: order.number,
+        detail: 'Goods received and supplier payable posted',
+      }, ...data.events],
+    };
+    setData(next);
+    notify('Goods received', order.number + ' updated inventory and accounts payable.');
+  };
+
+  const paySupplier = (supplierId: string, amount: number) => {
+    const supplier = data.suppliers.find(item => item.id === supplierId);
+    if (!supplier || amount <= 0 || amount > supplier.balance) return;
+    const reference = makeId('BANK');
+    setData(current => ({
+      ...current,
+      suppliers: current.suppliers.map(item => item.id === supplierId ? { ...item, balance: Math.max(0, item.balance - amount) } : item),
+      journal: recordJournal(current, 'Accounts payable', 'Bank account', amount, 'Supplier payment · ' + supplier.name, reference),
+      events: [{
+        id: makeId('EVT'), time: new Date().toISOString(), type: 'supplier.payment_recorded',
+        source: 'Accounts payable', status: 'delivered', reference,
+        detail: 'Supplier payment recorded for ' + supplier.name,
+      }, ...current.events],
+    }));
+    setDialog(null);
+    notify('Supplier payment recorded', money(amount) + ' applied to ' + supplier.name + '.');
+  };
+
+  const adjustStock = (productId: string, quantity: number, reason: string) => {
+    const product = data.products.find(item => item.id === productId);
+    if (!product) return;
+    const delta = quantity - product.quantity;
+    const value = Math.abs(delta * product.costPrice);
+    let next: AppData = {
+      ...data,
+      products: data.products.map(item => item.id === productId ? { ...item, quantity, updatedAt: today() } : item),
+      events: [{
+        id: makeId('EVT'), time: new Date().toISOString(), type: 'inventory.adjusted',
+        source: 'Inventory control', status: 'delivered', reference: product.sku,
+        detail: reason + ': ' + (delta >= 0 ? '+' : '') + delta + ' ' + product.unit,
+      }, ...data.events],
+    };
+    if (delta > 0) {
+      next = { ...next, journal: recordJournal(next, 'Inventory', 'Stock adjustments', value, reason, product.sku) };
+    } else if (delta < 0) {
+      next = { ...next, journal: recordJournal(next, 'Stock adjustments', 'Inventory', value, reason, product.sku) };
+    }
+    setData(next);
+    setDialog(null);
+    notify('Stock count saved', product.name + ' now has ' + numberText(quantity) + ' ' + product.unit + ' on hand.');
+  };
+
+  const saveProfile = (profile: BusinessProfile) => {
+    setData(current => ({ ...current, profile }));
+    notify('Business profile updated', 'Changes have been saved to this browser.');
+  };
+
+  const resetDemo = () => {
+    if (!window.confirm('Reset this browser to the original Hesabu demo workspace? Current local demo changes will be lost.')) return;
+    const fresh = makeDemoData();
+    setData(fresh);
+    setDialog(null);
+    notify('Demo workspace reset', 'The original sample records have been restored.');
+  };
+
+  const copyText = (value: string) => {
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).then(() => notify('Copied to clipboard')).catch(() => notify('Copy not available', 'Select the text manually in this browser.'));
+    } else notify('Copy not available', 'Select the text manually in this browser.');
+  };
+
+  const activeMeta = moduleMeta[active];
+  return <div className={'app-shell ' + (sidebarCollapsed ? 'sidebar-is-collapsed' : '')}>
+    <aside className={'sidebar ' + (mobileMenuOpen ? 'sidebar-mobile-open' : '')}>
+      <div className="brand-row">
+        <div className="brand-mark">H</div>
+        {!sidebarCollapsed && <div className="brand-text"><strong>hesabu<span>.</span></strong><small>Business operating system</small></div>}
+        <button className="sidebar-collapse" onClick={() => setSidebarCollapsed(value => !value)} aria-label="Collapse navigation"><PanelLeftClose size={16} /></button>
+      </div>
+      <button className="workspace-switcher" onClick={() => navigate('settings')}>
+        <span className="workspace-avatar"><Store size={15} /></span>
+        {!sidebarCollapsed && <><span className="workspace-name"><strong>{data.profile.name}</strong><small>{data.profile.industry}</small></span><ChevronDown size={14} /></>}
+      </button>
+      <nav className="sidebar-nav">
+        {NAV_GROUPS.map(group => <div className="nav-group" key={group.title}>
+          {!sidebarCollapsed && <div className="nav-group-label">{group.title}</div>}
+          {group.items.map(item => {
+            const Icon = item.icon;
+            return <button key={item.id} title={sidebarCollapsed ? item.label : undefined} onClick={() => navigate(item.id)} className={'nav-item ' + (active === item.id ? 'nav-item-active' : '')}>
+              <Icon size={18} strokeWidth={1.8} /><span>{item.label}</span>
+              {item.id === 'inventory' && data.products.some(product => product.quantity <= product.reorderLevel) && <i className="nav-alert" />}
+              {item.id === 'payments' && data.payments.some(payment => payment.status === 'pending') && <i className="nav-alert nav-alert-blue" />}
+            </button>;
+          })}
+        </div>)}
+      </nav>
+      {!sidebarCollapsed && <div className="sidebar-bottom">
+        <div className="sidebar-help"><div><ShieldCheck size={16} /><strong>Records in one place</strong></div><p>Sales, stock and cash movement stay connected in the same workspace.</p><button onClick={() => navigate('integrations')}>Explore integrations <ArrowRight size={12} /></button></div>
+        <div className="sidebar-profile" onClick={() => navigate('settings')} role="button" tabIndex={0}>
+          <Initials name={data.profile.name} /><span><strong>{data.profile.name}</strong><small>Demo workspace</small></span><MoreHorizontal size={17} />
+        </div>
+      </div>}
+    </aside>
+
+    {mobileMenuOpen && <button className="mobile-menu-scrim" aria-label="Close navigation" onClick={() => setMobileMenuOpen(false)} />}
+    <main className="main-shell">
+      <header className="topbar">
+        <div className="topbar-left">
+          <IconButton label="Open navigation" className="mobile-menu-button" onClick={() => setMobileMenuOpen(value => !value)}><Menu size={19} /></IconButton>
+          <div className="breadcrumb"><span>Workspace</span><ChevronRight size={13} /><strong>{activeMeta.title}</strong></div>
+        </div>
+        <div className="topbar-right">
+          <div className={'global-search ' + (searchOpen ? 'global-search-open' : '')}><Search size={15} /><input value={search} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)} onChange={event => setSearch(event.target.value)} placeholder="Search this register…" /></div>
+          <span className="topbar-divider" />
+          <button className="topbar-date" onClick={() => notify('Workspace date', dateLabel(today()))}><CalendarDays size={15} /> <span>{dateLabel(today())}</span></button>
+          <button className="notification-button" onClick={() => notify('Operational attention', data.products.filter(product => product.quantity <= product.reorderLevel).length + ' stock items are at or below reorder level.')}><Bell size={17} /><i /></button>
+          <button className="topbar-avatar" onClick={() => navigate('settings')}><Initials name={data.profile.name} /></button>
+        </div>
+      </header>
+
+      <div className="page-container">
+        {active === 'overview' && <OverviewPage data={data} metrics={metrics} onCreateSale={() => setDialog({ kind: 'sale' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} />}
+        {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
+        {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} />}
+        {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} />}
+        {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={receivePurchaseOrder} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
+        {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
+        {active === 'reports' && <ReportsPage data={data} metrics={metrics} />}
+        {active === 'integrations' && <IntegrationsPage data={data} onCopy={copyText} onNotice={notify} />}
+        {active === 'settings' && <SettingsPage profile={data.profile} onSave={saveProfile} onReset={resetDemo} onNotice={notify} />}
+      </div>
+      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Demo workspace · Local records only</span></footer>
+    </main>
+
+    <nav className="mobile-bottom-nav">
+      {[
+        { id: 'overview' as ModuleKey, label: 'Home', icon: LayoutDashboard },
+        { id: 'sales' as ModuleKey, label: 'Sales', icon: Receipt },
+        { id: 'payments' as ModuleKey, label: 'Money', icon: Wallet },
+        { id: 'inventory' as ModuleKey, label: 'Stock', icon: Package },
+        { id: 'procurement' as ModuleKey, label: 'Orders', icon: ShoppingCart },
+      ].map(item => {
+        const Icon = item.icon;
+        return <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>;
+      })}
+    </nav>
+
+    {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} />}
+    {dialog?.kind === 'stk' && <StkDialog invoices={data.invoices} initialInvoiceId={dialog.invoiceId} onClose={() => setDialog(null)} onCreate={createPaymentRequest} />}
+    {dialog?.kind === 'expense' && <ExpenseDialog onClose={() => setDialog(null)} onCreate={createExpense} />}
+    {dialog?.kind === 'product' && <ProductDialog onClose={() => setDialog(null)} onCreate={createProduct} />}
+    {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
+    {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={amount => paySupplier(selectedSupplier.id, amount)} />}
+    {dialog?.kind === 'adjust' && selectedProduct && <AdjustStockDialog product={selectedProduct} onClose={() => setDialog(null)} onAdjust={(quantity, reason) => adjustStock(selectedProduct.id, quantity, reason)} />}
+    {selectedInvoice && <InvoiceDialog invoice={selectedInvoice} onClose={() => setSelectedInvoiceId(null)} onRequestPayment={() => {
+      setSelectedInvoiceId(null);
+      setDialog({ kind: 'stk', invoiceId: selectedInvoice.id });
+    }} />}
+    {notice && <div className="toast" role="status"><CheckCircle2 size={17} /><span><strong>{notice.title}</strong>{notice.detail && <small>{notice.detail}</small>}</span><button onClick={closeNotice} aria-label="Dismiss notification"><X size={15} /></button></div>}
+  </div>;
 }
 
 export default App;

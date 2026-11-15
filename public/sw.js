@@ -1,14 +1,10 @@
-const CACHE = 'hesabu-shell-v2';
+const CACHE = 'hesabu-shell-v3';
 const SHELL = ['/', '/manifest.json', '/hesabu-mark.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     await cache.addAll(SHELL);
-
-    // Pre-cache the Vite-built app entry assets during installation. Without
-    // this, the first successful visit might not cache the JS/CSS before the
-    // service worker takes control, leaving an empty shell when the network drops.
     try {
       const response = await fetch('/');
       if (response.ok) {
@@ -21,12 +17,12 @@ self.addEventListener('install', (event) => {
             const asset = await fetch(path, { cache: 'reload' });
             if (asset.ok) await cache.put(path, asset);
           } catch {
-            // A single optional asset must not block installation.
+            // Optional assets must not block installation.
           }
         }));
       }
     } catch {
-      // The basic shell stays installable when the initial network is unreliable.
+      // Keep the basic shell available when the first network request fails.
     }
   })());
   self.skipWaiting();

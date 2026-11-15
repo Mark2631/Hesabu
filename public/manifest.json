@@ -1,10 +1,10 @@
 {
-  "name": "Hesabu — Business, in balance",
+  "name": "Hesabu — Business operating system",
   "short_name": "Hesabu",
-  "description": "A simple day-to-day ledger for small shops.",
+  "description": "Connected financial operations for modern businesses.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f7fb",
-  "theme_color": "#172747",
+  "background_color": "#f5f7f5",
+  "theme_color": "#176b45",
   "icons": [{ "src": "/hesabu-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }
