@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type ComponentProps, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  Activity, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3,
+  Activity, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, BookOpen,
   Bell, Boxes, Building2, CalendarDays, Check, CheckCircle2, ChevronDown,
   ChevronRight, CircleDollarSign, Clock3, Code2, Copy, CreditCard, Download,
   FileCheck2, FileText, Filter, Globe2, LayoutDashboard, Link2,
@@ -38,7 +38,7 @@ const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: st
     { id: 'procurement', label: 'Procurement', icon: ShoppingCart },
   ] },
   { title: 'CONTROL', items: [
-    { id: 'accounts', label: 'Accounts', icon: BookOpenIcon },
+    { id: 'accounts', label: 'Accounts', icon: BookOpen },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
   ] },
   { title: 'PLATFORM', items: [
@@ -47,9 +47,6 @@ const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: st
   ] },
 ];
 
-function BookOpenIcon(props: ComponentProps<LucideIcon>) {
-  return <FileCheck2 {...props} />;
-}
 
 const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
   overview: { title: 'Business overview', description: 'A live view of the money, stock and obligations moving through your business.' },
@@ -84,9 +81,6 @@ const dateLabel = (value: string) => new Date(value + 'T12:00:00').toLocaleDateS
 const dateTimeLabel = (value: string) => new Date(value).toLocaleString('en-KE', {
   day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
 });
-const timeLabel = (value: string) => new Date(value).toLocaleTimeString('en-KE', {
-  hour: '2-digit', minute: '2-digit',
-});
 const makeId = (prefix: string) => prefix + '-' + Math.random().toString(36).slice(2, 9).toUpperCase();
 const channelLabel = (channel: PaymentChannel) => ({
   mpesa: 'M-Pesa', cash: 'Cash', bank: 'Bank transfer', card: 'Card', credit: 'On credit',
@@ -109,9 +103,9 @@ function Button({
   children, onClick, variant = 'primary', size = 'md', disabled = false, className = '', type = 'button',
 }: {
   children: ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger';
-  size?: 'sm' | 'md' | 'lg'; disabled?: boolean; className?: string; type?: 'button' | 'submit';
+  size?: 'sm' | 'md' | 'lg'; disabled?: boolean; className?: string; type?: 'button' | 'submit'; block?: boolean;
 }) {
-  return <button type={type} onClick={onClick} disabled={disabled} className={'btn btn-' + variant + ' btn-' + size + ' ' + className}>
+  return <button type={type} onClick={onClick} disabled={disabled} className={'btn btn-' + variant + ' btn-' + size + ' ' + className + (block ? ' btn-block' : '')}>
     {children}
   </button>;
 }
@@ -278,7 +272,7 @@ function SaleDialog({ products, onClose, onCreate }: {
   const [phone, setPhone] = useState('');
   const [dueDate, setDueDate] = useState(addDays(today(), 7));
   const [discount, setDiscount] = useState('0');
-  const [channel, setChannel] = useState<PaymentChannel>('mpesa');
+  const channel: PaymentChannel = 'mpesa';
   const [source, setSource] = useState<Invoice['source']>('pos');
   const [items, setItems] = useState([{ productId: products[0]?.id || '', quantity: 1 }]);
   const productFor = (id: string) => products.find(product => product.id === id);
@@ -598,7 +592,7 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
   const todayInvoices = data.invoices.filter(invoice => invoice.date === today());
   const recentInvoices = [...data.invoices].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
   const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
-  const unsettled = data.invoices.filter(invoice => invoiceBalance(invoice) > 0).sort((a, b) => invoice.dueDate.localeCompare(b.dueDate)).slice(0, 4);
+  const unsettled = data.invoices.filter(invoice => invoiceBalance(invoice) > 0).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
   return <div className="page-stack">
     <div className="overview-welcome">
       <div><div className="eyebrow">YOUR BUSINESS AT A GLANCE</div><h2>Good morning, {data.profile.owner === 'Business owner' ? 'there' : data.profile.owner.split(' ')[0]}.</h2><p>Here is what is happening across {data.profile.name}.</p></div>
