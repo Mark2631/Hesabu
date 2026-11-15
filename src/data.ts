@@ -1,4 +1,4 @@
-import type { AppData, Expense, Invoice, JournalLine, Payment, Product, Supplier, TeamMember } from './types';
+import type { AppData, Expense, Invoice, JournalLine, Payment, Product, Supplier, TeamMember, ProductionRecipe } from './types';
 
 const localDate = (date: Date) => {
   const year = date.getFullYear();
@@ -27,6 +27,7 @@ const products: Product[] = [
   { id: 'prd-010', sku: 'DAI-009', name: 'Yoghurt 500ml', category: 'Dairy', unit: 'cup', quantity: 18, reorderLevel: 10, costPrice: 78, sellingPrice: 105, supplierId: 'sup-003', updatedAt: offset(0) },
   { id: 'prd-011', sku: 'BEV-006', name: 'Mineral Water 1L', category: 'Beverages', unit: 'bottle', quantity: 3, reorderLevel: 12, costPrice: 42, sellingPrice: 60, supplierId: 'sup-005', updatedAt: offset(-1) },
   { id: 'prd-012', sku: 'HOM-020', name: 'Laundry Powder 1kg', category: 'Home care', unit: 'packet', quantity: 24, reorderLevel: 12, costPrice: 165, sellingPrice: 205, supplierId: 'sup-004', updatedAt: offset(-1) },
+  { id: 'prd-013', sku: 'BEV-6PK', name: 'Soda six-pack', category: 'Finished goods', unit: 'pack', quantity: 0, reorderLevel: 5, costPrice: 288, sellingPrice: 390, updatedAt: offset(0) },
 ];
 
 const makeInvoice = (
@@ -194,6 +195,12 @@ export function makeDemoData(): AppData {
   };
   const openingPayables = suppliers.reduce((total, supplier) => total + supplier.balance, 0);
 
+  const productionRecipes: ProductionRecipe[] = [
+    { id: 'recipe-001', name: 'Soda six-pack assembly', outputProductId: 'prd-013', ingredients: [
+      { productId: 'prd-007', quantityPerUnit: 6 },
+    ] },
+  ];
+
   const teamMembers: TeamMember[] = [
     { id: 'team-001', name: 'Business owner', email: 'accounts@northstarmarket.example', role: 'Owner', status: 'active' },
     { id: 'team-002', name: 'Grace Njeri', email: 'grace@northstarmarket.example', role: 'Manager', status: 'active' },
@@ -260,7 +267,7 @@ export function makeDemoData(): AppData {
     ],
     openingBalances,
     teamMembers,
-    productionRecipes: [],
+    productionRecipes,
     productionRuns: [],
     nextProductionRun: 1,
     nextInvoice: 1009,
