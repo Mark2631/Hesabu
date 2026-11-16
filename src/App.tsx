@@ -2008,6 +2008,12 @@ function recordJournal(
 
 function App() {
   const [data, setData] = useState<AppData>(() => readWorkspace());
+  const [cloudAccount, setCloudAccount] = useState<{
+    user: SupabaseUser;
+    business: { id: string; name: string; industry: string | null };
+  } | null>(null);
+  const [cloudRestoring, setCloudRestoring] = useState(true);
+  const [authNotice, setAuthNotice] = useState('');
   const [previewAccess, setPreviewAccess] = useState(() => {
     try { return localStorage.getItem('hesabu:preview-access:v1') === 'true'; }
     catch { return false; }
@@ -2030,6 +2036,82 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    restoreCloudSession()
+      .then(result => {
+        if (!active || !result) return;
+        const membership = result.memberships.find(item => item.businesses?.id);
+        if (membership?.businesses) {
+          setCloudAccount({
+            user: result.user,
+            business: {
+              id: membership.businesses.id,
+              name: membership.businesses.name,
+              industry: membership.businesses.industry,
+            },
+          });
+          setPreviewAccess(false);
+          try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
+        } else {
+          setAuthNotice('Your cloud account is signed in, but it does not have a business workspace yet. Create a business or contact the owner of the workspace.');
+        }
+      })
+      .catch(error => {
+        if (active) setAuthNotice(error instanceof Error ? error.message : 'The saved cloud session could not be restored.');
+      })
+      .finally(() => { if (active) setCloudRestoring(false); });
+    return () => { active = false; };
+  }, []);
+
+  const handleCloudSignIn = async (email: string, password: string) => {
+    const session = await signInWithPassword(email, password);
+    const memberships = await listMyBusinesses();
+    const membership = memberships.find(item => item.businesses?.id);
+    if (!membership?.businesses) {
+      throw new Error('Your sign-in was accepted, but no business workspace is available for this account yet. The cloud database setup may still be pending.');
+    }
+    setCloudAccount({
+      user: session.user,
+      business: {
+        id: membership.businesses.id,
+        name: membership.businesses.name,
+        industry: membership.businesses.industry,
+      },
+    });
+    setAuthNotice('');
+    setPreviewAccess(false);
+    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
+  };
+
+  const handleCloudSignUp = async (input: SignUpInput): Promise<'confirm_email' | void> => {
+    const result = await signUpWithPassword(input);
+    if (!result.session) return 'confirm_email';
+    const businessId = await createBusiness(input);
+    await saveBusinessPreferences({
+      businessId,
+      aiAssistantEnabled: input.aiAssistantEnabled,
+      whatsappDigestEnabled: input.whatsappDigestEnabled,
+      whatsappRecipientPhone: input.whatsappRecipientPhone,
+    });
+    setCloudAccount({
+      user: result.session.user,
+      business: { id: businessId, name: input.businessName.trim(), industry: input.industry || null },
+    });
+    setWhatsAppNumber(input.whatsappRecipientPhone);
+    setAuthNotice('');
+    setPreviewAccess(false);
+    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
+  };
+
+  const handleCloudSignOut = async () => {
+    await signOut();
+    setCloudAccount(null);
+    setAuthNotice('');
+    setPreviewAccess(false);
+    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Keep the screen transition available. */ }
+  };
 
   useEffect(() => { saveWorkspace(data); }, [data]);
   useEffect(() => {
@@ -2550,7 +2632,19 @@ function App() {
     navigate('settings');
     notify('Add a WhatsApp destination', 'Enter your business WhatsApp number in Settings before preparing the daily summary.');
   };
-  if (!previewAccess) return <AuthPage onPreview={enterPreview} />;
+  if (cloudRestoring) return <main className="auth-page"><section className="cloud-account-card cloud-loading-card"><span className="brand-mark"><HesabuMark /></span><h1>Hesabu</h1><p>Checking your secure business session…</p></section></main>;
+  if (cloudAccount) return <CloudAccountScreen
+    user={cloudAccount.user}
+    business={cloudAccount.business}
+    onSignOut={() => { void handleCloudSignOut(); }}
+    onPreview={() => { setCloudAccount(null); enterPreview(); }}
+  />;
+  if (!previewAccess) return <AuthPage
+    onPreview={enterPreview}
+    onSignIn={handleCloudSignIn}
+    onSignUp={handleCloudSignUp}
+    initialMessage={authNotice}
+  />;
   return <div className={'app-shell theme-' + theme + ' ' + (sidebarCollapsed ? 'sidebar-is-collapsed' : '')}>
     <aside className={'sidebar ' + (mobileMenuOpen ? 'sidebar-mobile-open' : '')}>
       <div className="brand-row">
