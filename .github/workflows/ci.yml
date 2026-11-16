@@ -86,7 +86,7 @@ jobs:
       - name: Verify tenant tables, RLS and function exposure
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          do $
+          do $$
           declare
             t text;
             required_tables text[] := array[
