@@ -2173,3 +2173,207 @@ html[data-theme="light"] { color-scheme:light; }
   .daily-summary-item { padding:13px 12px; }
   .daily-summary-item strong { font-size:clamp(17px,5vw,22px); }
 }
+
+
+/* MVP refinements: compact dashboard actions and a coordinated floating tools dock. */
+.business-overview-panel {
+  padding: 18px 20px;
+}
+.business-overview-top {
+  margin-bottom: 12px;
+}
+.business-quick-actions {
+  gap: 8px;
+}
+.business-quick-actions button {
+  min-height: 82px;
+  padding: 10px 11px;
+  gap: 5px;
+}
+.business-quick-actions button .quick-action-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.business-quick-actions button strong {
+  font-size: 12px;
+}
+.business-quick-actions button small {
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.daily-summary-item > span {
+  font-size: 12px;
+}
+.daily-summary-item small {
+  font-size: 11px;
+}
+
+.floating-tools-dock {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 75;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.floating-tools-dock .assistant-launcher {
+  position: relative;
+  inset: auto;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 auto;
+}
+.floating-tools-dock .assistant-launcher-tooltip {
+  display: none;
+}
+.floating-whatsapp-launcher {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid #dbe6de;
+  border-radius: 50%;
+  background: #fff;
+  color: #16734b;
+  box-shadow: 0 8px 24px rgba(17, 24, 39, .14);
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+.floating-whatsapp-launcher:hover,
+.floating-whatsapp-launcher:focus-visible {
+  transform: translateY(-2px);
+  border-color: #b8d2c0;
+  background: #f5faf6;
+}
+.floating-whatsapp-launcher.floating-tool-active {
+  border-color: #176b4c;
+  background: #176b4c;
+  color: #fff;
+}
+.digest-floating-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 15px;
+}
+.digest-floating-grid > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px;
+  border: 1px solid #e8ece9;
+  border-radius: 9px;
+  background: #fafcfb;
+}
+.digest-floating-grid span {
+  color: #68756c;
+  font-size: 11px;
+}
+.digest-floating-grid strong {
+  color: #17251c;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.digest-floating-recipient {
+  display: grid;
+  gap: 7px;
+  color: #4d5c52;
+  font-size: 12px;
+  font-weight: 650;
+}
+.digest-floating-recipient input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #dfe7e1;
+  border-radius: 9px;
+  background: #fff;
+  color: #1a2a20;
+  font-size: 16px;
+}
+.digest-floating-recipient input::placeholder {
+  color: #98a39b;
+}
+.digest-share-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: #176b4c;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.digest-share-button:hover {
+  background: #105337;
+}
+.digest-floating-note {
+  margin: 11px 0 0;
+  color: #78857d;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.digest-floating-error {
+  margin: 8px 0 0;
+  color: #b64d4d;
+  font-size: 12px;
+  line-height: 1.4;
+}
+@media (max-width: 700px) {
+  .business-overview-panel {
+    padding: 16px;
+  }
+  .business-quick-actions button {
+    min-height: 76px;
+    padding: 9px;
+  }
+  .business-quick-actions button strong {
+    font-size: 12px;
+  }
+  .business-quick-actions button small {
+    font-size: 10px;
+  }
+  .daily-summary-item > span {
+    font-size: 12px;
+  }
+}
+@media (max-width: 640px) {
+  .floating-tools-dock {
+    right: 14px;
+    bottom: calc(82px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  .floating-tools-dock .assistant-launcher,
+  .floating-whatsapp-launcher {
+    width: 50px;
+    height: 50px;
+  }
+  .assistant-drawer {
+    right: 12px;
+    bottom: calc(142px + env(safe-area-inset-bottom));
+    width: calc(100vw - 24px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .floating-tools-dock *,
+  .floating-whatsapp-launcher {
+    transition: none;
+    animation: none;
+  }
+}
