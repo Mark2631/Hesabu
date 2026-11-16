@@ -2,9 +2,9 @@
 
 ## Supabase Auth and database
 
-**Current status:** not connected. There is no Supabase SDK/client in the current frontend package and the target Spike Digital organisation/project is not visible through the linked Supabase account.
+**Current status:** the target project is identified as `waadpyucxpgvbkpzbnju`; Vercel Preview environment values have been configured for the MVP branch. A small browser-side Auth/PostgREST client exists at `src/lib/supabase.ts`. The connected Supabase API still cannot inspect this project, and no migration has been applied. The current browser client uses `fetch` against Auth/PostgREST; it does not yet use the official `@supabase/supabase-js` SDK.
 
-**MVP implementation:** use Supabase Auth for sign-up/sign-in, a public publishable key in the frontend, and RLS-protected tenant tables. Create the business and owner membership through a restricted database function. Store the browser session using the supported Supabase client defaults. Query records through the signed-in user's JWT and tenant RLS.
+**MVP implementation:** Supabase Auth sign-up/sign-in, a public publishable key in the frontend, and RLS-protected tenant tables are wired in the branch. Business creation and preference persistence call restricted database functions/tables. The current client stores its session in browser storage and refreshes expiring tokens; replace it with the official SDK and its maintained session handling before production. Cloud ledger reads/writes still require the migrations to be reviewed/applied and the operational UI to be connected.
 
 Before implementation, connect the Spike Digital Supabase account/organisation so the project can be identified and inspected. Do not paste a secret or service-role key into source code or chat.
 
