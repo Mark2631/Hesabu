@@ -47,6 +47,14 @@ create table public.suppliers (
   unique (id, business_id)
 );
 
+alter table public.products add column supplier_id uuid;
+alter table public.products
+  add constraint products_supplier_same_business_fk
+  foreign key (supplier_id, business_id)
+  references public.suppliers(id, business_id)
+  on delete restrict;
+create index products_business_supplier_idx on public.products (business_id, supplier_id);
+
 -- ---------------------------------------------------------------------------
 -- Sales and receivables
 -- ---------------------------------------------------------------------------
@@ -487,20 +495,12 @@ drop policy digest_delivery_logs_select_member on public.digest_delivery_logs;
 create policy digest_delivery_logs_select_management on public.digest_delivery_logs for select to authenticated
 using (app_private.has_business_role(business_id, array['owner', 'manager', 'finance']));
 
--- Direct catalogue editing is role-controlled. Financial records are written
--- through RPCs only; SELECT grants above expose no direct INSERT/UPDATE/DELETE.
--- Product stock quantity is deliberately excluded from direct client
--- writes. Stock changes must create an immutable movement and journal entry.
-grant insert (
-  business_id, sku, name, category, unit, reorder_level,
-  cost_price, selling_price, is_active
-) on public.products to authenticated;
+-- Product creation and opening stock are posted through create_product().
+-- Existing stock quantities can only change through audited movement RPCs.
 grant update (
   sku, name, category, unit, reorder_level,
-  cost_price, selling_price, is_active
+  cost_price, selling_price, supplier_id, is_active
 ) on public.products to authenticated;
-create policy products_insert_inventory on public.products for insert to authenticated
-with check (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory']));
 create policy products_update_inventory on public.products for update to authenticated
 using (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory']))
 with check (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory']));
