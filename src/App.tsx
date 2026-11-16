@@ -898,23 +898,44 @@ function getWorkspaceAnswer(data: AppData, question: string) {
     '. Ask about stock, unpaid customer balances, expenses or best-selling products for a more specific view.';
 }
 
-function FloatingAssistant({ data, onRecordSale, onRecordExpense, onUpdateStock }: { data: AppData; onRecordSale: () => void; onRecordExpense: () => void; onUpdateStock: () => void }) {
-  const [open, setOpen] = useState(false);
+function FloatingAssistant({
+  data, whatsappNumber, onWhatsAppNumberChange, onRecordSale, onRecordExpense, onUpdateStock,
+}: {
+  data: AppData;
+  whatsappNumber: string;
+  onWhatsAppNumberChange: (value: string) => void;
+  onRecordSale: () => void;
+  onRecordExpense: () => void;
+  onUpdateStock: () => void;
+}) {
+  const [panel, setPanel] = useState<'assistant' | 'digest' | null>(null);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
+  const [digestError, setDigestError] = useState('');
+  const digest = getDailyDigest(data);
   const ask = (value: string) => {
     const clean = value.trim();
     if (!clean) return;
     setQuestion(clean);
     setAnswer(getWorkspaceAnswer(data, clean));
   };
+  const togglePanel = (next: 'assistant' | 'digest') => {
+    setDigestError('');
+    setPanel(current => current === next ? null : next);
+  };
+  const shareDigest = () => {
+    setDigestError('');
+    openDailyDigestWhatsApp(data, whatsappNumber, () => {
+      setDigestError('Enter a valid WhatsApp number to prepare this summary.');
+    });
+  };
   const suggestions = ['How are sales doing?', 'What stock needs attention?', 'Who still owes us?'];
   return <>
-    {open && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu AI assistant">
+    {panel === 'assistant' && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu assistant">
       <header className="assistant-drawer-header">
         <span className="assistant-drawer-mark"><HesabuMark /></span>
         <span><strong>Hesabu assistant</strong><small>Answers from this workspace · Preview</small></span>
-        <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setOpen(false)}><X size={18} /></button>
+        <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setPanel(null)}><X size={18} /></button>
       </header>
       <div className="assistant-drawer-body">
         <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>I can summarise the sales, balances and stock records currently saved in this browser.</p></div>
@@ -922,9 +943,9 @@ function FloatingAssistant({ data, onRecordSale, onRecordExpense, onUpdateStock 
         <div className="assistant-quick-actions">
           <span>Record something</span>
           <div>
-            <button type="button" onClick={() => { setOpen(false); onRecordSale(); }}><Receipt size={14} /> Sale</button>
-            <button type="button" onClick={() => { setOpen(false); onRecordExpense(); }}><TrendingDown size={14} /> Expense</button>
-            <button type="button" onClick={() => { setOpen(false); onUpdateStock(); }}><Package size={14} /> Stock</button>
+            <button type="button" onClick={() => { setPanel(null); onRecordSale(); }}><Receipt size={14} /> Sale</button>
+            <button type="button" onClick={() => { setPanel(null); onRecordExpense(); }}><TrendingDown size={14} /> Expense</button>
+            <button type="button" onClick={() => { setPanel(null); onUpdateStock(); }}><Package size={14} /> Stock</button>
           </div>
         </div>
         {question && <div className="assistant-answer" aria-live="polite"><span className="assistant-question">{question}</span><p>{answer}</p></div>}
@@ -933,12 +954,52 @@ function FloatingAssistant({ data, onRecordSale, onRecordExpense, onUpdateStock 
         <input aria-label="Ask Hesabu" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask about sales, stock or balances…" />
         <button type="submit" aria-label="Send question" disabled={!question.trim()}><ArrowUpRight size={18} /></button>
       </form>
-      <p className="assistant-drawer-note">Live generative AI, voice capture and automatic record posting are not connected in this preview.</p>
+      <p className="assistant-drawer-note">This preview uses saved records and fixed queries. Generative AI is not connected yet.</p>
     </section>}
-    <button type="button" className={'assistant-launcher ' + (open ? 'assistant-launcher-open' : '')} aria-label={open ? 'Close Hesabu assistant' : 'Open Hesabu assistant'} aria-expanded={open} onClick={() => setOpen(value => !value)}>
-      {open ? <X size={21} /> : <HesabuMark />}
-      <span className="assistant-launcher-tooltip">Ask Hesabu</span>
-    </button>
+    {panel === 'digest' && <section className="assistant-drawer digest-drawer" role="dialog" aria-modal="false" aria-label="Daily WhatsApp digest">
+      <header className="assistant-drawer-header">
+        <span className="assistant-drawer-mark"><MessageCircle size={19} /></span>
+        <span><strong>Daily business digest</strong><small>{data.profile.name} · {dateLabel(digest.date)}</small></span>
+        <button type="button" className="icon-button" aria-label="Close daily digest" onClick={() => setPanel(null)}><X size={18} /></button>
+      </header>
+      <div className="assistant-drawer-body">
+        <div className="digest-floating-grid">
+          <div><span>Sales</span><strong>{money(digest.salesTotal)}</strong></div>
+          <div><span>Payments received</span><strong>{money(digest.receivedTotal)}</strong></div>
+          <div><span>Expenses</span><strong>{money(digest.expenseTotal)}</strong></div>
+          <div><span>Gross profit</span><strong>{money(digest.grossProfit)}</strong></div>
+        </div>
+        <label className="digest-floating-recipient">
+          <span>WhatsApp destination</span>
+          <input value={whatsappNumber} onChange={event => { onWhatsAppNumberChange(event.target.value); setDigestError(''); }} placeholder="2547XXXXXXXX" inputMode="tel" />
+        </label>
+        {digestError && <p className="digest-floating-error" role="alert">{digestError}</p>}
+        <button type="button" className="digest-share-button" onClick={shareDigest}><MessageCircle size={16} /> Open WhatsApp</button>
+        <p className="digest-floating-note">Hesabu fills the message for you. Review it in WhatsApp and press Send. Automatic delivery is not enabled in this preview.</p>
+      </div>
+    </section>}
+    <div className="floating-tools-dock">
+      <button
+        type="button"
+        className={'floating-whatsapp-launcher ' + (panel === 'digest' ? 'floating-tool-active' : '')}
+        aria-label={panel === 'digest' ? 'Close daily digest' : 'Open WhatsApp daily digest'}
+        aria-expanded={panel === 'digest'}
+        onClick={() => togglePanel('digest')}
+        title="Daily digest"
+      >
+        {panel === 'digest' ? <X size={20} /> : <MessageCircle size={21} />}
+      </button>
+      <button
+        type="button"
+        className={'assistant-launcher ' + (panel === 'assistant' ? 'assistant-launcher-open' : '')}
+        aria-label={panel === 'assistant' ? 'Close Hesabu assistant' : 'Open Hesabu assistant'}
+        aria-expanded={panel === 'assistant'}
+        onClick={() => togglePanel('assistant')}
+        title="Ask Hesabu"
+      >
+        {panel === 'assistant' ? <X size={21} /> : <HesabuMark />}
+      </button>
+    </div>
   </>;
 }
 
@@ -2466,6 +2527,8 @@ function App() {
 
     <FloatingAssistant
       data={data}
+      whatsappNumber={whatsappNumber}
+      onWhatsAppNumberChange={setWhatsAppNumber}
       onRecordSale={() => setDialog({ kind: 'sale' })}
       onRecordExpense={() => setDialog({ kind: 'expense' })}
       onUpdateStock={() => setDialog({ kind: 'stock-picker' })}
