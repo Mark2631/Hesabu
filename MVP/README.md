@@ -8,7 +8,7 @@ This folder is the implementation brief for the cloud-backed Hesabu MVP. It is i
 - Baseline: `main`
 - Working branch: `build/hesabu-mvp-cloud-foundation`
 - Frontend: React 18, TypeScript and Vite
-- Existing app: a local-first product preview, not a connected production workspace
+- Ledger workspace: still local preview data; cloud account/session and daily-digest flows exist on this branch, but the main operational screens are not yet using Supabase records.
 - Supabase target: `waadpyucxpgvbkpzbnju` (`https://waadpyucxpgvbkpzbnju.supabase.co`) in the Mark Sanchez account. The owner dashboard screenshot supplied on 16 November 2026 shows the project as Healthy, with no migrations, no branches and no backups. The connected Supabase API in this workspace still does not expose this project or permit schema inspection; no migration has been applied.
 
 ## Product definition
@@ -28,10 +28,14 @@ Manual entry remains available to every account. AI assistance and WhatsApp summ
 
 ## Work already applied on this branch
 
-- Added a paired floating Daily digest / Ask Hesabu dock. Its two panels are mutually exclusive so they cannot overlap.
-- Added a WhatsApp digest preview with today's totals, an editable destination and a pre-filled click-to-chat action. The user still presses Send in WhatsApp; the data source is still the local preview until Supabase is connected.
-- Reduced the dashboard quick-action card padding and tile height.
-- Kept the existing Inter font family and set a legible scale in the UI specification rather than shrinking every label.
+- Added a responsive public product page with navigation, service explanation, workflow, trust section and structured footer.
+- Added Supabase Auth sign-up/sign-in, session refresh/restore, sign-out, atomic business-creation call and onboarding preference persistence through a browser-side fetch client.
+- Added independent AI and WhatsApp signup preferences; manual record entry remains available and both optional choices may be enabled together.
+- Added onboarding recovery after email confirmation without storing the password.
+- Added a cloud account screen that reads business settings and the daily-digest RPC, then prepares a WhatsApp message from cloud figures. The user still presses Send.
+- Added the floating Daily digest / Ask Hesabu dock in the local preview workspace; only one panel opens at a time.
+- Compacted the dashboard quick-action card and refined responsive typography/spacing while retaining Inter.
+- Added tenant foundation/operational migrations, RLS, private definer functions, public invoker wrappers, atomic posting RPCs, SQL contract checks and PostgreSQL 17 runtime validation.
 
 These are branch changes, not production changes. The sign-in flow, AI generation, multi-user data and scheduled WhatsApp delivery remain blocked on the backend and provider integrations described below.
 
@@ -44,8 +48,11 @@ These are branch changes, not production changes. The sign-in flow, AI generatio
 - `.env.example` — browser-safe environment variable names only.
 - `supabase/migrations/202611160001_mvp_foundation.sql` — draft identity/business/preferences migration.
 - `supabase/migrations/202611160002_operational_ledger.sql` — draft operations tables, tenant RLS, atomic posting RPCs and daily digest query.
+- `supabase/tests/tenant_isolation.sql` — end-to-end posting and two-business isolation tests.
+- `../tests/migration-contract.test.mjs` — migration source-contract checks.
+- `STATUS.md` — implementation, CI verification and outstanding access blockers.
 
-Both migrations remain **drafts** and have not been applied to the Supabase project.
+Both migrations remain **drafts** and have not been applied to the live Supabase project. They passed PostgreSQL 17 migration/runtime checks in a disposable CI database.
 
 ## Build sequence
 
@@ -55,8 +62,8 @@ The correct project reference is `waadpyucxpgvbkpzbnju`. Connect the Supabase in
 ### Stage 1 — identity and business tenancy
 Review and apply the foundation migration to the confirmed project. Connect Supabase Auth, create a business atomically, add the owner membership, load the user's businesses and persist onboarding preferences. Every business-owned record must carry a `business_id` and be protected by RLS.
 
-### Stage 2 — core business records
-Migrate products, sales, sale items, payments, expenses and suppliers. Move sale posting into a database transaction/RPC so invoice, stock movement, payment and journal effects cannot partially save. Keep the local demo data as preview-only seed data.
+### Stage 2 — connect the operational screens
+The operational schema and server-side posting functions are drafted and CI-tested. Next, switch product, sales, payment, expenses, supplier, purchasing, inventory and reporting screens from local preview state to authenticated Supabase queries and RPCs. Keep sample data clearly separate.
 
 ### Stage 3 — dashboard and integrations
 Replace local storage as the source of truth with Supabase queries. Add live WhatsApp click-to-chat digest preparation first. Add scheduled WhatsApp delivery only after an official WhatsApp Business Platform sender, server-side secrets, verified webhook and opt-in handling are ready. Add generative AI through a server-side Edge Function, never a browser-held provider key.
@@ -66,7 +73,7 @@ Run security, performance and health advisors; verify tenant isolation with two 
 
 ## Current environment configuration
 
-The two browser-safe Supabase values have been configured in Vercel for the `build/hesabu-mvp-cloud-foundation` **Preview** branch only. Production environment variables were not changed, and no manual production deployment was triggered. The app's `src/lib/supabase.ts` currently calls Supabase Auth and PostgREST directly; it is a small browser client, not the official `@supabase/supabase-js` SDK.
+The two browser-safe Supabase values have been configured in Vercel for the `build/hesabu-mvp-cloud-foundation` **Preview** branch only. Production environment variables were not changed, and no manual production deployment was triggered. The app's `src/lib/supabase.ts` currently calls Supabase Auth and PostgREST directly; it is a small browser client, not the official `@supabase/supabase-js` SDK. The latest code/tested commit passed the frontend build and PostgreSQL 17 migration, runtime and privilege checks.
 
 ## Safety boundaries
 
