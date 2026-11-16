@@ -155,6 +155,10 @@ begin
   )
   returning id into v_business_id;
 
+  update public.profiles
+  set phone = nullif(trim(coalesce(p_phone, '')), '')
+  where id = v_user_id;
+
   insert into public.business_members (business_id, user_id, role, status)
   values (v_business_id, v_user_id, 'owner', 'active');
 
