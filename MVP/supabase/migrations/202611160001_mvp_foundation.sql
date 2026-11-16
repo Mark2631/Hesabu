@@ -199,10 +199,6 @@ create policy "businesses_select_member"
 on public.businesses for select to authenticated
 using (public.is_business_member(id));
 
-create policy "businesses_insert_owner"
-on public.businesses for insert to authenticated
-with check (owner_id = auth.uid());
-
 create policy "businesses_update_owner_manager"
 on public.businesses for update to authenticated
 using (public.has_business_role(id, array['owner', 'manager']))
@@ -219,21 +215,17 @@ using (public.is_business_member(business_id));
 create policy "business_members_insert_owner_or_manager"
 on public.business_members for insert to authenticated
 with check (
-  (
-    user_id = auth.uid()
-    and role = 'owner'
-    and exists (
-      select 1 from public.businesses b
-      where b.id = business_id and b.owner_id = auth.uid()
-    )
+  public.has_business_role(business_id, array['owner'])
+  or (
+    public.has_business_role(business_id, array['manager'])
+    and role in ('sales', 'inventory', 'finance')
   )
-  or public.has_business_role(business_id, array['owner', 'manager'])
 );
 
-create policy "business_members_update_owner_or_manager"
+create policy "business_members_update_owner"
 on public.business_members for update to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager']))
-with check (public.has_business_role(business_id, array['owner', 'manager']));
+using (public.has_business_role(business_id, array['owner']))
+with check (public.has_business_role(business_id, array['owner']));
 
 create policy "business_members_delete_owner_or_manager"
 on public.business_members for delete to authenticated
@@ -255,15 +247,22 @@ on public.business_settings for update to authenticated
 using (public.has_business_role(business_id, array['owner', 'manager']))
 with check (public.has_business_role(business_id, array['owner', 'manager']));
 
--- Explicit grants complement RLS; no anonymous table access is granted.
+-- Explicit grants complement RLS. Revoke inherited/default access first.
+revoke all on public.profiles, public.businesses, public.business_members, public.business_settings
+  from anon, public;
+
 grant select, insert, update on public.profiles to authenticated;
-grant select, insert, update, delete on public.businesses to authenticated;
+-- Business creation must go through create_business() so the owner membership
+-- and settings row are created atomically. owner_id is never client-updatable.
+grant select, delete on public.businesses to authenticated;
+grant update (name, legal_name, industry, phone, email, county, timezone)
+  on public.businesses to authenticated;
 grant select, insert, update, delete on public.business_members to authenticated;
 grant select, insert, update on public.business_settings to authenticated;
 
-revoke all on function public.is_business_member(uuid) from public;
-revoke all on function public.has_business_role(uuid, text[]) from public;
-revoke all on function public.create_business(text, text, text, text, text) from public;
+revoke all on function public.is_business_member(uuid) from anon, public;
+revoke all on function public.has_business_role(uuid, text[]) from anon, public;
+revoke all on function public.create_business(text, text, text, text, text) from anon, public;
 grant execute on function public.is_business_member(uuid) to authenticated;
 grant execute on function public.has_business_role(uuid, text[]) to authenticated;
 grant execute on function public.create_business(text, text, text, text, text) to authenticated;
