@@ -2377,3 +2377,180 @@ html[data-theme="light"] { color-scheme:light; }
     animation: none;
   }
 }
+
+
+/* Cloud account and optional signup preferences. */
+.auth-field select {
+  width:100%;
+  min-height:46px;
+  padding:0 12px;
+  border:1px solid #dfe7e0;
+  border-radius:8px;
+  background:#fff;
+  color:#1d2c22;
+  font-size:14px;
+}
+.auth-field select:focus {
+  outline:2px solid rgba(23,107,76,.18);
+  border-color:#78aa88;
+}
+.auth-field span small {
+  color:#849188;
+  font-size:10px;
+  font-weight:500;
+}
+.auth-preferences {
+  display:grid;
+  gap:8px;
+  margin-top:2px;
+  padding:13px;
+  border:1px solid #e5ebe6;
+  border-radius:10px;
+  background:#fafcfb;
+}
+.auth-preferences-heading {
+  display:grid;
+  gap:4px;
+  margin-bottom:2px;
+}
+.auth-preferences-heading strong {
+  color:#27382d;
+  font-size:12px;
+  line-height:1.4;
+}
+.auth-preferences-heading small {
+  color:#7b897f;
+  font-size:11px;
+  line-height:1.45;
+}
+.auth-preference-option {
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  padding:9px 10px;
+  border:1px solid #e6ece7;
+  border-radius:8px;
+  background:#fff;
+  cursor:pointer;
+}
+.auth-preference-option input {
+  width:16px;
+  height:16px;
+  flex:0 0 auto;
+  margin:2px 0 0;
+  accent-color:#176b4c;
+}
+.auth-preference-option > span {
+  display:grid;
+  gap:3px;
+  min-width:0;
+}
+.auth-preference-option strong {
+  color:#26372c;
+  font-size:12px;
+  line-height:1.35;
+}
+.auth-preference-option small {
+  color:#7f8a82;
+  font-size:10px;
+  line-height:1.4;
+}
+.auth-whatsapp-field {
+  margin-top:2px;
+}
+.auth-whatsapp-field input {
+  font-size:16px;
+}
+.cloud-account-page {
+  align-content:center;
+}
+.cloud-account-card {
+  display:flex;
+  width:min(560px,calc(100% - 32px));
+  flex-direction:column;
+  gap:14px;
+  padding:clamp(24px,5vw,42px);
+  border:1px solid #e6ebe7;
+  border-radius:16px;
+  background:#fff;
+  box-shadow:0 12px 38px rgba(17,24,39,.06);
+}
+.cloud-account-card h1 {
+  margin:5px 0 0;
+  color:#142219;
+  font-size:25px;
+  font-weight:700;
+  letter-spacing:-.04em;
+}
+.cloud-account-intro {
+  margin:0;
+  color:#69776d;
+  font-size:14px;
+  line-height:1.55;
+}
+.cloud-account-status {
+  display:inline-flex;
+  align-items:center;
+  align-self:flex-start;
+  gap:6px;
+  color:#176b4c;
+  font-size:12px;
+  font-weight:700;
+}
+.cloud-account-details {
+  display:grid;
+  grid-template-columns:minmax(120px,.7fr) minmax(0,1.3fr);
+  gap:10px 16px;
+  padding:15px 0;
+  border-top:1px solid #edf1ed;
+  border-bottom:1px solid #edf1ed;
+}
+.cloud-account-details span {
+  color:#7b887f;
+  font-size:12px;
+}
+.cloud-account-details strong {
+  color:#27382d;
+  font-size:12px;
+  font-weight:650;
+  overflow-wrap:anywhere;
+}
+.cloud-account-note {
+  margin:0;
+  color:#77837a;
+  font-size:12px;
+  line-height:1.6;
+}
+.cloud-account-actions {
+  display:flex;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  gap:9px;
+}
+.cloud-loading-card {
+  align-items:center;
+  text-align:center;
+}
+.cloud-loading-card .brand-mark {
+  display:grid;
+  place-items:center;
+}
+@media (max-width:640px) {
+  .auth-form-panel {
+    justify-content:flex-start;
+    padding-top:24px;
+  }
+  .auth-copy {
+    margin:28px 0 18px;
+  }
+  .auth-preferences {
+    padding:11px;
+  }
+  .cloud-account-card {
+    width:calc(100% - 24px);
+    border-radius:0;
+    border-left:0;
+    border-right:0;
+    box-shadow:none;
+  }
+}
