@@ -495,6 +495,16 @@ drop policy digest_delivery_logs_select_member on public.digest_delivery_logs;
 create policy digest_delivery_logs_select_management on public.digest_delivery_logs for select to authenticated
 using (app_private.has_business_role(business_id, array['owner', 'manager', 'finance']));
 
+-- Customer and invoice details are limited to roles that process sales
+-- or financial records. Inventory-only users do not need customer contacts.
+drop policy invoices_select_member on public.invoices;
+create policy invoices_select_sales_finance on public.invoices for select to authenticated
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'sales', 'finance']));
+
+drop policy invoice_items_select_member on public.invoice_items;
+create policy invoice_items_select_sales_finance on public.invoice_items for select to authenticated
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'sales', 'finance']));
+
 -- Product creation and opening stock are posted through create_product().
 -- Existing stock quantities can only change through audited movement RPCs.
 grant update (
@@ -1508,8 +1518,9 @@ declare
   v_units_sold numeric(14,3);
   v_low_stock bigint;
 begin
-  if auth.uid() is null or not app_private.is_business_member(p_business_id) then
-    raise exception 'Business membership required' using errcode = '42501';
+  if auth.uid() is null
+    or not app_private.has_business_role(p_business_id, array['owner', 'manager', 'sales', 'finance']) then
+    raise exception 'Sales or finance access is required for this business digest' using errcode = '42501';
   end if;
   select timezone into v_timezone
   from public.businesses where id = p_business_id;
