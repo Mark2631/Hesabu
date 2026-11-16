@@ -554,7 +554,7 @@ returns uuid
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_user_id uuid := auth.uid();
   v_product_id uuid := gen_random_uuid();
@@ -656,7 +656,7 @@ begin
 
   return v_product_id;
 end;
-$;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Atomic sale posting
