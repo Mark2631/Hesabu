@@ -12,7 +12,7 @@ import {
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import {
-  createBusiness, getCurrentUser, listMyBusinesses, restoreCloudSession, saveBusinessPreferences,
+  createBusiness, listMyBusinesses, restoreCloudSession, saveBusinessPreferences,
   signInWithPassword, signOut, signUpWithPassword, type SignUpInput, type SupabaseUser,
 } from './lib/supabase';
 import type {
