@@ -274,6 +274,53 @@ export async function saveBusinessPreferences(input: {
   );
 }
 
+export interface CloudBusinessSettings {
+  business_id: string;
+  ai_assistant_enabled: boolean;
+  whatsapp_digest_enabled: boolean;
+  whatsapp_recipient_phone: string | null;
+  digest_time: string;
+  timezone: string;
+}
+
+export interface CloudDailyDigest {
+  business_id: string;
+  date: string;
+  currency: 'KES';
+  sales_total: number;
+  payments_received: number;
+  expenses_total: number;
+  gross_profit: number;
+  invoice_count: number;
+  units_sold: number;
+  low_stock_count: number;
+  generated_at: string;
+}
+
+export async function getBusinessSettings(businessId: string): Promise<CloudBusinessSettings> {
+  const query = new URLSearchParams({
+    select: 'business_id,ai_assistant_enabled,whatsapp_digest_enabled,whatsapp_recipient_phone,digest_time,timezone',
+    business_id: 'eq.' + businessId,
+    limit: '1',
+  });
+  const rows = await request<CloudBusinessSettings[]>('rest/v1/business_settings?' + query.toString());
+  if (!rows?.[0]) {
+    throw new SupabaseRequestError('Business preferences are not available yet. Apply the Hesabu foundation migration first.', 404);
+  }
+  return rows[0];
+}
+
+export async function getCloudDailyDigest(businessId: string, date?: string): Promise<CloudDailyDigest> {
+  const digest = await request<CloudDailyDigest>('rest/v1/rpc/get_daily_digest', {
+    method: 'POST',
+    body: { p_business_id: businessId, p_date: date ?? null },
+  });
+  if (!digest || !digest.date || digest.business_id !== businessId) {
+    throw new SupabaseRequestError('The cloud daily digest returned an incomplete response.', 502);
+  }
+  return digest;
+}
+
 export async function listMyBusinesses(): Promise<BusinessMembership[]> {
   const current = await validSession();
   if (!current) return [];
