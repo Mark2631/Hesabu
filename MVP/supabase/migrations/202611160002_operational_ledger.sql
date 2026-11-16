@@ -7,7 +7,8 @@
 begin;
 
 alter table public.businesses
-  add column if not exists next_invoice_number bigint not null default 1001;
+  add column if not exists next_invoice_number bigint not null default 1001,
+  add column if not exists next_purchase_order_number bigint not null default 1001;
 
 -- ---------------------------------------------------------------------------
 -- Catalogue and counterparties
@@ -39,6 +40,7 @@ create table public.suppliers (
   email text,
   payment_terms text,
   opening_balance numeric(14,2) not null default 0 check (opening_balance >= 0),
+  current_balance numeric(14,2) not null default 0 check (current_balance >= 0),
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -179,6 +181,7 @@ create table public.purchase_orders (
     check (status in ('draft', 'sent', 'partially_received', 'received', 'cancelled')),
   subtotal numeric(14,2) not null default 0 check (subtotal >= 0),
   amount_received numeric(14,2) not null default 0 check (amount_received >= 0),
+  amount_paid numeric(14,2) not null default 0 check (amount_paid >= 0),
   note text,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
