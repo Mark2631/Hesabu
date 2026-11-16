@@ -391,6 +391,20 @@ create trigger products_set_updated_at before update on public.products
 for each row execute procedure public.set_updated_at();
 create trigger suppliers_set_updated_at before update on public.suppliers
 for each row execute procedure public.set_updated_at();
+
+create or replace function public.initialise_supplier_balance()
+returns trigger
+language plpgsql
+set search_path = ''
+as $
+begin
+  new.current_balance := new.opening_balance;
+  return new;
+end;
+$;
+create trigger suppliers_initialise_balance
+before insert on public.suppliers
+for each row execute procedure public.initialise_supplier_balance();
 create trigger invoices_set_updated_at before update on public.invoices
 for each row execute procedure public.set_updated_at();
 create trigger expenses_set_updated_at before update on public.expenses
@@ -491,7 +505,11 @@ create policy products_update_inventory on public.products for update to authent
 using (public.has_business_role(business_id, array['owner', 'manager', 'inventory']))
 with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory']));
 
-grant insert, update on public.suppliers to authenticated;
+grant insert (
+  business_id, name, phone, email, payment_terms, opening_balance, is_active
+) on public.suppliers to authenticated;
+grant update (name, phone, email, payment_terms, is_active)
+  on public.suppliers to authenticated;
 create policy suppliers_insert_management on public.suppliers for insert to authenticated
 with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
 create policy suppliers_update_management on public.suppliers for update to authenticated
@@ -904,11 +922,550 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Purchase order creation, goods receiving and supplier settlements
+-- ---------------------------------------------------------------------------
+
+create or replace function public.create_purchase_order(
+  p_business_id uuid,
+  p_supplier_id uuid,
+  p_expected_date date,
+  p_items jsonb,
+  p_note text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_user_id uuid := auth.uid();
+  v_item jsonb;
+  v_product public.products%rowtype;
+  v_purchase_order_id uuid := gen_random_uuid();
+  v_sequence bigint;
+  v_order_number text;
+  v_subtotal numeric(14,2) := 0;
+  v_quantity numeric(14,3);
+  v_unit_cost numeric(14,2);
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.has_business_role(p_business_id, array['owner', 'manager', 'inventory']) then
+    raise exception 'You do not have permission to create purchase orders' using errcode = '42501';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'Add at least one product to the purchase order' using errcode = '22023';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(p_items) e
+    group by (e ->> 'product_id')
+    having count(*) > 1
+  ) then
+    raise exception 'Each product must appear once on the purchase order' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.suppliers
+    where id = p_supplier_id and business_id = p_business_id and is_active = true
+  ) then
+    raise exception 'Supplier is not available in this business' using errcode = '22023';
+  end if;
+
+  for v_item in select value from jsonb_array_elements(p_items)
+  loop
+    v_quantity := (v_item ->> 'quantity')::numeric;
+    v_unit_cost := round((v_item ->> 'unit_cost')::numeric, 2);
+    if v_quantity is null or v_quantity <= 0 or v_unit_cost is null or v_unit_cost < 0 then
+      raise exception 'Purchase quantities must be positive and unit costs cannot be negative' using errcode = '22023';
+    end if;
+    select * into v_product
+    from public.products
+    where id = (v_item ->> 'product_id')::uuid
+      and business_id = p_business_id
+      and is_active = true;
+    if not found then
+      raise exception 'A selected product is not available in this business' using errcode = '22023';
+    end if;
+    v_subtotal := v_subtotal + round(v_quantity * v_unit_cost, 2);
+  end loop;
+
+  update public.businesses
+  set next_purchase_order_number = next_purchase_order_number + 1
+  where id = p_business_id
+  returning next_purchase_order_number - 1 into v_sequence;
+  if not found then
+    raise exception 'Business not found' using errcode = '22023';
+  end if;
+  v_order_number := 'PO-' || lpad(v_sequence::text, 6, '0');
+
+  insert into public.purchase_orders (
+    id, business_id, supplier_id, order_number, order_date,
+    expected_date, status, subtotal, note, created_by
+  ) values (
+    v_purchase_order_id, p_business_id, p_supplier_id, v_order_number,
+    (now() at time zone 'Africa/Nairobi')::date, p_expected_date,
+    'sent', round(v_subtotal, 2), nullif(trim(coalesce(p_note, '')), ''), v_user_id
+  );
+
+  for v_item in select value from jsonb_array_elements(p_items)
+  loop
+    select * into v_product
+    from public.products
+    where id = (v_item ->> 'product_id')::uuid and business_id = p_business_id;
+    v_quantity := (v_item ->> 'quantity')::numeric;
+    v_unit_cost := round((v_item ->> 'unit_cost')::numeric, 2);
+    insert into public.purchase_order_items (
+      business_id, purchase_order_id, product_id, product_name,
+      quantity_ordered, quantity_received, unit_cost, line_total
+    ) values (
+      p_business_id, v_purchase_order_id, v_product.id, v_product.name,
+      v_quantity, 0, v_unit_cost, round(v_quantity * v_unit_cost, 2)
+    );
+  end loop;
+
+  return v_purchase_order_id;
+end;
+$;
+
+create or replace function public.post_purchase_receipt(
+  p_business_id uuid,
+  p_purchase_order_id uuid,
+  p_items jsonb,
+  p_note text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_user_id uuid := auth.uid();
+  v_order public.purchase_orders%rowtype;
+  v_order_item public.purchase_order_items%rowtype;
+  v_product public.products%rowtype;
+  v_item jsonb;
+  v_quantity numeric(14,3);
+  v_remaining numeric(14,3);
+  v_line_value numeric(14,2);
+  v_total_value numeric(14,2) := 0;
+  v_new_quantity numeric(14,3);
+  v_new_cost numeric(14,2);
+  v_journal_id uuid := gen_random_uuid();
+  v_journal_number text;
+  v_reference text;
+  v_complete boolean;
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.has_business_role(p_business_id, array['owner', 'manager', 'inventory', 'finance']) then
+    raise exception 'You do not have permission to receive stock' using errcode = '42501';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'Enter at least one received quantity' using errcode = '22023';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(p_items) e
+    group by (e ->> 'product_id')
+    having count(*) > 1
+  ) then
+    raise exception 'Each product must appear once in the goods receipt' using errcode = '22023';
+  end if;
+
+  select * into v_order
+  from public.purchase_orders
+  where id = p_purchase_order_id and business_id = p_business_id
+  for update;
+  if not found or v_order.status = 'cancelled' then
+    raise exception 'Purchase order is not available for receiving' using errcode = '22023';
+  end if;
+
+  for v_item in select value from jsonb_array_elements(p_items)
+  loop
+    v_quantity := (v_item ->> 'quantity')::numeric;
+    if v_quantity is null or v_quantity <= 0 then
+      raise exception 'Received quantities must be greater than zero' using errcode = '22023';
+    end if;
+
+    select * into v_order_item
+    from public.purchase_order_items
+    where purchase_order_id = p_purchase_order_id
+      and business_id = p_business_id
+      and product_id = (v_item ->> 'product_id')::uuid
+    for update;
+    if not found then
+      raise exception 'Receipt contains a product not listed on this purchase order' using errcode = '22023';
+    end if;
+
+    v_remaining := v_order_item.quantity_ordered - v_order_item.quantity_received;
+    if v_quantity > v_remaining then
+      raise exception 'Received quantity exceeds the remaining ordered quantity for %', v_order_item.product_name using errcode = '22023';
+    end if;
+
+    select * into v_product
+    from public.products
+    where id = v_order_item.product_id and business_id = p_business_id
+    for update;
+    if not found then
+      raise exception 'Product is no longer available in this business' using errcode = '22023';
+    end if;
+
+    v_line_value := round(v_quantity * v_order_item.unit_cost, 2);
+    v_total_value := v_total_value + v_line_value;
+    v_new_quantity := v_product.quantity_on_hand + v_quantity;
+    if v_new_quantity > 0 then
+      v_new_cost := round(
+        (
+          v_product.quantity_on_hand * v_product.cost_price
+          + v_quantity * v_order_item.unit_cost
+        ) / v_new_quantity,
+        2
+      );
+    else
+      v_new_cost := v_product.cost_price;
+    end if;
+
+    update public.products
+    set quantity_on_hand = v_new_quantity, cost_price = v_new_cost
+    where id = v_product.id and business_id = p_business_id;
+
+    update public.purchase_order_items
+    set quantity_received = quantity_received + v_quantity
+    where id = v_order_item.id and business_id = p_business_id;
+
+    insert into public.inventory_movements (
+      business_id, product_id, movement_type, quantity_delta,
+      unit_cost, total_cost, source_type, source_id, reference, note, created_by
+    ) values (
+      p_business_id, v_product.id, 'purchase', v_quantity,
+      v_order_item.unit_cost, v_line_value, 'purchase_order',
+      p_purchase_order_id, v_order.order_number, nullif(trim(coalesce(p_note, '')), ''), v_user_id
+    );
+  end loop;
+
+  if v_total_value <= 0 then
+    raise exception 'Goods receipt must have a positive value' using errcode = '22023';
+  end if;
+
+  select bool_and(quantity_received >= quantity_ordered)
+  into v_complete
+  from public.purchase_order_items
+  where purchase_order_id = p_purchase_order_id and business_id = p_business_id;
+
+  update public.purchase_orders
+  set amount_received = amount_received + round(v_total_value, 2),
+      status = case when coalesce(v_complete, false) then 'received' else 'partially_received' end
+  where id = p_purchase_order_id and business_id = p_business_id;
+
+  update public.suppliers
+  set current_balance = current_balance + round(v_total_value, 2)
+  where id = v_order.supplier_id and business_id = p_business_id;
+
+  v_reference := v_order.order_number || '-RCV-' || upper(substr(replace(v_journal_id::text, '-', ''), 1, 8));
+  v_journal_number := 'RCV-' || upper(substr(replace(v_journal_id::text, '-', ''), 1, 12));
+
+  insert into public.journal_entries (
+    id, business_id, journal_number, entry_date, description,
+    reference, source_type, source_id, posted_by
+  ) values (
+    v_journal_id, p_business_id, v_journal_number,
+    (now() at time zone 'Africa/Nairobi')::date,
+    'Goods received · ' || v_order.order_number,
+    v_reference, 'purchase_receipt', p_purchase_order_id, v_user_id
+  );
+  insert into public.journal_lines (business_id, journal_entry_id, account_name, debit, description)
+  values (p_business_id, v_journal_id, 'Inventory', round(v_total_value, 2), 'Goods received into stock');
+  insert into public.journal_lines (business_id, journal_entry_id, account_name, credit, description)
+  values (p_business_id, v_journal_id, 'Accounts payable', round(v_total_value, 2), 'Supplier liability recognised');
+
+  return v_journal_id;
+end;
+$;
+
+create or replace function public.post_supplier_payment(
+  p_business_id uuid,
+  p_supplier_id uuid,
+  p_amount numeric,
+  p_channel text,
+  p_reference text default null,
+  p_note text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_user_id uuid := auth.uid();
+  v_supplier public.suppliers%rowtype;
+  v_payment_id uuid := gen_random_uuid();
+  v_journal_id uuid := gen_random_uuid();
+  v_cash_account text;
+  v_reference text := nullif(trim(coalesce(p_reference, '')), '');
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.has_business_role(p_business_id, array['owner', 'manager', 'finance']) then
+    raise exception 'You do not have permission to settle supplier balances' using errcode = '42501';
+  end if;
+  if p_amount is null or p_amount <= 0 then
+    raise exception 'Supplier payment must be greater than zero' using errcode = '22023';
+  end if;
+  if p_channel is null or p_channel not in ('mpesa', 'cash', 'bank', 'card') then
+    raise exception 'Unsupported supplier payment channel' using errcode = '22023';
+  end if;
+
+  select * into v_supplier
+  from public.suppliers
+  where id = p_supplier_id and business_id = p_business_id
+  for update;
+  if not found then
+    raise exception 'Supplier not found in this business' using errcode = '22023';
+  end if;
+  if round(p_amount, 2) > v_supplier.current_balance then
+    raise exception 'Supplier payment exceeds the outstanding balance' using errcode = '22023';
+  end if;
+
+  update public.suppliers
+  set current_balance = current_balance - round(p_amount, 2)
+  where id = p_supplier_id and business_id = p_business_id;
+
+  v_cash_account := case p_channel
+    when 'mpesa' then 'M-Pesa clearing'
+    when 'cash' then 'Cash on hand'
+    when 'bank' then 'Bank account'
+    when 'card' then 'Card clearing'
+  end;
+
+  insert into public.cash_movements (
+    business_id, movement_date, channel, direction, amount,
+    description, reference, source_type, source_id, created_by
+  ) values (
+    p_business_id, (now() at time zone 'Africa/Nairobi')::date,
+    p_channel, 'out', round(p_amount, 2),
+    'Supplier payment · ' || v_supplier.name, v_reference,
+    'supplier_payment', v_payment_id, v_user_id
+  );
+
+  insert into public.journal_entries (
+    id, business_id, journal_number, entry_date, description,
+    reference, source_type, source_id, posted_by
+  ) values (
+    v_journal_id, p_business_id,
+    'SUP-' || upper(substr(replace(v_payment_id::text, '-', ''), 1, 12)),
+    (now() at time zone 'Africa/Nairobi')::date,
+    'Supplier payment · ' || v_supplier.name, v_reference,
+    'supplier_payment', v_payment_id, v_user_id
+  );
+  insert into public.journal_lines (business_id, journal_entry_id, account_name, debit, description)
+  values (p_business_id, v_journal_id, 'Accounts payable', round(p_amount, 2), 'Supplier balance settled');
+  insert into public.journal_lines (business_id, journal_entry_id, account_name, credit, description)
+  values (p_business_id, v_journal_id, v_cash_account, round(p_amount, 2), 'Cash paid to supplier');
+
+  return v_payment_id;
+end;
+$;
+
+-- ---------------------------------------------------------------------------
+-- Inventory adjustments and server-calculated daily digest
+-- ---------------------------------------------------------------------------
+
+create or replace function public.post_stock_adjustment(
+  p_business_id uuid,
+  p_product_id uuid,
+  p_quantity_delta numeric,
+  p_reason text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_user_id uuid := auth.uid();
+  v_product public.products%rowtype;
+  v_movement_id uuid := gen_random_uuid();
+  v_journal_id uuid := gen_random_uuid();
+  v_new_quantity numeric(14,3);
+  v_value numeric(14,2);
+  v_debit_account text;
+  v_credit_account text;
+  v_reference text;
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.has_business_role(p_business_id, array['owner', 'manager', 'inventory']) then
+    raise exception 'You do not have permission to adjust stock' using errcode = '42501';
+  end if;
+  if p_quantity_delta is null or p_quantity_delta = 0 then
+    raise exception 'Stock adjustment must not be zero' using errcode = '22023';
+  end if;
+  if p_reason is null or length(trim(p_reason)) = 0 then
+    raise exception 'A reason is required for every stock adjustment' using errcode = '22023';
+  end if;
+
+  select * into v_product from public.products
+  where id = p_product_id and business_id = p_business_id and is_active = true
+  for update;
+  if not found then
+    raise exception 'Product not found in this business' using errcode = '22023';
+  end if;
+
+  v_new_quantity := v_product.quantity_on_hand + p_quantity_delta;
+  if v_new_quantity < 0 then
+    raise exception 'Stock adjustment would make the quantity negative' using errcode = '22023';
+  end if;
+  v_value := round(abs(p_quantity_delta) * v_product.cost_price, 2);
+
+  update public.products
+  set quantity_on_hand = v_new_quantity
+  where id = p_product_id and business_id = p_business_id;
+
+  if p_quantity_delta > 0 then
+    v_debit_account := 'Inventory';
+    v_credit_account := 'Stock adjustment gain';
+  else
+    v_debit_account := 'Stock shrinkage';
+    v_credit_account := 'Inventory';
+  end if;
+
+  v_reference := 'ADJ-' || upper(substr(replace(v_movement_id::text, '-', ''), 1, 10));
+  insert into public.inventory_movements (
+    id, business_id, product_id, movement_type, quantity_delta,
+    unit_cost, total_cost, source_type, source_id, reference, note, created_by
+  ) values (
+    v_movement_id, p_business_id, p_product_id, 'adjustment',
+    p_quantity_delta, v_product.cost_price, v_value,
+    'stock_adjustment', v_movement_id, v_reference, trim(p_reason), v_user_id
+  );
+
+  insert into public.journal_entries (
+    id, business_id, journal_number, entry_date, description,
+    reference, source_type, source_id, posted_by
+  ) values (
+    v_journal_id, p_business_id, v_reference,
+    (now() at time zone 'Africa/Nairobi')::date,
+    'Stock adjustment · ' || v_product.name, v_reference,
+    'stock_adjustment', v_movement_id, v_user_id
+  );
+  if v_value > 0 then
+    insert into public.journal_lines (business_id, journal_entry_id, account_name, debit, description)
+    values (p_business_id, v_journal_id, v_debit_account, v_value, trim(p_reason));
+    insert into public.journal_lines (business_id, journal_entry_id, account_name, credit, description)
+    values (p_business_id, v_journal_id, v_credit_account, v_value, trim(p_reason));
+  end if;
+
+  return v_movement_id;
+end;
+$;
+
+create or replace function public.get_daily_digest(
+  p_business_id uuid,
+  p_date date default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_timezone text;
+  v_date date;
+  v_sales numeric(14,2);
+  v_received numeric(14,2);
+  v_expenses numeric(14,2);
+  v_gross_profit numeric(14,2);
+  v_invoice_count bigint;
+  v_units_sold numeric(14,3);
+  v_low_stock bigint;
+begin
+  if auth.uid() is null or not public.is_business_member(p_business_id) then
+    raise exception 'Business membership required' using errcode = '42501';
+  end if;
+  select timezone into v_timezone
+  from public.businesses where id = p_business_id;
+  if not found then
+    raise exception 'Business not found' using errcode = '22023';
+  end if;
+  v_date := coalesce(p_date, (now() at time zone v_timezone)::date);
+
+  select
+    coalesce(sum(total_amount), 0),
+    count(*)
+  into v_sales, v_invoice_count
+  from public.invoices
+  where business_id = p_business_id and issue_date = v_date and status <> 'void';
+
+  select coalesce(sum(amount), 0)
+  into v_received
+  from public.payments
+  where business_id = p_business_id
+    and status = 'succeeded'
+    and (received_at at time zone v_timezone)::date = v_date;
+
+  select coalesce(sum(amount), 0)
+  into v_expenses
+  from public.expenses
+  where business_id = p_business_id and expense_date = v_date;
+
+  select coalesce(sum(
+    coalesce(lines.margin_total, 0) - i.discount_amount
+  ), 0)
+  into v_gross_profit
+  from public.invoices i
+  left join lateral (
+    select sum(ii.line_total - (ii.quantity * ii.unit_cost)) as margin_total
+    from public.invoice_items ii
+    where ii.invoice_id = i.id and ii.business_id = i.business_id
+  ) lines on true
+  where i.business_id = p_business_id and i.issue_date = v_date and i.status <> 'void';
+
+  select coalesce(sum(quantity), 0)
+  into v_units_sold
+  from public.invoice_items ii
+  join public.invoices i on i.id = ii.invoice_id and i.business_id = ii.business_id
+  where ii.business_id = p_business_id and i.issue_date = v_date and i.status <> 'void';
+
+  select count(*)
+  into v_low_stock
+  from public.products
+  where business_id = p_business_id and is_active = true
+    and quantity_on_hand <= reorder_level;
+
+  return jsonb_build_object(
+    'business_id', p_business_id,
+    'date', v_date,
+    'currency', 'KES',
+    'sales_total', round(v_sales, 2),
+    'payments_received', round(v_received, 2),
+    'expenses_total', round(v_expenses, 2),
+    'gross_profit', round(v_gross_profit, 2),
+    'invoice_count', v_invoice_count,
+    'units_sold', v_units_sold,
+    'low_stock_count', v_low_stock,
+    'generated_at', now()
+  );
+end;
+$;
+
 -- No browser role can post directly to ledger tables. All RPCs perform explicit
 -- active-membership/role checks and create their dependent records in one txn.
 revoke all on function public.post_sale(uuid, text, text, date, numeric, text, text, jsonb) from public, anon;
 revoke all on function public.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) from public, anon;
 revoke all on function public.post_expense(uuid, text, text, numeric, text, date, text) from public, anon;
+revoke all on function public.create_purchase_order(uuid, uuid, date, jsonb, text) from public, anon;
+revoke all on function public.post_purchase_receipt(uuid, uuid, jsonb, text) from public, anon;
+revoke all on function public.post_supplier_payment(uuid, uuid, numeric, text, text, text) from public, anon;
+revoke all on function public.post_stock_adjustment(uuid, uuid, numeric, text) from public, anon;
+revoke all on function public.get_daily_digest(uuid, date) from public, anon;
+grant execute on function public.create_purchase_order(uuid, uuid, date, jsonb, text) to authenticated;
+grant execute on function public.post_purchase_receipt(uuid, uuid, jsonb, text) to authenticated;
+grant execute on function public.post_supplier_payment(uuid, uuid, numeric, text, text, text) to authenticated;
+grant execute on function public.post_stock_adjustment(uuid, uuid, numeric, text) to authenticated;
+grant execute on function public.get_daily_digest(uuid, date) to authenticated;
 grant execute on function public.post_sale(uuid, text, text, date, numeric, text, text, jsonb) to authenticated;
 grant execute on function public.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) to authenticated;
 grant execute on function public.post_expense(uuid, text, text, numeric, text, date, text) to authenticated;
