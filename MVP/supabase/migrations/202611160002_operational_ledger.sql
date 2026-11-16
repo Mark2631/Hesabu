@@ -1289,6 +1289,7 @@ declare
   v_movement_id uuid := gen_random_uuid();
   v_journal_id uuid := gen_random_uuid();
   v_new_quantity numeric(14,3);
+  v_delta numeric(14,3);
   v_value numeric(14,2);
   v_debit_account text;
   v_credit_account text;
@@ -1300,8 +1301,9 @@ begin
   if not public.has_business_role(p_business_id, array['owner', 'manager', 'inventory']) then
     raise exception 'You do not have permission to adjust stock' using errcode = '42501';
   end if;
-  if p_quantity_delta is null or p_quantity_delta = 0 then
-    raise exception 'Stock adjustment must not be zero' using errcode = '22023';
+  v_delta := round(p_quantity_delta, 3);
+  if v_delta is null or v_delta = 0 then
+    raise exception 'Stock adjustment must be at least 0.001 units' using errcode = '22023';
   end if;
   if p_reason is null or length(trim(p_reason)) = 0 then
     raise exception 'A reason is required for every stock adjustment' using errcode = '22023';
@@ -1314,17 +1316,17 @@ begin
     raise exception 'Product not found in this business' using errcode = '22023';
   end if;
 
-  v_new_quantity := v_product.quantity_on_hand + p_quantity_delta;
+  v_new_quantity := v_product.quantity_on_hand + v_delta;
   if v_new_quantity < 0 then
     raise exception 'Stock adjustment would make the quantity negative' using errcode = '22023';
   end if;
-  v_value := round(abs(p_quantity_delta) * v_product.cost_price, 2);
+  v_value := round(abs(v_delta) * v_product.cost_price, 2);
 
   update public.products
   set quantity_on_hand = v_new_quantity
   where id = p_product_id and business_id = p_business_id;
 
-  if p_quantity_delta > 0 then
+  if v_delta > 0 then
     v_debit_account := 'Inventory';
     v_credit_account := 'Stock adjustment gain';
   else
@@ -1338,7 +1340,7 @@ begin
     unit_cost, total_cost, source_type, source_id, reference, note, created_by
   ) values (
     v_movement_id, p_business_id, p_product_id, 'adjustment',
-    p_quantity_delta, v_product.cost_price, v_value,
+    v_delta, v_product.cost_price, v_value,
     'stock_adjustment', v_movement_id, v_reference, trim(p_reason), v_user_id
   );
 
