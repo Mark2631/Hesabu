@@ -1,6 +1,6 @@
 # Supabase database plan
 
-This is a proposed model, not a description of the live Spike Digital database. The project is not visible through the currently connected Supabase integration, so the existing schema, migrations and row counts have not yet been inspected.
+This is a proposed model, not a description of the live database. The target project is `waadpyucxpgvbkpzbnju` in the Mark Sanchez account. The dashboard screenshot shows Healthy and no migrations, but the connected Supabase API cannot currently read the project; existing tables, policies and row counts have not been verified.
 
 ## Tenant boundary
 
@@ -10,7 +10,7 @@ RLS is the enforcement layer. Application-side filters are useful for query clar
 
 ## Foundation migration
 
-The draft migration in `supabase/migrations/202611160001_mvp_foundation.sql` creates:
+The draft migration in `MVP/supabase/migrations/202611160001_mvp_foundation.sql` creates:
 
 | Table | Purpose |
 | --- | --- |
@@ -21,7 +21,15 @@ The draft migration in `supabase/migrations/202611160001_mvp_foundation.sql` cre
 
 The migration includes RLS, tenant membership helper functions, restricted grants, updated-at triggers and an atomic `create_business` function. It must be reviewed against the confirmed project before application.
 
-## Domain tables to add after the foundation
+## Operational migration
+
+The draft migration `MVP/supabase/migrations/202611160002_operational_ledger.sql` adds `products`, `suppliers`, `invoices`, `invoice_items`, `payments`, `unmatched_receipts`, `expenses`, `purchase_orders`, `purchase_order_items`, `inventory_movements`, `cash_movements`, `journal_entries`, `journal_lines`, `integration_events` and `digest_delivery_logs`.
+
+It adds tenant RLS policies and role-specific read/write rules. Direct changes to financial records are blocked; the intended posting path uses database functions. The draft atomic RPCs include `post_sale`, `post_payment`, `post_expense`, `create_purchase_order`, `post_purchase_receipt`, `post_supplier_payment`, `post_stock_adjustment` and `get_daily_digest`. A deferred constraint trigger checks journal balance at transaction commit.
+
+These are design and migration files only. They have not been run against the live Supabase project or a local PostgreSQL instance.
+
+## Further domain tables to consider
 
 | Table | Core fields / rules |
 | --- | --- |
