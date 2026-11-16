@@ -12,18 +12,18 @@ select public.create_business(
   'Alpha Test Shop', 'Retail', '0711000001', 'alpha@example.test', 'Meru'
 ) as alpha_business_id \gset
 
-insert into public.products (
-  business_id, sku, name, unit, reorder_level, cost_price, selling_price
-) values (
-  :'alpha_business_id'::uuid, 'TST-001', 'Test rice', 'packet', 2, 60, 100
-) returning id as alpha_product_id \gset
-
-select public.post_stock_adjustment(
+select public.create_product(
   :'alpha_business_id'::uuid,
-  :'alpha_product_id'::uuid,
+  'TST-001',
+  'Test rice',
+  null,
+  'packet',
   10,
-  'Opening stock for migration test'
-);
+  2,
+  60,
+  100,
+  null
+) as alpha_product_id \gset
 
 insert into public.suppliers (
   business_id, name, phone, opening_balance
@@ -203,10 +203,17 @@ select public.create_business(
   'Beta Test Shop', 'Services', '0711000003', 'beta@example.test', 'Meru'
 ) as beta_business_id \gset
 
-insert into public.products (
-  business_id, sku, name, unit, reorder_level, cost_price, selling_price
-) values (
-  :'beta_business_id'::uuid, 'TST-002', 'Beta-only product', 'unit', 1, 10, 20
+select public.create_product(
+  :'beta_business_id'::uuid,
+  'TST-002',
+  'Beta-only product',
+  null,
+  'unit',
+  5,
+  1,
+  10,
+  20,
+  null
 );
 
 -- Switch back to Alpha: Beta's business and product rows must be invisible.
