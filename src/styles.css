@@ -3120,3 +3120,36 @@ html[data-theme="light"] { color-scheme:light; }
     animation:none !important;
   }
 }
+
+
+.auth-preference-manual {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:10px;
+  border:1px solid #dce8de;
+  border-radius:8px;
+  background:#f4f8f5;
+}
+.auth-preference-manual > span:first-child {
+  display:grid;
+  gap:3px;
+}
+.auth-preference-manual strong {
+  color:#27392d;
+  font-size:12px;
+}
+.auth-preference-manual small {
+  color:#7a897e;
+  font-size:10px;
+  line-height:1.4;
+}
+.auth-preference-manual > span:last-child {
+  flex:0 0 auto;
+  color:#28734b;
+  font-size:9px;
+  font-weight:800;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
