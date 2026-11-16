@@ -767,7 +767,8 @@ begin
     issue_date, due_date, subtotal, discount_amount, total_amount,
     amount_paid, payment_channel, status, source, created_by
   ) values (
-    v_invoice_id, p_business_id, coalesce(nullif(trim(p_customer_name), ''), 'Walk-in customer'),
+    v_invoice_id, p_business_id, v_invoice_number,
+    coalesce(nullif(trim(p_customer_name), ''), 'Walk-in customer'),
     nullif(trim(coalesce(p_customer_phone, '')), ''),
     (now() at time zone 'Africa/Nairobi')::date, p_due_date,
     v_subtotal, v_discount, v_total, 0, p_payment_channel,
