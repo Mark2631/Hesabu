@@ -2142,18 +2142,40 @@ function savePendingOnboarding(input: SignUpInput) {
   catch { /* The account can still be created; confirmation recovery may need the user to repeat setup. */ }
 }
 
-function readPendingOnboarding(email?: string): Omit<SignUpInput, 'password'> | null {
+function readPendingOnboarding(
+  email?: string,
+  userMetadata?: Record<string, unknown>,
+): Omit<SignUpInput, 'password'> | null {
   try {
     const raw = localStorage.getItem(PENDING_ONBOARDING_KEY);
-    if (!raw) return null;
-    const draft = JSON.parse(raw) as Omit<SignUpInput, 'password'>;
-    if (!draft?.email || !draft.businessName || (email && draft.email.toLowerCase() !== email.toLowerCase())) return null;
-    return draft;
+    if (raw) {
+      const draft = JSON.parse(raw) as Omit<SignUpInput, 'password'>;
+      if (draft?.email && draft.businessName && (!email || draft.email.toLowerCase() === email.toLowerCase())) {
+        return draft;
+      }
+    }
   } catch {
-    return null;
+    // Fall back to the non-authoritative onboarding details in Auth user metadata.
   }
-}
 
+  const rawMetadata = userMetadata?.business_onboarding;
+  if (!rawMetadata || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata)) return null;
+  const draft = rawMetadata as Record<string, unknown>;
+  const draftEmail = String(draft.email ?? email ?? '').trim();
+  const businessName = String(draft.business_name ?? '').trim();
+  if (!businessName || !draftEmail || (email && draftEmail.toLowerCase() !== email.toLowerCase())) return null;
+
+  return {
+    fullName: String(userMetadata?.display_name ?? ''),
+    businessName,
+    industry: String(draft.industry ?? ''),
+    phone: String(draft.phone ?? ''),
+    email: draftEmail,
+    aiAssistantEnabled: draft.ai_assistant_enabled === true,
+    whatsappDigestEnabled: draft.whatsapp_digest_enabled === true,
+    whatsappRecipientPhone: String(draft.whatsapp_recipient_phone ?? ''),
+  };
+}
 function clearPendingOnboarding() {
   try { localStorage.removeItem(PENDING_ONBOARDING_KEY); } catch { /* No-op when storage is disabled. */ }
 }
@@ -2198,7 +2220,7 @@ function App() {
       if (!active || !result) return;
       let membership = result.memberships.find(item => item.businesses?.id);
       if (!membership?.businesses) {
-        const pending = readPendingOnboarding(result.user.email);
+        const pending = readPendingOnboarding(result.user.email, result.user.user_metadata);
         if (pending) {
           const businessId = await createBusiness(pending);
           await saveBusinessPreferences({
@@ -2244,7 +2266,7 @@ function App() {
     let memberships = await listMyBusinesses();
     let membership = memberships.find(item => item.businesses?.id);
     if (!membership?.businesses) {
-      const pending = readPendingOnboarding(session.user.email || email);
+      const pending = readPendingOnboarding(session.user.email || email, session.user.user_metadata);
       if (!pending) {
         throw new Error('Your sign-in was accepted, but this account has no business workspace yet. Complete business setup on the device where you created the account.');
       }
