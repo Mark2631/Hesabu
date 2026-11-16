@@ -78,10 +78,13 @@ jobs:
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611160001_mvp_foundation.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611160002_operational_ledger.sql
+      - name: Run tenant and ledger integration tests
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/tests/tenant_isolation.sql
       - name: Verify tenant tables, RLS and function exposure
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          do $$
+          do $
           declare
             t text;
             required_tables text[] := array[
