@@ -5,6 +5,7 @@ on:
       - main
       - build/hesabu-ledger-mvp
       - build/platform-foundation
+      - build/hesabu-mvp-cloud-foundation
   pull_request:
     branches:
       - main
@@ -27,3 +28,111 @@ jobs:
         run: npm test
       - name: Type-check and build
         run: npm run build
+
+
+  verify-db-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hesabu_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hesabu_migration_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hesabu_migration_test
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Prepare minimal Supabase auth roles for migration validation
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          create role anon nologin;
+          create role authenticated nologin;
+          create role service_role nologin bypassrls;
+          create schema auth;
+          create table auth.users (
+            id uuid primary key,
+            raw_user_meta_data jsonb not null default '{}'::jsonb
+          );
+          create function auth.uid()
+          returns uuid
+          language sql
+          stable
+          as $$
+            select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+          $$;
+          grant usage on schema auth to anon, authenticated, service_role;
+          grant execute on function auth.uid() to anon, authenticated, service_role;
+          SQL
+      - name: Apply Hesabu foundation and operational migrations
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611160001_mvp_foundation.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611160002_operational_ledger.sql
+      - name: Run tenant and ledger integration tests
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/tests/tenant_isolation.sql
+      - name: Verify tenant tables, RLS and function exposure
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare
+            t text;
+            required_tables text[] := array[
+              'profiles','businesses','business_members','business_settings',
+              'products','suppliers','invoices','invoice_items','payments',
+              'unmatched_receipts','expenses','purchase_orders','purchase_order_items',
+              'inventory_movements','cash_movements','journal_entries','journal_lines',
+              'integration_events','digest_delivery_logs'
+            ];
+          begin
+            foreach t in array required_tables loop
+              if not exists (
+                select 1
+                from pg_class c
+                join pg_namespace n on n.oid = c.relnamespace
+                where n.nspname = 'public'
+                  and c.relname = t
+                  and c.relkind = 'r'
+                  and c.relrowsecurity
+              ) then
+                raise exception 'Missing table or RLS disabled: %', t;
+              end if;
+            end loop;
+            if not exists (
+              select 1 from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public'
+                and p.proname = 'post_sale'
+                and not p.prosecdef
+            ) then
+              raise exception 'Public post_sale wrapper must be SECURITY INVOKER';
+            end if;
+            if not exists (
+              select 1 from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'app_private'
+                and p.proname = 'post_sale'
+                and p.prosecdef
+            ) then
+              raise exception 'Private post_sale implementation must be SECURITY DEFINER';
+            end if;
+            if has_function_privilege('anon', 'public.post_sale(uuid,text,text,date,numeric,text,text,jsonb)', 'EXECUTE') then
+              raise exception 'Anonymous role must not execute post_sale';
+            end if;
+            if not has_function_privilege('authenticated', 'public.post_sale(uuid,text,text,date,numeric,text,text,jsonb)', 'EXECUTE') then
+              raise exception 'Authenticated role must execute post_sale wrapper';
+            end if;
+          end $$;
+          SQL

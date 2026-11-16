@@ -11,6 +11,11 @@ import {
 } from 'lucide-react';
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
+import {
+  createBusiness, getBusinessSettings, getCloudDailyDigest, listMyBusinesses, restoreCloudSession,
+  saveBusinessPreferences, signInWithPassword, signOut, signUpWithPassword,
+  type CloudBusinessSettings, type CloudDailyDigest, type SignUpInput, type SupabaseUser,
+} from './lib/supabase';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
   NewPaymentInput, NewPurchaseInput, NewUnmatchedReceiptInput, Payment, PaymentChannel, Product,
@@ -803,17 +808,189 @@ function HesabuMark({ className = '' }: { className?: string }) {
   </svg>;
 }
 
-function AuthPage({ onPreview }: { onPreview: () => void }) {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+function PublicLandingPage({
+  onSignIn, onCreateAccount, onPreview,
+}: {
+  onSignIn: () => void;
+  onCreateAccount: () => void;
+  onPreview: () => void;
+}) {
+  return <div className="public-site">
+    <header className="public-header">
+      <div className="public-header-inner">
+        <a className="public-brand" href="#top" aria-label="Hesabu home">
+          <span className="brand-mark"><HesabuMark /></span>
+          <span>hesabu<span>.</span></span>
+        </a>
+        <nav className="public-nav" aria-label="Main navigation">
+          <a href="#product">Product</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#businesses">Who it serves</a>
+          <a href="#trust">Your records</a>
+        </nav>
+        <div className="public-header-actions">
+          <button type="button" className="public-signin" onClick={onSignIn}>Sign in</button>
+          <button type="button" className="public-get-started" onClick={onCreateAccount}>Get started <ArrowRight size={15} /></button>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <section className="public-hero">
+        <div className="public-hero-copy">
+          <span className="public-eyebrow">BUSINESS RECORDS, BROUGHT TOGETHER</span>
+          <h1>Know what is happening in your business.</h1>
+          <p>Hesabu brings daily sales, payments, stock, expenses and customer balances into one clear business record. Spend less time chasing scattered notes and more time making informed decisions.</p>
+          <div className="public-hero-actions">
+            <button type="button" className="public-primary-action" onClick={onCreateAccount}>Create your business account <ArrowRight size={16} /></button>
+            <button type="button" className="public-secondary-action" onClick={onPreview}>Explore the sample workspace</button>
+          </div>
+          <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
+        </div>
+        <div className="public-hero-visual" aria-label="Illustrative Hesabu business overview">
+          <div className="public-visual-top">
+            <div><span>BUSINESS OVERVIEW</span><strong>Today at a glance</strong></div>
+            <span className="public-visual-date">SAMPLE DATA</span>
+          </div>
+          <div className="public-visual-metrics">
+            <div><span>Sales recorded</span><strong>KSh 48,250</strong><small>Today's activity</small></div>
+            <div><span>Payments received</span><strong>KSh 35,600</strong><small>Matched collections</small></div>
+            <div><span>Operating expenses</span><strong>KSh 4,850</strong><small>Recorded today</small></div>
+            <div><span>Stock alerts</span><strong>3 items</strong><small>Need a closer look</small></div>
+          </div>
+          <div className="public-visual-activity">
+            <div><span className="public-activity-dot"></span><span><strong>Sale recorded</strong><small>Counter sale · 10:42 AM</small></span><b>KSh 2,400</b></div>
+            <div><span className="public-activity-dot public-activity-blue"></span><span><strong>Stock updated</strong><small>Flour · Goods received</small></span><b>+12 bags</b></div>
+            <div><span className="public-activity-dot public-activity-amber"></span><span><strong>Customer balance</strong><small>Invoice HS-0021 · Due today</small></span><b>KSh 1,800</b></div>
+          </div>
+          <p className="public-visual-footnote">Illustrative figures shown for product demonstration.</p>
+        </div>
+      </section>
+
+      <section className="public-value-section" id="product">
+        <div className="public-section-intro">
+          <span className="public-eyebrow">WHAT HESABU DOES</span>
+          <h2>The important parts of the business, in one place.</h2>
+          <p>Each record contributes to a clearer view of what the business has sold, collected, spent and still needs to do.</p>
+        </div>
+        <div className="public-value-grid">
+          <article><span className="public-value-number">01</span><h3>Sales and payments</h3><p>Record what was sold, how the customer paid and what remains outstanding.</p></article>
+          <article><span className="public-value-number">02</span><h3>Stock and suppliers</h3><p>Track quantities, purchase orders, goods received and the cost of stock.</p></article>
+          <article><span className="public-value-number">03</span><h3>Expenses and performance</h3><p>Understand daily costs, margins, cash movement and business activity.</p></article>
+        </div>
+      </section>
+
+      <section className="public-workflow-section" id="how-it-works">
+        <div className="public-section-intro">
+          <span className="public-eyebrow">HOW IT FITS YOUR DAY</span>
+          <h2>Record the work. Understand the result.</h2>
+        </div>
+        <div className="public-workflow">
+          <div><span>1</span><strong>Capture daily activity</strong><p>Enter a sale, receipt, expense or stock change as it happens.</p></div>
+          <div><span>2</span><strong>Keep records connected</strong><p>Link transactions to products, customers, suppliers and balances.</p></div>
+          <div><span>3</span><strong>Review your business</strong><p>See the day’s figures and prepare a digest to share with your team.</p></div>
+        </div>
+      </section>
+
+      <section className="public-business-section" id="businesses">
+        <div>
+          <span className="public-eyebrow">BUILT FOR EVERYDAY OPERATIONS</span>
+          <h2>Useful from the counter to the back office.</h2>
+          <p>Hesabu is being shaped for shops, food businesses, wholesalers, distributors and service businesses that need a dependable record of daily operations.</p>
+        </div>
+        <div className="public-business-list">
+          <span>Retail and convenience shops</span>
+          <span>Food, bakeries and hospitality</span>
+          <span>Wholesale and distribution</span>
+          <span>Service and production businesses</span>
+        </div>
+      </section>
+
+      <section className="public-trust-section" id="trust">
+        <div className="public-trust-mark"><ShieldCheck size={21} /></div>
+        <div><span className="public-eyebrow">YOUR BUSINESS, YOUR RECORDS</span><h2>Clear access. Clear records. Clear decisions.</h2><p>Hesabu’s cloud workspace is being built around individual accounts and business-level access. Manual entry remains the foundation; optional AI assistance and WhatsApp summaries can be enabled independently.</p></div>
+        <button type="button" className="public-secondary-action" onClick={onCreateAccount}>Set up your workspace <ArrowRight size={15} /></button>
+      </section>
+    </main>
+
+    <footer className="public-footer">
+      <div className="public-footer-main">
+        <div className="public-footer-brand">
+          <a className="public-brand" href="#top"><span className="brand-mark"><HesabuMark /></span><span>hesabu<span>.</span></span></a>
+          <p>A clearer business record for the people who run the business every day.</p>
+        </div>
+        <div className="public-footer-group"><strong>Product</strong><a href="#product">Sales and payments</a><a href="#product">Stock and purchasing</a><a href="#product">Reports and digest</a></div>
+        <div className="public-footer-group"><strong>Learn</strong><a href="#how-it-works">How it works</a><a href="#businesses">Who Hesabu serves</a><a href="#trust">Your records</a></div>
+        <div className="public-footer-group"><strong>Your account</strong><button type="button" onClick={onSignIn}>Sign in</button><button type="button" onClick={onCreateAccount}>Create a business account</button><button type="button" onClick={onPreview}>Explore sample data</button></div>
+      </div>
+      <div className="public-footer-bottom"><span>© 2026 Hesabu. Built for business operations in Kenya.</span><span>Product information is subject to change as integrations are completed.</span></div>
+    </footer>
+  </div>;
+}
+
+function AuthPage({
+  onPreview, onSignIn, onSignUp, initialMessage, initialMode, onBack,
+}: {
+  onPreview: () => void;
+  onSignIn: (email: string, password: string) => Promise<void>;
+  onSignUp: (input: SignUpInput) => Promise<'confirm_email' | void>;
+  initialMessage?: string;
+  initialMode: 'signin' | 'signup';
+  onBack: () => void;
+}) {
+  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
+  const [fullName, setFullName] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [industry, setIndustry] = useState('Retail / shop');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [message, setMessage] = useState('');
-  const submit = (event: FormEvent) => {
+  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(false);
+  const [whatsappDigestEnabled, setWhatsappDigestEnabled] = useState(false);
+  const [whatsappRecipientPhone, setWhatsappRecipientPhone] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(initialMessage ?? '');
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+
+  useEffect(() => {
+    if (initialMessage) setMessage(initialMessage);
+  }, [initialMessage]);
+
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    setMessage(mode === 'signin'
-      ? 'Secure sign-in is not connected in this preview yet. Your password has not been saved.'
-      : 'Account creation will be enabled after secure authentication and cloud storage are connected.');
+    if (busy) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      if (mode === 'signin') {
+        await onSignIn(email, password);
+      } else {
+        if (!fullName.trim() || !businessName.trim()) {
+          setMessage('Enter your name and business name to continue.');
+          return;
+        }
+        if (whatsappDigestEnabled && !normaliseWhatsAppNumber(whatsappRecipientPhone)) {
+          setMessage('Enter a valid WhatsApp number, including the Kenyan country code or a local mobile number.');
+          return;
+        }
+        const result = await onSignUp({
+          fullName, businessName, industry, phone, email, password,
+          aiAssistantEnabled, whatsappDigestEnabled, whatsappRecipientPhone,
+        });
+        if (result === 'confirm_email') {
+          setMessage('Your account has been created. Check your email for the confirmation link, then return here to sign in.');
+        }
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.');
+    } finally {
+      setBusy(false);
+    }
   };
+
   return <main className="auth-page">
     <section className="auth-shell">
       <div className="auth-form-panel">
@@ -821,6 +998,7 @@ function AuthPage({ onPreview }: { onPreview: () => void }) {
           <span className="brand-mark"><HesabuMark /></span>
           <span className="brand-text"><strong>hesabu<span>.</span></strong><small>BUSINESS WORKSPACE</small></span>
         </div>
+        <button type="button" className="auth-back-button" onClick={onBack}><ChevronRight size={13} /> Back to Hesabu</button>
         <div className="auth-copy">
           <span className="auth-kicker">BUSINESS, IN BALANCE</span>
           <h1>{mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.'}</h1>
@@ -831,21 +1009,45 @@ function AuthPage({ onPreview }: { onPreview: () => void }) {
           <button type="button" role="tab" aria-selected={mode === 'signup'} className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setMessage(''); }}>Create account</button>
         </div>
         <form className="auth-form" onSubmit={submit}>
+          {mode === 'signup' && <>
+            <label className="auth-field"><span>Your full name</span><input autoComplete="name" value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Name of the business owner" required /></label>
+            <label className="auth-field"><span>Business name</span><input value={businessName} onChange={event => setBusinessName(event.target.value)} placeholder="e.g. Muriuki Stores" required /></label>
+            <label className="auth-field"><span>Business type</span>
+              <select value={industry} onChange={event => setIndustry(event.target.value)}>
+                <option>Retail / shop</option><option>Food & hospitality</option><option>Wholesale / distribution</option>
+                <option>Services</option><option>Manufacturing / production</option><option>Other</option>
+              </select>
+            </label>
+            <label className="auth-field"><span>Business phone <small>(optional)</small></span><input type="tel" autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="07XX XXX XXX" /></label>
+          </>}
           <label className="auth-field"><span>Business email</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
           <label className="auth-field"><span>Password</span><input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /></label>
-          <Button type="submit" block>{mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
+          {mode === 'signup' && <section className="auth-preferences" aria-label="Optional business preferences">
+            <div className="auth-preferences-heading"><strong>How should Hesabu support your daily work?</strong><small>These options work together. Manual entry is always available.</small></div>
+            <div className="auth-preference-manual"><span><strong>Manual records</strong><small>Record sales, payments, expenses and stock yourself.</small></span><span>Always on</span></div>
+            <label className="auth-preference-option">
+              <input type="checkbox" checked={aiAssistantEnabled} onChange={event => setAiAssistantEnabled(event.target.checked)} />
+              <span><strong>AI assistant</strong><small>Optional. Ask questions about sales, stock, expenses and balances when the AI service is connected.</small></span>
+            </label>
+            <label className="auth-preference-option">
+              <input type="checkbox" checked={whatsappDigestEnabled} onChange={event => setWhatsappDigestEnabled(event.target.checked)} />
+              <span><strong>WhatsApp daily digest</strong><small>Prepare a daily business summary for WhatsApp.</small></span>
+            </label>
+            {whatsappDigestEnabled && <label className="auth-field auth-whatsapp-field"><span>WhatsApp destination</span><input type="tel" inputMode="tel" value={whatsappRecipientPhone} onChange={event => setWhatsappRecipientPhone(event.target.value)} placeholder="2547XXXXXXXX" required /></label>}
+          </section>}
+          <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
         </form>
         {message && <p className="auth-message" role="status">{message}</p>}
         <div className="auth-divider"><span>OR</span></div>
         <Button variant="outline" block onClick={onPreview}>Explore the sample workspace <ArrowRight size={15} /></Button>
-        <p className="auth-footnote">Preview access uses this browser only. Business data is not yet synced between devices or users.</p>
+        <p className="auth-footnote">The sample workspace is stored only in this browser. Sign-in creates a separate cloud account.</p>
       </div>
       <aside className="auth-aside">
-        <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">PRODUCT PREVIEW</span></div>
+        <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">BUSINESS OPERATIONS</span></div>
         <div className="auth-aside-copy">
           <span>ONE VIEW OF THE BUSINESS</span>
-          <h2>Make the next business decision with better numbers.</h2>
-          <p>Follow money, stock and customer balances without moving between disconnected records.</p>
+          <h2>Know what is happening in your business.</h2>
+          <p>Bring sales, payments, stock and daily expenses into one clear business record.</p>
         </div>
         <div className="auth-preview-stack">
           <div className="auth-preview-row"><span className="auth-preview-icon"><TrendingUp size={17} /></span><span><strong>Sales & performance</strong><small>Daily totals, margin and trends</small></span><ChevronRight size={17} /></div>
@@ -858,6 +1060,157 @@ function AuthPage({ onPreview }: { onPreview: () => void }) {
   </main>;
 }
 
+function CloudAccountScreen({
+  user, business, onSignOut, onPreview,
+}: {
+  user: SupabaseUser;
+  business: { id: string; name: string; industry?: string | null };
+  onSignOut: () => void;
+  onPreview: () => void;
+}) {
+  const [settings, setSettings] = useState<CloudBusinessSettings | null>(null);
+  const [digest, setDigest] = useState<CloudDailyDigest | null>(null);
+  const [destination, setDestination] = useState('');
+  const [loadingDigest, setLoadingDigest] = useState(true);
+  const [digestError, setDigestError] = useState('');
+  const [savingDestination, setSavingDestination] = useState(false);
+  const [digestNotice, setDigestNotice] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoadingDigest(true);
+    setDigestError('');
+    Promise.all([
+      getBusinessSettings(business.id),
+      getCloudDailyDigest(business.id),
+    ]).then(([nextSettings, nextDigest]) => {
+      if (!active) return;
+      setSettings(nextSettings);
+      setDigest(nextDigest);
+      setDestination(nextSettings.whatsapp_recipient_phone ?? '');
+    }).catch(() => {
+      if (!active) return;
+      setDigestError('The cloud daily digest is not ready yet. The business account is connected, but the operational database migration still needs to be applied to the Hesabu project.');
+    }).finally(() => {
+      if (active) setLoadingDigest(false);
+    });
+    return () => { active = false; };
+  }, [business.id]);
+
+  const saveDestination = async () => {
+    if (!settings) return;
+    if (settings.whatsapp_digest_enabled && !normaliseWhatsAppNumber(destination)) {
+      setDigestError('Enter a valid WhatsApp number before saving the digest destination.');
+      return;
+    }
+    setSavingDestination(true);
+    setDigestError('');
+    setDigestNotice('');
+    try {
+      await saveBusinessPreferences({
+        businessId: business.id,
+        aiAssistantEnabled: settings.ai_assistant_enabled,
+        whatsappDigestEnabled: settings.whatsapp_digest_enabled,
+        whatsappRecipientPhone: destination,
+      });
+      setDigestNotice('WhatsApp preferences saved to this business.');
+    } catch {
+      setDigestError('Hesabu could not save the WhatsApp preference. Check the connection and try again.');
+    } finally {
+      setSavingDestination(false);
+    }
+  };
+
+  const shareDigest = () => {
+    if (!digest) return;
+    const number = normaliseWhatsAppNumber(destination);
+    if (!number) {
+      setDigestError('Enter a valid WhatsApp number first. Use 2547XXXXXXXX or a Kenyan mobile number beginning with 07 or 01.');
+      return;
+    }
+    const message = [
+      business.name + ' — Daily business digest',
+      dateLabel(digest.date),
+      '',
+      'Sales recorded: ' + money(digest.sales_total),
+      'Payments received: ' + money(digest.payments_received),
+      'Expenses: ' + money(digest.expenses_total),
+      'Gross profit: ' + money(digest.gross_profit),
+      'Invoices: ' + numberText(digest.invoice_count),
+      'Units sold: ' + numberText(digest.units_sold),
+      'Low-stock items: ' + numberText(digest.low_stock_count),
+      '',
+      'Prepared with Hesabu',
+    ].join('\n');
+    window.open('https://wa.me/' + number + '?text=' + encodeURIComponent(message), '_blank', 'noopener,noreferrer');
+    setDigestError('');
+    setDigestNotice('The digest is ready in WhatsApp. Review it and press Send.');
+  };
+
+  return <main className="auth-page cloud-account-page">
+    <section className="cloud-account-card">
+      <div className="auth-brand">
+        <span className="brand-mark"><HesabuMark /></span>
+        <span className="brand-text"><strong>hesabu<span>.</span></strong><small>CLOUD ACCOUNT</small></span>
+      </div>
+      <span className="cloud-account-status"><CheckCircle2 size={15} /> Account connected</span>
+      <h1>{business.name}</h1>
+      <p className="cloud-account-intro">Your business identity and account are connected to Hesabu cloud services.</p>
+      <div className="cloud-account-details">
+        <span>Account email</span><strong>{user.email || 'Verified account'}</strong>
+        <span>Business type</span><strong>{business.industry || 'Not specified'}</strong>
+        <span>Business workspace</span><strong>Private business account</strong>
+      </div>
+
+      <section className="cloud-digest-section" aria-label="Cloud daily digest">
+        <div className="cloud-digest-heading">
+          <div><span className="public-eyebrow">BUSINESS SUMMARY</span><h2>Daily digest</h2></div>
+          <span className="cloud-data-label">CLOUD RECORDS</span>
+        </div>
+        {loadingDigest ? (
+          <div className="cloud-digest-skeleton" aria-label="Loading daily digest">
+            <span></span><span></span><span></span><span></span>
+          </div>
+        ) : digest ? (
+          <>
+            <div className="cloud-digest-date">{dateLabel(digest.date)}</div>
+            <div className="cloud-digest-metrics">
+              <div><span>Sales</span><strong>{money(digest.sales_total)}</strong></div>
+              <div><span>Received</span><strong>{money(digest.payments_received)}</strong></div>
+              <div><span>Expenses</span><strong>{money(digest.expenses_total)}</strong></div>
+              <div><span>Gross profit</span><strong>{money(digest.gross_profit)}</strong></div>
+            </div>
+            <div className="cloud-digest-foot">
+              <span>{numberText(digest.invoice_count)} invoices · {numberText(digest.units_sold)} units sold</span>
+              <span>{numberText(digest.low_stock_count)} low-stock items</span>
+            </div>
+            <label className="cloud-digest-recipient">
+              <span>WhatsApp destination</span>
+              <input type="tel" inputMode="tel" value={destination} onChange={event => { setDestination(event.target.value); setDigestError(''); setDigestNotice(''); }} placeholder="2547XXXXXXXX" />
+            </label>
+            <div className="cloud-digest-actions">
+              <Button variant="outline" onClick={() => { void saveDestination(); }} disabled={savingDestination || !settings}>
+                {savingDestination ? 'Saving…' : 'Save destination'}
+              </Button>
+              <Button onClick={shareDigest}><MessageCircle size={15} /> Open WhatsApp</Button>
+            </div>
+            <p className="cloud-digest-note">Hesabu prepares the message from saved business records. Review it in WhatsApp and press Send; automatic delivery is not enabled.</p>
+          </>
+        ) : (
+          <p className="cloud-digest-unavailable">{digestError || 'The cloud summary is not available yet.'}</p>
+        )}
+        {digestError && digest && <p className="cloud-digest-error" role="alert">{digestError}</p>}
+        {digestNotice && <p className="cloud-digest-success" role="status">{digestNotice}</p>}
+      </section>
+
+      <p className="cloud-account-note">Manual record entry remains the foundation. AI preferences are stored independently, but the generative AI service has not been connected yet. The sample workspace remains separate from your cloud business.</p>
+      <div className="cloud-account-actions">
+        <Button variant="outline" onClick={onSignOut}>Sign out</Button>
+        <Button onClick={onPreview}>Open sample workspace</Button>
+      </div>
+    </section>
+  </main>;
+}
 function getWorkspaceAnswer(data: AppData, question: string) {
   const query = question.toLowerCase();
   const todayDigest = getDailyDigest(data);
@@ -898,23 +1251,44 @@ function getWorkspaceAnswer(data: AppData, question: string) {
     '. Ask about stock, unpaid customer balances, expenses or best-selling products for a more specific view.';
 }
 
-function FloatingAssistant({ data, onRecordSale, onRecordExpense, onUpdateStock }: { data: AppData; onRecordSale: () => void; onRecordExpense: () => void; onUpdateStock: () => void }) {
-  const [open, setOpen] = useState(false);
+function FloatingAssistant({
+  data, whatsappNumber, onWhatsAppNumberChange, onRecordSale, onRecordExpense, onUpdateStock,
+}: {
+  data: AppData;
+  whatsappNumber: string;
+  onWhatsAppNumberChange: (value: string) => void;
+  onRecordSale: () => void;
+  onRecordExpense: () => void;
+  onUpdateStock: () => void;
+}) {
+  const [panel, setPanel] = useState<'assistant' | 'digest' | null>(null);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
+  const [digestError, setDigestError] = useState('');
+  const digest = getDailyDigest(data);
   const ask = (value: string) => {
     const clean = value.trim();
     if (!clean) return;
     setQuestion(clean);
     setAnswer(getWorkspaceAnswer(data, clean));
   };
+  const togglePanel = (next: 'assistant' | 'digest') => {
+    setDigestError('');
+    setPanel(current => current === next ? null : next);
+  };
+  const shareDigest = () => {
+    setDigestError('');
+    openDailyDigestWhatsApp(data, whatsappNumber, () => {
+      setDigestError('Enter a valid WhatsApp number to prepare this summary.');
+    });
+  };
   const suggestions = ['How are sales doing?', 'What stock needs attention?', 'Who still owes us?'];
   return <>
-    {open && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu AI assistant">
+    {panel === 'assistant' && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu assistant">
       <header className="assistant-drawer-header">
         <span className="assistant-drawer-mark"><HesabuMark /></span>
         <span><strong>Hesabu assistant</strong><small>Answers from this workspace · Preview</small></span>
-        <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setOpen(false)}><X size={18} /></button>
+        <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setPanel(null)}><X size={18} /></button>
       </header>
       <div className="assistant-drawer-body">
         <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>I can summarise the sales, balances and stock records currently saved in this browser.</p></div>
@@ -922,9 +1296,9 @@ function FloatingAssistant({ data, onRecordSale, onRecordExpense, onUpdateStock 
         <div className="assistant-quick-actions">
           <span>Record something</span>
           <div>
-            <button type="button" onClick={() => { setOpen(false); onRecordSale(); }}><Receipt size={14} /> Sale</button>
-            <button type="button" onClick={() => { setOpen(false); onRecordExpense(); }}><TrendingDown size={14} /> Expense</button>
-            <button type="button" onClick={() => { setOpen(false); onUpdateStock(); }}><Package size={14} /> Stock</button>
+            <button type="button" onClick={() => { setPanel(null); onRecordSale(); }}><Receipt size={14} /> Sale</button>
+            <button type="button" onClick={() => { setPanel(null); onRecordExpense(); }}><TrendingDown size={14} /> Expense</button>
+            <button type="button" onClick={() => { setPanel(null); onUpdateStock(); }}><Package size={14} /> Stock</button>
           </div>
         </div>
         {question && <div className="assistant-answer" aria-live="polite"><span className="assistant-question">{question}</span><p>{answer}</p></div>}
@@ -933,12 +1307,52 @@ function FloatingAssistant({ data, onRecordSale, onRecordExpense, onUpdateStock 
         <input aria-label="Ask Hesabu" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask about sales, stock or balances…" />
         <button type="submit" aria-label="Send question" disabled={!question.trim()}><ArrowUpRight size={18} /></button>
       </form>
-      <p className="assistant-drawer-note">Live generative AI, voice capture and automatic record posting are not connected in this preview.</p>
+      <p className="assistant-drawer-note">This preview uses saved records and fixed queries. Generative AI is not connected yet.</p>
     </section>}
-    <button type="button" className={'assistant-launcher ' + (open ? 'assistant-launcher-open' : '')} aria-label={open ? 'Close Hesabu assistant' : 'Open Hesabu assistant'} aria-expanded={open} onClick={() => setOpen(value => !value)}>
-      {open ? <X size={21} /> : <HesabuMark />}
-      <span className="assistant-launcher-tooltip">Ask Hesabu</span>
-    </button>
+    {panel === 'digest' && <section className="assistant-drawer digest-drawer" role="dialog" aria-modal="false" aria-label="Daily WhatsApp digest">
+      <header className="assistant-drawer-header">
+        <span className="assistant-drawer-mark"><MessageCircle size={19} /></span>
+        <span><strong>Daily business digest</strong><small>{data.profile.name} · {dateLabel(digest.date)}</small></span>
+        <button type="button" className="icon-button" aria-label="Close daily digest" onClick={() => setPanel(null)}><X size={18} /></button>
+      </header>
+      <div className="assistant-drawer-body">
+        <div className="digest-floating-grid">
+          <div><span>Sales</span><strong>{money(digest.salesTotal)}</strong></div>
+          <div><span>Payments received</span><strong>{money(digest.receivedTotal)}</strong></div>
+          <div><span>Expenses</span><strong>{money(digest.expenseTotal)}</strong></div>
+          <div><span>Gross profit</span><strong>{money(digest.grossProfit)}</strong></div>
+        </div>
+        <label className="digest-floating-recipient">
+          <span>WhatsApp destination</span>
+          <input value={whatsappNumber} onChange={event => { onWhatsAppNumberChange(event.target.value); setDigestError(''); }} placeholder="2547XXXXXXXX" inputMode="tel" />
+        </label>
+        {digestError && <p className="digest-floating-error" role="alert">{digestError}</p>}
+        <button type="button" className="digest-share-button" onClick={shareDigest}><MessageCircle size={16} /> Open WhatsApp</button>
+        <p className="digest-floating-note">Hesabu fills the message for you. Review it in WhatsApp and press Send. Automatic delivery is not enabled in this preview.</p>
+      </div>
+    </section>}
+    <div className="floating-tools-dock">
+      <button
+        type="button"
+        className={'floating-whatsapp-launcher ' + (panel === 'digest' ? 'floating-tool-active' : '')}
+        aria-label={panel === 'digest' ? 'Close daily digest' : 'Open WhatsApp daily digest'}
+        aria-expanded={panel === 'digest'}
+        onClick={() => togglePanel('digest')}
+        title="Daily digest"
+      >
+        {panel === 'digest' ? <X size={20} /> : <MessageCircle size={21} />}
+      </button>
+      <button
+        type="button"
+        className={'assistant-launcher ' + (panel === 'assistant' ? 'assistant-launcher-open' : '')}
+        aria-label={panel === 'assistant' ? 'Close Hesabu assistant' : 'Open Hesabu assistant'}
+        aria-expanded={panel === 'assistant'}
+        onClick={() => togglePanel('assistant')}
+        title="Ask Hesabu"
+      >
+        {panel === 'assistant' ? <X size={21} /> : <HesabuMark />}
+      </button>
+    </div>
   </>;
 }
 
@@ -1841,8 +2255,62 @@ function recordJournal(
   ];
 }
 
+const PENDING_ONBOARDING_KEY = 'hesabu:pending-onboarding:v1';
+
+function savePendingOnboarding(input: SignUpInput) {
+  const { password: _password, ...safeDraft } = input;
+  try { localStorage.setItem(PENDING_ONBOARDING_KEY, JSON.stringify(safeDraft)); }
+  catch { /* The account can still be created; confirmation recovery may need the user to repeat setup. */ }
+}
+
+function readPendingOnboarding(
+  email?: string,
+  userMetadata?: Record<string, unknown>,
+): Omit<SignUpInput, 'password'> | null {
+  try {
+    const raw = localStorage.getItem(PENDING_ONBOARDING_KEY);
+    if (raw) {
+      const draft = JSON.parse(raw) as Omit<SignUpInput, 'password'>;
+      if (draft?.email && draft.businessName && (!email || draft.email.toLowerCase() === email.toLowerCase())) {
+        return draft;
+      }
+    }
+  } catch {
+    // Fall back to the non-authoritative onboarding details in Auth user metadata.
+  }
+
+  const rawMetadata = userMetadata?.business_onboarding;
+  if (!rawMetadata || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata)) return null;
+  const draft = rawMetadata as Record<string, unknown>;
+  const draftEmail = String(draft.email ?? email ?? '').trim();
+  const businessName = String(draft.business_name ?? '').trim();
+  if (!businessName || !draftEmail || (email && draftEmail.toLowerCase() !== email.toLowerCase())) return null;
+
+  return {
+    fullName: String(userMetadata?.display_name ?? ''),
+    businessName,
+    industry: String(draft.industry ?? ''),
+    phone: String(draft.phone ?? ''),
+    email: draftEmail,
+    aiAssistantEnabled: draft.ai_assistant_enabled === true,
+    whatsappDigestEnabled: draft.whatsapp_digest_enabled === true,
+    whatsappRecipientPhone: String(draft.whatsapp_recipient_phone ?? ''),
+  };
+}
+function clearPendingOnboarding() {
+  try { localStorage.removeItem(PENDING_ONBOARDING_KEY); } catch { /* No-op when storage is disabled. */ }
+}
+
 function App() {
   const [data, setData] = useState<AppData>(() => readWorkspace());
+  const [cloudAccount, setCloudAccount] = useState<{
+    user: SupabaseUser;
+    business: { id: string; name: string; industry: string | null };
+  } | null>(null);
+  const [cloudRestoring, setCloudRestoring] = useState(true);
+  const [authNotice, setAuthNotice] = useState('');
+  const [showAuthScreen, setShowAuthScreen] = useState(false);
+  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
   const [previewAccess, setPreviewAccess] = useState(() => {
     try { return localStorage.getItem('hesabu:preview-access:v1') === 'true'; }
     catch { return false; }
@@ -1865,6 +2333,124 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const restore = async () => {
+      const result = await restoreCloudSession();
+      if (!active || !result) return;
+      let membership = result.memberships.find(item => item.businesses?.id);
+      if (!membership?.businesses) {
+        const pending = readPendingOnboarding(result.user.email, result.user.user_metadata);
+        if (pending) {
+          const businessId = await createBusiness(pending);
+          await saveBusinessPreferences({
+            businessId,
+            aiAssistantEnabled: pending.aiAssistantEnabled,
+            whatsappDigestEnabled: pending.whatsappDigestEnabled,
+            whatsappRecipientPhone: pending.whatsappRecipientPhone,
+          });
+          clearPendingOnboarding();
+          setWhatsAppNumber(pending.whatsappRecipientPhone);
+          setCloudAccount({
+            user: result.user,
+            business: { id: businessId, name: pending.businessName, industry: pending.industry || null },
+          });
+          setPreviewAccess(false);
+          try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
+          return;
+        }
+        setAuthNotice('Your account is signed in, but no business workspace has been set up for it yet. Complete the business setup on this device or contact the workspace owner.');
+        return;
+      }
+      setCloudAccount({
+        user: result.user,
+        business: {
+          id: membership.businesses.id,
+          name: membership.businesses.name,
+          industry: membership.businesses.industry,
+        },
+      });
+      setPreviewAccess(false);
+      try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
+    };
+    restore()
+      .catch(error => {
+        if (active) setAuthNotice(error instanceof Error ? error.message : 'The saved cloud session could not be restored.');
+      })
+      .finally(() => { if (active) setCloudRestoring(false); });
+    return () => { active = false; };
+  }, []);
+
+  const handleCloudSignIn = async (email: string, password: string) => {
+    const session = await signInWithPassword(email, password);
+    let memberships = await listMyBusinesses();
+    let membership = memberships.find(item => item.businesses?.id);
+    if (!membership?.businesses) {
+      const pending = readPendingOnboarding(session.user.email || email, session.user.user_metadata);
+      if (!pending) {
+        throw new Error('Your sign-in was accepted, but this account has no business workspace yet. Complete business setup on the device where you created the account.');
+      }
+      const businessId = await createBusiness(pending);
+      await saveBusinessPreferences({
+        businessId,
+        aiAssistantEnabled: pending.aiAssistantEnabled,
+        whatsappDigestEnabled: pending.whatsappDigestEnabled,
+        whatsappRecipientPhone: pending.whatsappRecipientPhone,
+      });
+      clearPendingOnboarding();
+      setWhatsAppNumber(pending.whatsappRecipientPhone);
+      setCloudAccount({
+        user: session.user,
+        business: { id: businessId, name: pending.businessName, industry: pending.industry || null },
+      });
+    } else {
+      setCloudAccount({
+        user: session.user,
+        business: {
+          id: membership.businesses.id,
+          name: membership.businesses.name,
+          industry: membership.businesses.industry,
+        },
+      });
+    }
+    setAuthNotice('');
+    setShowAuthScreen(false);
+    setPreviewAccess(false);
+    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
+  };
+
+  const handleCloudSignUp = async (input: SignUpInput): Promise<'confirm_email' | void> => {
+    savePendingOnboarding(input);
+    const result = await signUpWithPassword(input);
+    if (!result.session) return 'confirm_email';
+    const businessId = await createBusiness(input);
+    await saveBusinessPreferences({
+      businessId,
+      aiAssistantEnabled: input.aiAssistantEnabled,
+      whatsappDigestEnabled: input.whatsappDigestEnabled,
+      whatsappRecipientPhone: input.whatsappRecipientPhone,
+    });
+    clearPendingOnboarding();
+    setCloudAccount({
+      user: result.session.user,
+      business: { id: businessId, name: input.businessName.trim(), industry: input.industry || null },
+    });
+    setWhatsAppNumber(input.whatsappRecipientPhone);
+    setAuthNotice('');
+    setShowAuthScreen(false);
+    setPreviewAccess(false);
+    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
+  };
+
+  const handleCloudSignOut = async () => {
+    await signOut();
+    setCloudAccount(null);
+    setAuthNotice('');
+    setShowAuthScreen(false);
+    setPreviewAccess(false);
+    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Keep the screen transition available. */ }
+  };
 
   useEffect(() => { saveWorkspace(data); }, [data]);
   useEffect(() => {
@@ -2385,7 +2971,26 @@ function App() {
     navigate('settings');
     notify('Add a WhatsApp destination', 'Enter your business WhatsApp number in Settings before preparing the daily summary.');
   };
-  if (!previewAccess) return <AuthPage onPreview={enterPreview} />;
+  if (cloudRestoring) return <main className="auth-page"><section className="cloud-account-card cloud-loading-card"><span className="brand-mark"><HesabuMark /></span><h1>Hesabu</h1><p>Checking your secure business session…</p></section></main>;
+  if (cloudAccount) return <CloudAccountScreen
+    user={cloudAccount.user}
+    business={cloudAccount.business}
+    onSignOut={() => { void handleCloudSignOut(); }}
+    onPreview={() => { setCloudAccount(null); enterPreview(); }}
+  />;
+  if (!previewAccess && !showAuthScreen) return <PublicLandingPage
+    onSignIn={() => { setAuthInitialMode('signin'); setShowAuthScreen(true); }}
+    onCreateAccount={() => { setAuthInitialMode('signup'); setShowAuthScreen(true); }}
+    onPreview={enterPreview}
+  />;
+  if (!previewAccess) return <AuthPage
+    onPreview={enterPreview}
+    onSignIn={handleCloudSignIn}
+    onSignUp={handleCloudSignUp}
+    initialMessage={authNotice}
+    initialMode={authInitialMode}
+    onBack={() => setShowAuthScreen(false)}
+  />;
   return <div className={'app-shell theme-' + theme + ' ' + (sidebarCollapsed ? 'sidebar-is-collapsed' : '')}>
     <aside className={'sidebar ' + (mobileMenuOpen ? 'sidebar-mobile-open' : '')}>
       <div className="brand-row">
@@ -2466,6 +3071,8 @@ function App() {
 
     <FloatingAssistant
       data={data}
+      whatsappNumber={whatsappNumber}
+      onWhatsAppNumberChange={setWhatsAppNumber}
       onRecordSale={() => setDialog({ kind: 'sale' })}
       onRecordExpense={() => setDialog({ kind: 'expense' })}
       onUpdateStock={() => setDialog({ kind: 'stock-picker' })}
