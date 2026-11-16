@@ -13,9 +13,15 @@ test('foundation migration creates cloud identity and tenant boundaries', () => 
     assert.ok(foundation.includes('create table public.' + table), table + ' table');
     assert.ok(foundation.includes('alter table public.' + table + ' enable row level security'), table + ' RLS');
   }
+  assert.ok(foundation.includes('create or replace function app_private.create_business('));
   assert.ok(foundation.includes('create or replace function public.create_business('));
-  assert.ok(foundation.includes('create or replace function public.is_business_member('));
-  assert.ok(foundation.includes('create or replace function public.has_business_role('));
+  assert.ok(foundation.includes('security invoker'));
+  assert.ok(foundation.includes('create schema if not exists app_private'));
+  assert.ok(!/create or replace function public\\.[\\s\\S]*?security definer/i.test(foundation));
+  assert.ok(!foundation.includes('public.is_business_member('));
+  assert.ok(!foundation.includes('public.has_business_role('));
+  assert.ok(foundation.includes('create or replace function app_private.is_business_member('));
+  assert.ok(foundation.includes('create or replace function app_private.has_business_role('));
   assert.ok(foundation.includes("set search_path = ''"));
   assert.ok(foundation.includes('ai_assistant_enabled boolean'));
   assert.ok(foundation.includes('whatsapp_digest_enabled boolean'));
@@ -41,11 +47,16 @@ test('ledger writes go through server-side posting functions', () => {
     'post_purchase_receipt', 'post_supplier_payment', 'post_stock_adjustment',
     'get_daily_digest',
   ]) {
-    assert.ok(ledger.includes('create or replace function public.' + fn + '('), fn + ' definition');
-    assert.ok(ledger.includes('grant execute on function public.' + fn + '('), fn + ' grant');
-    assert.ok(ledger.includes('revoke all on function public.' + fn + '('), fn + ' revoke');
+    assert.ok(ledger.includes('create or replace function app_private.' + fn + '('), fn + ' private definition');
+    assert.ok(ledger.includes('create or replace function public.' + fn + '('), fn + ' public wrapper');
+    assert.ok(ledger.includes('grant execute on function public.' + fn + '('), fn + ' public wrapper grant');
+    assert.ok(ledger.includes('revoke all on function public.' + fn + '('), fn + ' public wrapper revoke');
+    assert.ok(ledger.includes('grant execute on function app_private.' + fn + '('), fn + ' private grant');
   }
-  assert.ok(ledger.includes('public.has_business_role(p_business_id'));
+  assert.ok(ledger.includes('app_private.has_business_role(p_business_id'));
+  assert.ok(!/create or replace function public\\.[\\s\\S]*?security definer/i.test(ledger));
+  assert.ok(!ledger.includes('public.has_business_role('));
+  assert.ok(!ledger.includes('public.is_business_member('));
   assert.ok(ledger.includes('pg_advisory_xact_lock'));
   assert.ok(ledger.includes('constraint trigger journal_lines_balanced_check'));
 });
