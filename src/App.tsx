@@ -928,14 +928,16 @@ function PublicLandingPage({
 }
 
 function AuthPage({
-  onPreview, onSignIn, onSignUp, initialMessage,
+  onPreview, onSignIn, onSignUp, initialMessage, initialMode, onBack,
 }: {
   onPreview: () => void;
   onSignIn: (email: string, password: string) => Promise<void>;
   onSignUp: (input: SignUpInput) => Promise<'confirm_email' | void>;
   initialMessage?: string;
+  initialMode: 'signin' | 'signup';
+  onBack: () => void;
 }) {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [fullName, setFullName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [industry, setIndustry] = useState('Retail / shop');
@@ -947,6 +949,10 @@ function AuthPage({
   const [whatsappRecipientPhone, setWhatsappRecipientPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(initialMessage ?? '');
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
 
   useEffect(() => {
     if (initialMessage) setMessage(initialMessage);
@@ -991,6 +997,7 @@ function AuthPage({
           <span className="brand-mark"><HesabuMark /></span>
           <span className="brand-text"><strong>hesabu<span>.</span></strong><small>BUSINESS WORKSPACE</small></span>
         </div>
+        <button type="button" className="auth-back-button" onClick={onBack}><ChevronRight size={13} /> Back to Hesabu</button>
         <div className="auth-copy">
           <span className="auth-kicker">BUSINESS, IN BALANCE</span>
           <h1>{mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.'}</h1>
@@ -2134,6 +2141,8 @@ function App() {
   } | null>(null);
   const [cloudRestoring, setCloudRestoring] = useState(true);
   const [authNotice, setAuthNotice] = useState('');
+  const [showAuthScreen, setShowAuthScreen] = useState(false);
+  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
   const [previewAccess, setPreviewAccess] = useState(() => {
     try { return localStorage.getItem('hesabu:preview-access:v1') === 'true'; }
     catch { return false; }
@@ -2201,6 +2210,7 @@ function App() {
       },
     });
     setAuthNotice('');
+    setShowAuthScreen(false);
     setPreviewAccess(false);
     try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
   };
@@ -2221,6 +2231,7 @@ function App() {
     });
     setWhatsAppNumber(input.whatsappRecipientPhone);
     setAuthNotice('');
+    setShowAuthScreen(false);
     setPreviewAccess(false);
     try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
   };
@@ -2229,6 +2240,7 @@ function App() {
     await signOut();
     setCloudAccount(null);
     setAuthNotice('');
+    setShowAuthScreen(false);
     setPreviewAccess(false);
     try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Keep the screen transition available. */ }
   };
@@ -2759,11 +2771,18 @@ function App() {
     onSignOut={() => { void handleCloudSignOut(); }}
     onPreview={() => { setCloudAccount(null); enterPreview(); }}
   />;
+  if (!previewAccess && !showAuthScreen) return <PublicLandingPage
+    onSignIn={() => { setAuthInitialMode('signin'); setShowAuthScreen(true); }}
+    onCreateAccount={() => { setAuthInitialMode('signup'); setShowAuthScreen(true); }}
+    onPreview={enterPreview}
+  />;
   if (!previewAccess) return <AuthPage
     onPreview={enterPreview}
     onSignIn={handleCloudSignIn}
     onSignUp={handleCloudSignUp}
     initialMessage={authNotice}
+    initialMode={authInitialMode}
+    onBack={() => setShowAuthScreen(false)}
   />;
   return <div className={'app-shell theme-' + theme + ' ' + (sidebarCollapsed ? 'sidebar-is-collapsed' : '')}>
     <aside className={'sidebar ' + (mobileMenuOpen ? 'sidebar-mobile-open' : '')}>
