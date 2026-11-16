@@ -23,7 +23,9 @@ The draft migration under `supabase/migrations/` will only be reconciled against
 
 ## Frontend configuration when ready
 
-The React/Vite app will need the project URL and a **publishable** key in its environment. The example variable names are in `.env.example`.
+The Vercel project that owns `hesabu-seven.vercel.app` is linked to `Mark2631/Hesabu`. Its current environment-variable list is empty, so the frontend has no Supabase URL/key configured yet. The MVP branch has a Vercel preview deployment, but it still runs against the local sample workspace.
+
+The React/Vite app will need the project URL and a **publishable** key in its environment. The example variable names are in `.env.example`. Add them to the preview and production environments only after the project reference has been confirmed.
 
 - Local development: `.env.local` (ignored by Git).
 - Vercel: project environment variables for the target environment.
