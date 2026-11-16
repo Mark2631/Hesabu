@@ -525,6 +525,130 @@ revoke insert, update, delete on public.journal_entries, public.journal_lines,
 from authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Atomic product creation with opening stock and inventory valuation
+-- ---------------------------------------------------------------------------
+
+create or replace function app_private.create_product(
+  p_business_id uuid,
+  p_sku text,
+  p_name text,
+  p_category text,
+  p_unit text,
+  p_initial_quantity numeric,
+  p_reorder_level numeric,
+  p_cost_price numeric,
+  p_selling_price numeric,
+  p_supplier_id uuid default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_user_id uuid := auth.uid();
+  v_product_id uuid := gen_random_uuid();
+  v_movement_id uuid := gen_random_uuid();
+  v_journal_id uuid := gen_random_uuid();
+  v_initial_quantity numeric(14,3);
+  v_reorder_level numeric(14,3);
+  v_cost_price numeric(14,2);
+  v_selling_price numeric(14,2);
+  v_total_value numeric(14,2);
+  v_journal_number text;
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not app_private.has_business_role(p_business_id, array['owner', 'manager', 'inventory']) then
+    raise exception 'You do not have permission to create products for this business' using errcode = '42501';
+  end if;
+  if p_sku is null or length(trim(p_sku)) = 0 then
+    raise exception 'Product SKU is required' using errcode = '22023';
+  end if;
+  if p_name is null or length(trim(p_name)) = 0 then
+    raise exception 'Product name is required' using errcode = '22023';
+  end if;
+  if p_unit is null or length(trim(p_unit)) = 0 then
+    raise exception 'Product unit is required' using errcode = '22023';
+  end if;
+  if p_initial_quantity is null or p_reorder_level is null
+    or p_cost_price is null or p_selling_price is null then
+    raise exception 'Opening quantity, reorder level, cost and selling price are required' using errcode = '22023';
+  end if;
+
+  v_initial_quantity := round(p_initial_quantity, 3);
+  v_reorder_level := round(p_reorder_level, 3);
+  v_cost_price := round(p_cost_price, 2);
+  v_selling_price := round(p_selling_price, 2);
+
+  if v_initial_quantity < 0 or v_reorder_level < 0
+    or v_cost_price < 0 or v_selling_price < 0 then
+    raise exception 'Product quantities and prices cannot be negative' using errcode = '22023';
+  end if;
+
+  if p_supplier_id is not null and not exists (
+    select 1 from public.suppliers
+    where id = p_supplier_id and business_id = p_business_id and is_active = true
+  ) then
+    raise exception 'Supplier is not available in this business' using errcode = '22023';
+  end if;
+
+  insert into public.products (
+    id, business_id, sku, name, category, unit, quantity_on_hand,
+    reorder_level, cost_price, selling_price, supplier_id, is_active
+  ) values (
+    v_product_id, p_business_id, trim(p_sku), trim(p_name),
+    nullif(trim(coalesce(p_category, '')), ''), trim(p_unit), 0,
+    v_reorder_level, v_cost_price, v_selling_price, p_supplier_id, true
+  );
+
+  if v_initial_quantity > 0 then
+    v_total_value := round(v_initial_quantity * v_cost_price, 2);
+
+    update public.products
+    set quantity_on_hand = v_initial_quantity
+    where id = v_product_id and business_id = p_business_id;
+
+    insert into public.inventory_movements (
+      id, business_id, product_id, movement_type, quantity_delta,
+      unit_cost, total_cost, source_type, source_id, reference, note, created_by
+    ) values (
+      v_movement_id, p_business_id, v_product_id, 'opening',
+      v_initial_quantity, v_cost_price, v_total_value,
+      'product_opening', v_product_id, trim(p_sku), 'Opening stock', v_user_id
+    );
+
+    if v_total_value > 0 then
+      v_journal_number := 'OPEN-' || upper(substr(replace(v_product_id::text, '-', ''), 1, 12));
+      insert into public.journal_entries (
+        id, business_id, journal_number, entry_date, description,
+        reference, source_type, source_id, posted_by
+      ) values (
+        v_journal_id, p_business_id, v_journal_number,
+        (now() at time zone 'Africa/Nairobi')::date,
+        'Opening stock · ' || trim(p_name), trim(p_sku),
+        'product_opening', v_product_id, v_user_id
+      );
+
+      insert into public.journal_lines (
+        business_id, journal_entry_id, account_name, debit, description
+      ) values (
+        p_business_id, v_journal_id, 'Inventory', v_total_value, 'Opening stock value'
+      );
+      insert into public.journal_lines (
+        business_id, journal_entry_id, account_name, credit, description
+      ) values (
+        p_business_id, v_journal_id, 'Opening balance equity', v_total_value, 'Opening stock funding'
+      );
+    end if;
+  end if;
+
+  return v_product_id;
+end;
+$;
+
+-- ---------------------------------------------------------------------------
 -- Atomic sale posting
 -- ---------------------------------------------------------------------------
 
@@ -1454,6 +1578,14 @@ end;
 $$;
 
 
+create or replace function public.create_product(
+  p_business_id uuid, p_sku text, p_name text, p_category text, p_unit text,
+  p_initial_quantity numeric, p_reorder_level numeric, p_cost_price numeric,
+  p_selling_price numeric, p_supplier_id uuid default null
+)
+returns uuid language sql security invoker set search_path = ''
+as $ select app_private.create_product($1,$2,$3,$4,$5,$6,$7,$8,$9,$10); $;
+
 -- Public Data API entry points are SECURITY INVOKER wrappers only. The
 -- SECURITY DEFINER implementations above live in the non-exposed app_private
 -- schema and perform explicit user, business and role validation.
@@ -1514,6 +1646,7 @@ as $$ select app_private.get_daily_digest($1,$2); $$;
 
 -- Restrict private implementations and public RPC wrappers to signed-in users.
 revoke all on all functions in schema app_private from public, anon;
+revoke all on function public.create_product(uuid, text, text, text, text, numeric, numeric, numeric, numeric, uuid) from public, anon;
 revoke all on function public.post_sale(uuid, text, text, date, numeric, text, text, jsonb) from public, anon;
 revoke all on function public.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) from public, anon;
 revoke all on function public.post_expense(uuid, text, text, numeric, text, date, text) from public, anon;
@@ -1523,6 +1656,7 @@ revoke all on function public.post_supplier_payment(uuid, uuid, numeric, text, t
 revoke all on function public.post_stock_adjustment(uuid, uuid, numeric, text) from public, anon;
 revoke all on function public.get_daily_digest(uuid, date) from public, anon;
 
+grant execute on function app_private.create_product(uuid, text, text, text, text, numeric, numeric, numeric, numeric, uuid) to authenticated;
 grant execute on function app_private.post_sale(uuid, text, text, date, numeric, text, text, jsonb) to authenticated;
 grant execute on function app_private.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) to authenticated;
 grant execute on function app_private.post_expense(uuid, text, text, numeric, text, date, text) to authenticated;
@@ -1532,6 +1666,7 @@ grant execute on function app_private.post_supplier_payment(uuid, uuid, numeric,
 grant execute on function app_private.post_stock_adjustment(uuid, uuid, numeric, text) to authenticated;
 grant execute on function app_private.get_daily_digest(uuid, date) to authenticated;
 
+grant execute on function public.create_product(uuid, text, text, text, text, numeric, numeric, numeric, numeric, uuid) to authenticated;
 grant execute on function public.post_sale(uuid, text, text, date, numeric, text, text, jsonb) to authenticated;
 grant execute on function public.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) to authenticated;
 grant execute on function public.post_expense(uuid, text, text, numeric, text, date, text) to authenticated;
