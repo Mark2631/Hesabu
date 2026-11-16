@@ -26,6 +26,15 @@ The core record flow is:
 
 Manual entry remains available to every account. AI assistance and WhatsApp summaries are independent preferences: a business can enable either one, both, or neither. They must not be mutually exclusive radio choices.
 
+## Work already applied on this branch
+
+- Added a paired floating Daily digest / Ask Hesabu dock. Its two panels are mutually exclusive so they cannot overlap.
+- Added a WhatsApp digest preview with today's totals, an editable destination and a pre-filled click-to-chat action. The user still presses Send in WhatsApp; the data source is still the local preview until Supabase is connected.
+- Reduced the dashboard quick-action card padding and tile height.
+- Kept the existing Inter font family and set a legible scale in the UI specification rather than shrinking every label.
+
+These are branch changes, not production changes. The sign-in flow, AI generation, multi-user data and scheduled WhatsApp delivery remain blocked on the backend and provider integrations described below.
+
 ## Folder guide
 
 - `AUDIT.md` — evidence-based audit of the current code.
