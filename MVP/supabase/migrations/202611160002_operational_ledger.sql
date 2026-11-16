@@ -319,7 +319,7 @@ create table public.digest_delivery_logs (
 -- A journal entry must balance at transaction commit. The deferred trigger lets
 -- a posting RPC insert the debit and credit rows as separate statements while
 -- preventing a partially posted entry from committing.
-create or replace function public.assert_journal_entry_balanced()
+create or replace function app_private.assert_journal_entry_balanced()
 returns trigger
 language plpgsql
 security definer
@@ -359,7 +359,7 @@ $;
 create constraint trigger journal_lines_balanced_check
 after insert or update or delete on public.journal_lines
 deferrable initially deferred
-for each row execute procedure public.assert_journal_entry_balanced();
+for each row execute procedure app_private.assert_journal_entry_balanced();
 
 -- ---------------------------------------------------------------------------
 -- Indexes
@@ -392,7 +392,7 @@ for each row execute procedure public.set_updated_at();
 create trigger suppliers_set_updated_at before update on public.suppliers
 for each row execute procedure public.set_updated_at();
 
-create or replace function public.initialise_supplier_balance()
+create or replace function app_private.initialise_supplier_balance()
 returns trigger
 language plpgsql
 set search_path = ''
@@ -404,7 +404,7 @@ end;
 $;
 create trigger suppliers_initialise_balance
 before insert on public.suppliers
-for each row execute procedure public.initialise_supplier_balance();
+for each row execute procedure app_private.initialise_supplier_balance();
 create trigger invoices_set_updated_at before update on public.invoices
 for each row execute procedure public.set_updated_at();
 create trigger expenses_set_updated_at before update on public.expenses
@@ -431,7 +431,7 @@ begin
     execute format('revoke all on public.%I from anon, public', table_name);
     execute format('grant select on public.%I to authenticated', table_name);
     execute format(
-      'create policy %I on public.%I for select to authenticated using (public.is_business_member(business_id))',
+      'create policy %I on public.%I for select to authenticated using (app_private.is_business_member(business_id))',
       table_name || '_select_member', table_name
     );
   end loop;
@@ -441,51 +441,51 @@ end $$;
 -- policies remain for product, invoice and invoice-item reads.
 drop policy expenses_select_member on public.expenses;
 create policy expenses_select_finance on public.expenses for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'finance']));
 
 drop policy payments_select_member on public.payments;
 create policy payments_select_finance_sales on public.payments for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'sales', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'sales', 'finance']));
 
 drop policy unmatched_receipts_select_member on public.unmatched_receipts;
 create policy unmatched_receipts_select_finance on public.unmatched_receipts for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'finance']));
 
 drop policy suppliers_select_member on public.suppliers;
 create policy suppliers_select_operations on public.suppliers for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
 
 drop policy purchase_orders_select_member on public.purchase_orders;
 create policy purchase_orders_select_operations on public.purchase_orders for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
 
 drop policy purchase_order_items_select_member on public.purchase_order_items;
 create policy purchase_order_items_select_operations on public.purchase_order_items for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
 
 drop policy inventory_movements_select_member on public.inventory_movements;
 create policy inventory_movements_select_operations on public.inventory_movements for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'inventory']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory']));
 
 drop policy cash_movements_select_member on public.cash_movements;
 create policy cash_movements_select_finance on public.cash_movements for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'finance']));
 
 drop policy journal_entries_select_member on public.journal_entries;
 create policy journal_entries_select_finance on public.journal_entries for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'finance']));
 
 drop policy journal_lines_select_member on public.journal_lines;
 create policy journal_lines_select_finance on public.journal_lines for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'finance']));
 
 drop policy integration_events_select_member on public.integration_events;
 create policy integration_events_select_management on public.integration_events for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager']));
+using (app_private.has_business_role(business_id, array['owner', 'manager']));
 
 drop policy digest_delivery_logs_select_member on public.digest_delivery_logs;
 create policy digest_delivery_logs_select_management on public.digest_delivery_logs for select to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'finance']));
 
 -- Direct catalogue editing is role-controlled. Financial records are written
 -- through RPCs only; SELECT grants above expose no direct INSERT/UPDATE/DELETE.
@@ -500,10 +500,10 @@ grant update (
   cost_price, selling_price, is_active
 ) on public.products to authenticated;
 create policy products_insert_inventory on public.products for insert to authenticated
-with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory']));
+with check (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory']));
 create policy products_update_inventory on public.products for update to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'inventory']))
-with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory']))
+with check (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory']));
 
 grant insert (
   business_id, name, phone, email, payment_terms, opening_balance, is_active
@@ -511,10 +511,10 @@ grant insert (
 grant update (name, phone, email, payment_terms, is_active)
   on public.suppliers to authenticated;
 create policy suppliers_insert_management on public.suppliers for insert to authenticated
-with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
+with check (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
 create policy suppliers_update_management on public.suppliers for update to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']))
-with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
+using (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']))
+with check (app_private.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
 
 -- Journal lines are immutable for ordinary application clients.
 revoke insert, update, delete on public.journal_entries, public.journal_lines,
@@ -528,7 +528,7 @@ from authenticated;
 -- Atomic sale posting
 -- ---------------------------------------------------------------------------
 
-create or replace function public.post_sale(
+create or replace function app_private.post_sale(
   p_business_id uuid,
   p_customer_name text,
   p_customer_phone text,
@@ -563,7 +563,7 @@ begin
   if v_user_id is null then
     raise exception 'Authentication required' using errcode = '28000';
   end if;
-  if not public.has_business_role(p_business_id, array['owner', 'manager', 'sales']) then
+  if not app_private.has_business_role(p_business_id, array['owner', 'manager', 'sales']) then
     raise exception 'You do not have permission to record sales for this business' using errcode = '42501';
   end if;
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
@@ -709,7 +709,7 @@ $$;
 -- Atomic payment allocation and receipt posting
 -- ---------------------------------------------------------------------------
 
-create or replace function public.post_payment(
+create or replace function app_private.post_payment(
   p_business_id uuid,
   p_invoice_id uuid,
   p_amount numeric,
@@ -738,7 +738,7 @@ begin
   if v_user_id is null then
     raise exception 'Authentication required' using errcode = '28000';
   end if;
-  if not public.has_business_role(p_business_id, array['owner', 'manager', 'sales', 'finance']) then
+  if not app_private.has_business_role(p_business_id, array['owner', 'manager', 'sales', 'finance']) then
     raise exception 'You do not have permission to record payments for this business' using errcode = '42501';
   end if;
   if p_amount is null or p_amount <= 0 then
@@ -834,7 +834,7 @@ $$;
 -- Atomic expense posting
 -- ---------------------------------------------------------------------------
 
-create or replace function public.post_expense(
+create or replace function app_private.post_expense(
   p_business_id uuid,
   p_category text,
   p_description text,
@@ -859,7 +859,7 @@ begin
   if v_user_id is null then
     raise exception 'Authentication required' using errcode = '28000';
   end if;
-  if not public.has_business_role(p_business_id, array['owner', 'manager', 'finance']) then
+  if not app_private.has_business_role(p_business_id, array['owner', 'manager', 'finance']) then
     raise exception 'You do not have permission to post expenses for this business' using errcode = '42501';
   end if;
   if p_amount is null or p_amount <= 0 then
@@ -926,7 +926,7 @@ $$;
 -- Purchase order creation, goods receiving and supplier settlements
 -- ---------------------------------------------------------------------------
 
-create or replace function public.create_purchase_order(
+create or replace function app_private.create_purchase_order(
   p_business_id uuid,
   p_supplier_id uuid,
   p_expected_date date,
@@ -952,7 +952,7 @@ begin
   if v_user_id is null then
     raise exception 'Authentication required' using errcode = '28000';
   end if;
-  if not public.has_business_role(p_business_id, array['owner', 'manager', 'inventory']) then
+  if not app_private.has_business_role(p_business_id, array['owner', 'manager', 'inventory']) then
     raise exception 'You do not have permission to create purchase orders' using errcode = '42501';
   end if;
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
@@ -1028,7 +1028,7 @@ begin
 end;
 $;
 
-create or replace function public.post_purchase_receipt(
+create or replace function app_private.post_purchase_receipt(
   p_business_id uuid,
   p_purchase_order_id uuid,
   p_items jsonb,
@@ -1059,7 +1059,7 @@ begin
   if v_user_id is null then
     raise exception 'Authentication required' using errcode = '28000';
   end if;
-  if not public.has_business_role(p_business_id, array['owner', 'manager', 'inventory', 'finance']) then
+  if not app_private.has_business_role(p_business_id, array['owner', 'manager', 'inventory', 'finance']) then
     raise exception 'You do not have permission to receive stock' using errcode = '42501';
   end if;
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
@@ -1183,7 +1183,7 @@ begin
 end;
 $;
 
-create or replace function public.post_supplier_payment(
+create or replace function app_private.post_supplier_payment(
   p_business_id uuid,
   p_supplier_id uuid,
   p_amount numeric,
@@ -1207,7 +1207,7 @@ begin
   if v_user_id is null then
     raise exception 'Authentication required' using errcode = '28000';
   end if;
-  if not public.has_business_role(p_business_id, array['owner', 'manager', 'finance']) then
+  if not app_private.has_business_role(p_business_id, array['owner', 'manager', 'finance']) then
     raise exception 'You do not have permission to settle supplier balances' using errcode = '42501';
   end if;
   if p_amount is null or p_amount <= 0 then
@@ -1272,7 +1272,7 @@ $;
 -- Inventory adjustments and server-calculated daily digest
 -- ---------------------------------------------------------------------------
 
-create or replace function public.post_stock_adjustment(
+create or replace function app_private.post_stock_adjustment(
   p_business_id uuid,
   p_product_id uuid,
   p_quantity_delta numeric,
@@ -1298,7 +1298,7 @@ begin
   if v_user_id is null then
     raise exception 'Authentication required' using errcode = '28000';
   end if;
-  if not public.has_business_role(p_business_id, array['owner', 'manager', 'inventory']) then
+  if not app_private.has_business_role(p_business_id, array['owner', 'manager', 'inventory']) then
     raise exception 'You do not have permission to adjust stock' using errcode = '42501';
   end if;
   v_delta := round(p_quantity_delta, 3);
@@ -1364,7 +1364,7 @@ begin
 end;
 $;
 
-create or replace function public.get_daily_digest(
+create or replace function app_private.get_daily_digest(
   p_business_id uuid,
   p_date date default null
 )
@@ -1384,7 +1384,7 @@ declare
   v_units_sold numeric(14,3);
   v_low_stock bigint;
 begin
-  if auth.uid() is null or not public.is_business_member(p_business_id) then
+  if auth.uid() is null or not app_private.is_business_member(p_business_id) then
     raise exception 'Business membership required' using errcode = '42501';
   end if;
   select timezone into v_timezone
@@ -1453,8 +1453,67 @@ begin
 end;
 $;
 
--- No browser role can post directly to ledger tables. All RPCs perform explicit
--- active-membership/role checks and create their dependent records in one txn.
+
+-- Public Data API entry points are SECURITY INVOKER wrappers only. The
+-- SECURITY DEFINER implementations above live in the non-exposed app_private
+-- schema and perform explicit user, business and role validation.
+create or replace function public.post_sale(
+  p_business_id uuid, p_customer_name text, p_customer_phone text,
+  p_due_date date, p_discount numeric, p_payment_channel text,
+  p_source text, p_items jsonb
+)
+returns uuid language sql security invoker set search_path = ''
+as $$ select app_private.post_sale($1,$2,$3,$4,$5,$6,$7,$8); $$;
+
+create or replace function public.post_payment(
+  p_business_id uuid, p_invoice_id uuid, p_amount numeric, p_channel text,
+  p_provider_reference text default null, p_origin text default 'manual',
+  p_phone text default null, p_idempotency_key text default null, p_note text default null
+)
+returns uuid language sql security invoker set search_path = ''
+as $$ select app_private.post_payment($1,$2,$3,$4,$5,$6,$7,$8,$9); $$;
+
+create or replace function public.post_expense(
+  p_business_id uuid, p_category text, p_description text, p_amount numeric,
+  p_channel text, p_expense_date date default null, p_reference text default null
+)
+returns uuid language sql security invoker set search_path = ''
+as $$ select app_private.post_expense($1,$2,$3,$4,$5,$6,$7); $$;
+
+create or replace function public.create_purchase_order(
+  p_business_id uuid, p_supplier_id uuid, p_expected_date date,
+  p_items jsonb, p_note text default null
+)
+returns uuid language sql security invoker set search_path = ''
+as $$ select app_private.create_purchase_order($1,$2,$3,$4,$5); $$;
+
+create or replace function public.post_purchase_receipt(
+  p_business_id uuid, p_purchase_order_id uuid, p_items jsonb, p_note text default null
+)
+returns uuid language sql security invoker set search_path = ''
+as $$ select app_private.post_purchase_receipt($1,$2,$3,$4); $$;
+
+create or replace function public.post_supplier_payment(
+  p_business_id uuid, p_supplier_id uuid, p_amount numeric,
+  p_channel text, p_reference text default null, p_note text default null
+)
+returns uuid language sql security invoker set search_path = ''
+as $$ select app_private.post_supplier_payment($1,$2,$3,$4,$5,$6); $$;
+
+create or replace function public.post_stock_adjustment(
+  p_business_id uuid, p_product_id uuid, p_quantity_delta numeric, p_reason text
+)
+returns uuid language sql security invoker set search_path = ''
+as $$ select app_private.post_stock_adjustment($1,$2,$3,$4); $$;
+
+create or replace function public.get_daily_digest(
+  p_business_id uuid, p_date date default null
+)
+returns jsonb language sql security invoker set search_path = ''
+as $$ select app_private.get_daily_digest($1,$2); $$;
+
+-- Restrict private implementations and public RPC wrappers to signed-in users.
+revoke all on all functions in schema app_private from public, anon;
 revoke all on function public.post_sale(uuid, text, text, date, numeric, text, text, jsonb) from public, anon;
 revoke all on function public.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) from public, anon;
 revoke all on function public.post_expense(uuid, text, text, numeric, text, date, text) from public, anon;
@@ -1463,13 +1522,23 @@ revoke all on function public.post_purchase_receipt(uuid, uuid, jsonb, text) fro
 revoke all on function public.post_supplier_payment(uuid, uuid, numeric, text, text, text) from public, anon;
 revoke all on function public.post_stock_adjustment(uuid, uuid, numeric, text) from public, anon;
 revoke all on function public.get_daily_digest(uuid, date) from public, anon;
+
+grant execute on function app_private.post_sale(uuid, text, text, date, numeric, text, text, jsonb) to authenticated;
+grant execute on function app_private.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) to authenticated;
+grant execute on function app_private.post_expense(uuid, text, text, numeric, text, date, text) to authenticated;
+grant execute on function app_private.create_purchase_order(uuid, uuid, date, jsonb, text) to authenticated;
+grant execute on function app_private.post_purchase_receipt(uuid, uuid, jsonb, text) to authenticated;
+grant execute on function app_private.post_supplier_payment(uuid, uuid, numeric, text, text, text) to authenticated;
+grant execute on function app_private.post_stock_adjustment(uuid, uuid, numeric, text) to authenticated;
+grant execute on function app_private.get_daily_digest(uuid, date) to authenticated;
+
+grant execute on function public.post_sale(uuid, text, text, date, numeric, text, text, jsonb) to authenticated;
+grant execute on function public.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) to authenticated;
+grant execute on function public.post_expense(uuid, text, text, numeric, text, date, text) to authenticated;
 grant execute on function public.create_purchase_order(uuid, uuid, date, jsonb, text) to authenticated;
 grant execute on function public.post_purchase_receipt(uuid, uuid, jsonb, text) to authenticated;
 grant execute on function public.post_supplier_payment(uuid, uuid, numeric, text, text, text) to authenticated;
 grant execute on function public.post_stock_adjustment(uuid, uuid, numeric, text) to authenticated;
 grant execute on function public.get_daily_digest(uuid, date) to authenticated;
-grant execute on function public.post_sale(uuid, text, text, date, numeric, text, text, jsonb) to authenticated;
-grant execute on function public.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) to authenticated;
-grant execute on function public.post_expense(uuid, text, text, numeric, text, date, text) to authenticated;
 
 commit;
