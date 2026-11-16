@@ -12,8 +12,9 @@ import {
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import {
-  createBusiness, listMyBusinesses, restoreCloudSession, saveBusinessPreferences,
-  signInWithPassword, signOut, signUpWithPassword, type SignUpInput, type SupabaseUser,
+  createBusiness, getBusinessSettings, getCloudDailyDigest, listMyBusinesses, restoreCloudSession,
+  saveBusinessPreferences, signInWithPassword, signOut, signUpWithPassword,
+  type CloudBusinessSettings, type CloudDailyDigest, type SignUpInput, type SupabaseUser,
 } from './lib/supabase';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
@@ -1067,6 +1068,85 @@ function CloudAccountScreen({
   onSignOut: () => void;
   onPreview: () => void;
 }) {
+  const [settings, setSettings] = useState<CloudBusinessSettings | null>(null);
+  const [digest, setDigest] = useState<CloudDailyDigest | null>(null);
+  const [destination, setDestination] = useState('');
+  const [loadingDigest, setLoadingDigest] = useState(true);
+  const [digestError, setDigestError] = useState('');
+  const [savingDestination, setSavingDestination] = useState(false);
+  const [digestNotice, setDigestNotice] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoadingDigest(true);
+    setDigestError('');
+    Promise.all([
+      getBusinessSettings(business.id),
+      getCloudDailyDigest(business.id),
+    ]).then(([nextSettings, nextDigest]) => {
+      if (!active) return;
+      setSettings(nextSettings);
+      setDigest(nextDigest);
+      setDestination(nextSettings.whatsapp_recipient_phone ?? '');
+    }).catch(() => {
+      if (!active) return;
+      setDigestError('The cloud daily digest is not ready yet. The business account is connected, but the operational database migration still needs to be applied to the Hesabu project.');
+    }).finally(() => {
+      if (active) setLoadingDigest(false);
+    });
+    return () => { active = false; };
+  }, [business.id]);
+
+  const saveDestination = async () => {
+    if (!settings) return;
+    if (settings.whatsapp_digest_enabled && !normaliseWhatsAppNumber(destination)) {
+      setDigestError('Enter a valid WhatsApp number before saving the digest destination.');
+      return;
+    }
+    setSavingDestination(true);
+    setDigestError('');
+    setDigestNotice('');
+    try {
+      await saveBusinessPreferences({
+        businessId: business.id,
+        aiAssistantEnabled: settings.ai_assistant_enabled,
+        whatsappDigestEnabled: settings.whatsapp_digest_enabled,
+        whatsappRecipientPhone: destination,
+      });
+      setDigestNotice('WhatsApp preferences saved to this business.');
+    } catch {
+      setDigestError('Hesabu could not save the WhatsApp preference. Check the connection and try again.');
+    } finally {
+      setSavingDestination(false);
+    }
+  };
+
+  const shareDigest = () => {
+    if (!digest) return;
+    const number = normaliseWhatsAppNumber(destination);
+    if (!number) {
+      setDigestError('Enter a valid WhatsApp number first. Use 2547XXXXXXXX or a Kenyan mobile number beginning with 07 or 01.');
+      return;
+    }
+    const message = [
+      business.name + ' — Daily business digest',
+      dateLabel(digest.date),
+      '',
+      'Sales recorded: ' + money(digest.sales_total),
+      'Payments received: ' + money(digest.payments_received),
+      'Expenses: ' + money(digest.expenses_total),
+      'Gross profit: ' + money(digest.gross_profit),
+      'Invoices: ' + numberText(digest.invoice_count),
+      'Units sold: ' + numberText(digest.units_sold),
+      'Low-stock items: ' + numberText(digest.low_stock_count),
+      '',
+      'Prepared with Hesabu',
+    ].join('\n');
+    window.open('https://wa.me/' + number + '?text=' + encodeURIComponent(message), '_blank', 'noopener,noreferrer');
+    setDigestError('');
+    setDigestNotice('The digest is ready in WhatsApp. Review it and press Send.');
+  };
+
   return <main className="auth-page cloud-account-page">
     <section className="cloud-account-card">
       <div className="auth-brand">
@@ -1081,7 +1161,47 @@ function CloudAccountScreen({
         <span>Business type</span><strong>{business.industry || 'Not specified'}</strong>
         <span>Business workspace</span><strong>Private business account</strong>
       </div>
-      <p className="cloud-account-note">The cloud identity and business setup are ready. The operational ledger screens will switch to cloud records as the remaining database tables and posting flows are connected. The sample workspace remains separate.</p>
+
+      <section className="cloud-digest-section" aria-label="Cloud daily digest">
+        <div className="cloud-digest-heading">
+          <div><span className="public-eyebrow">BUSINESS SUMMARY</span><h2>Daily digest</h2></div>
+          <span className="cloud-data-label">CLOUD RECORDS</span>
+        </div>
+        {#if loadingDigest}
+          <div className="cloud-digest-skeleton" aria-label="Loading daily digest">
+            <span></span><span></span><span></span><span></span>
+          </div>
+        {:else if digest}
+          <div className="cloud-digest-date">{dateLabel(digest.date)}</div>
+          <div className="cloud-digest-metrics">
+            <div><span>Sales</span><strong>{money(digest.sales_total)}</strong></div>
+            <div><span>Received</span><strong>{money(digest.payments_received)}</strong></div>
+            <div><span>Expenses</span><strong>{money(digest.expenses_total)}</strong></div>
+            <div><span>Gross profit</span><strong>{money(digest.gross_profit)}</strong></div>
+          </div>
+          <div className="cloud-digest-foot">
+            <span>{numberText(digest.invoice_count)} invoices · {numberText(digest.units_sold)} units sold</span>
+            <span>{numberText(digest.low_stock_count)} low-stock items</span>
+          </div>
+          <label className="cloud-digest-recipient">
+            <span>WhatsApp destination</span>
+            <input type="tel" inputMode="tel" value={destination} onChange={event => { setDestination(event.target.value); setDigestError(''); setDigestNotice(''); }} placeholder="2547XXXXXXXX" />
+          </label>
+          <div className="cloud-digest-actions">
+            <Button variant="outline" onClick={() => { void saveDestination(); }} disabled={savingDestination || !settings}>
+              {savingDestination ? 'Saving…' : 'Save destination'}
+            </Button>
+            <Button onClick={shareDigest}><MessageCircle size={15} /> Open WhatsApp</Button>
+          </div>
+          <p className="cloud-digest-note">Hesabu prepares the message from saved business records. Review it in WhatsApp and press Send; automatic delivery is not enabled.</p>
+        {:else}
+          <p className="cloud-digest-unavailable">{digestError || 'The cloud summary is not available yet.'}</p>
+        {/if}
+        {digestError && digest && <p className="cloud-digest-error" role="alert">{digestError}</p>}
+        {digestNotice && <p className="cloud-digest-success" role="status">{digestNotice}</p>}
+      </section>
+
+      <p className="cloud-account-note">Manual record entry remains the foundation. AI preferences are stored independently, but the generative AI service has not been connected yet. The sample workspace remains separate from your cloud business.</p>
       <div className="cloud-account-actions">
         <Button variant="outline" onClick={onSignOut}>Sign out</Button>
         <Button onClick={onPreview}>Open sample workspace</Button>
@@ -1089,7 +1209,6 @@ function CloudAccountScreen({
     </section>
   </main>;
 }
-
 function getWorkspaceAnswer(data: AppData, question: string) {
   const query = question.toLowerCase();
   const todayDigest = getDailyDigest(data);
