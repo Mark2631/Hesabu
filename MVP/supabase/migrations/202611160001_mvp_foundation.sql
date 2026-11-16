@@ -254,7 +254,8 @@ using (
   and app_private.has_business_role(business_id, array['owner'])
 )
 with check (
-  role <> 'owner'
+  user_id <> auth.uid()
+  and role <> 'owner'
   and app_private.has_business_role(business_id, array['owner'])
 );
 
