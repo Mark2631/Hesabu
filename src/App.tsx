@@ -2133,6 +2133,30 @@ function recordJournal(
   ];
 }
 
+const PENDING_ONBOARDING_KEY = 'hesabu:pending-onboarding:v1';
+
+function savePendingOnboarding(input: SignUpInput) {
+  const { password: _password, ...safeDraft } = input;
+  try { localStorage.setItem(PENDING_ONBOARDING_KEY, JSON.stringify(safeDraft)); }
+  catch { /* The account can still be created; confirmation recovery may need the user to repeat setup. */ }
+}
+
+function readPendingOnboarding(email?: string): Omit<SignUpInput, 'password'> | null {
+  try {
+    const raw = localStorage.getItem(PENDING_ONBOARDING_KEY);
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as Omit<SignUpInput, 'password'>;
+    if (!draft?.email || !draft.businessName || (email && draft.email.toLowerCase() !== email.toLowerCase())) return null;
+    return draft;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingOnboarding() {
+  try { localStorage.removeItem(PENDING_ONBOARDING_KEY); } catch { /* No-op when storage is disabled. */ }
+}
+
 function App() {
   const [data, setData] = useState<AppData>(() => readWorkspace());
   const [cloudAccount, setCloudAccount] = useState<{
@@ -2168,25 +2192,45 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    restoreCloudSession()
-      .then(result => {
-        if (!active || !result) return;
-        const membership = result.memberships.find(item => item.businesses?.id);
-        if (membership?.businesses) {
+    const restore = async () => {
+      const result = await restoreCloudSession();
+      if (!active || !result) return;
+      let membership = result.memberships.find(item => item.businesses?.id);
+      if (!membership?.businesses) {
+        const pending = readPendingOnboarding(result.user.email);
+        if (pending) {
+          const businessId = await createBusiness(pending);
+          await saveBusinessPreferences({
+            businessId,
+            aiAssistantEnabled: pending.aiAssistantEnabled,
+            whatsappDigestEnabled: pending.whatsappDigestEnabled,
+            whatsappRecipientPhone: pending.whatsappRecipientPhone,
+          });
+          clearPendingOnboarding();
+          setWhatsAppNumber(pending.whatsappRecipientPhone);
           setCloudAccount({
             user: result.user,
-            business: {
-              id: membership.businesses.id,
-              name: membership.businesses.name,
-              industry: membership.businesses.industry,
-            },
+            business: { id: businessId, name: pending.businessName, industry: pending.industry || null },
           });
           setPreviewAccess(false);
           try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
-        } else {
-          setAuthNotice('Your cloud account is signed in, but it does not have a business workspace yet. Create a business or contact the owner of the workspace.');
+          return;
         }
-      })
+        setAuthNotice('Your account is signed in, but no business workspace has been set up for it yet. Complete the business setup on this device or contact the workspace owner.');
+        return;
+      }
+      setCloudAccount({
+        user: result.user,
+        business: {
+          id: membership.businesses.id,
+          name: membership.businesses.name,
+          industry: membership.businesses.industry,
+        },
+      });
+      setPreviewAccess(false);
+      try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
+    };
+    restore()
       .catch(error => {
         if (active) setAuthNotice(error instanceof Error ? error.message : 'The saved cloud session could not be restored.');
       })
@@ -2196,19 +2240,36 @@ function App() {
 
   const handleCloudSignIn = async (email: string, password: string) => {
     const session = await signInWithPassword(email, password);
-    const memberships = await listMyBusinesses();
-    const membership = memberships.find(item => item.businesses?.id);
+    let memberships = await listMyBusinesses();
+    let membership = memberships.find(item => item.businesses?.id);
     if (!membership?.businesses) {
-      throw new Error('Your sign-in was accepted, but no business workspace is available for this account yet. The cloud database setup may still be pending.');
+      const pending = readPendingOnboarding(session.user.email || email);
+      if (!pending) {
+        throw new Error('Your sign-in was accepted, but this account has no business workspace yet. Complete business setup on the device where you created the account.');
+      }
+      const businessId = await createBusiness(pending);
+      await saveBusinessPreferences({
+        businessId,
+        aiAssistantEnabled: pending.aiAssistantEnabled,
+        whatsappDigestEnabled: pending.whatsappDigestEnabled,
+        whatsappRecipientPhone: pending.whatsappRecipientPhone,
+      });
+      clearPendingOnboarding();
+      setWhatsAppNumber(pending.whatsappRecipientPhone);
+      setCloudAccount({
+        user: session.user,
+        business: { id: businessId, name: pending.businessName, industry: pending.industry || null },
+      });
+    } else {
+      setCloudAccount({
+        user: session.user,
+        business: {
+          id: membership.businesses.id,
+          name: membership.businesses.name,
+          industry: membership.businesses.industry,
+        },
+      });
     }
-    setCloudAccount({
-      user: session.user,
-      business: {
-        id: membership.businesses.id,
-        name: membership.businesses.name,
-        industry: membership.businesses.industry,
-      },
-    });
     setAuthNotice('');
     setShowAuthScreen(false);
     setPreviewAccess(false);
@@ -2216,6 +2277,7 @@ function App() {
   };
 
   const handleCloudSignUp = async (input: SignUpInput): Promise<'confirm_email' | void> => {
+    savePendingOnboarding(input);
     const result = await signUpWithPassword(input);
     if (!result.session) return 'confirm_email';
     const businessId = await createBusiness(input);
@@ -2225,6 +2287,7 @@ function App() {
       whatsappDigestEnabled: input.whatsappDigestEnabled,
       whatsappRecipientPhone: input.whatsappRecipientPhone,
     });
+    clearPendingOnboarding();
     setCloudAccount({
       user: result.session.user,
       business: { id: businessId, name: input.businessName.trim(), industry: input.industry || null },
