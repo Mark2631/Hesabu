@@ -475,22 +475,28 @@ using (public.has_business_role(business_id, array['owner', 'manager', 'finance'
 
 -- Direct catalogue editing is role-controlled. Financial records are written
 -- through RPCs only; SELECT grants above expose no direct INSERT/UPDATE/DELETE.
-grant insert, update, delete on public.products, public.suppliers to authenticated;
+-- Product stock quantity is deliberately excluded from direct client
+-- writes. Stock changes must create an immutable movement and journal entry.
+grant insert (
+  business_id, sku, name, category, unit, reorder_level,
+  cost_price, selling_price, is_active
+) on public.products to authenticated;
+grant update (
+  sku, name, category, unit, reorder_level,
+  cost_price, selling_price, is_active
+) on public.products to authenticated;
 create policy products_insert_inventory on public.products for insert to authenticated
 with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory']));
 create policy products_update_inventory on public.products for update to authenticated
 using (public.has_business_role(business_id, array['owner', 'manager', 'inventory']))
 with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory']));
-create policy products_delete_owner_manager on public.products for delete to authenticated
-using (public.has_business_role(business_id, array['owner', 'manager']));
 
+grant insert, update on public.suppliers to authenticated;
 create policy suppliers_insert_management on public.suppliers for insert to authenticated
 with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
 create policy suppliers_update_management on public.suppliers for update to authenticated
 using (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']))
 with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
-create policy suppliers_delete_owner on public.suppliers for delete to authenticated
-using (public.has_business_role(business_id, array['owner']));
 
 -- Journal lines are immutable for ordinary application clients.
 revoke insert, update, delete on public.journal_entries, public.journal_lines,
