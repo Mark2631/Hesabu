@@ -1,0 +1,806 @@
+-- Hesabu MVP operational ledger — DRAFT ONLY.
+-- This migration has NOT been applied to the Supabase project.
+-- Reconcile with the live schema and run on a non-production branch first.
+-- All writes to invoices, stock, receipts and journals go through SECURITY DEFINER
+-- RPCs below so business-level validation and accounting updates are atomic.
+
+begin;
+
+alter table public.businesses
+  add column if not exists next_invoice_number bigint not null default 1001;
+
+-- ---------------------------------------------------------------------------
+-- Catalogue and counterparties
+-- ---------------------------------------------------------------------------
+
+create table public.products (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  sku text not null,
+  name text not null check (length(trim(name)) > 0),
+  category text,
+  unit text not null default 'piece',
+  quantity_on_hand numeric(14,3) not null default 0 check (quantity_on_hand >= 0),
+  reorder_level numeric(14,3) not null default 0 check (reorder_level >= 0),
+  cost_price numeric(14,2) not null default 0 check (cost_price >= 0),
+  selling_price numeric(14,2) not null default 0 check (selling_price >= 0),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (business_id, sku),
+  unique (id, business_id)
+);
+
+create table public.suppliers (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  name text not null check (length(trim(name)) > 0),
+  phone text,
+  email text,
+  payment_terms text,
+  opening_balance numeric(14,2) not null default 0 check (opening_balance >= 0),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (id, business_id)
+);
+
+-- ---------------------------------------------------------------------------
+-- Sales and receivables
+-- ---------------------------------------------------------------------------
+
+create table public.invoices (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  invoice_number text not null,
+  customer_name text not null default 'Walk-in customer',
+  customer_phone text,
+  issue_date date not null default (now() at time zone 'Africa/Nairobi')::date,
+  due_date date,
+  subtotal numeric(14,2) not null check (subtotal >= 0),
+  discount_amount numeric(14,2) not null default 0 check (discount_amount >= 0),
+  total_amount numeric(14,2) not null check (total_amount >= 0),
+  amount_paid numeric(14,2) not null default 0 check (amount_paid >= 0),
+  payment_channel text not null default 'cash'
+    check (payment_channel in ('mpesa', 'cash', 'bank', 'card', 'credit')),
+  status text not null default 'sent'
+    check (status in ('draft', 'sent', 'partial', 'paid', 'overdue', 'void')),
+  source text not null default 'manual'
+    check (source in ('hesabu', 'website', 'pos', 'manual', 'api')),
+  note text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (business_id, invoice_number),
+  unique (id, business_id),
+  check (discount_amount <= subtotal),
+  check (total_amount = subtotal - discount_amount),
+  check (amount_paid <= total_amount)
+);
+
+create table public.invoice_items (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null,
+  invoice_id uuid not null,
+  product_id uuid,
+  product_name text not null,
+  sku_snapshot text,
+  quantity numeric(14,3) not null check (quantity > 0),
+  unit_price numeric(14,2) not null check (unit_price >= 0),
+  unit_cost numeric(14,2) not null check (unit_cost >= 0),
+  line_total numeric(14,2) not null check (line_total >= 0),
+  created_at timestamptz not null default now(),
+  foreign key (invoice_id, business_id)
+    references public.invoices(id, business_id) on delete cascade,
+  foreign key (product_id, business_id)
+    references public.products(id, business_id) on delete restrict
+);
+
+-- ---------------------------------------------------------------------------
+-- Payments, receipts and expenses
+-- ---------------------------------------------------------------------------
+
+create table public.payments (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null,
+  invoice_id uuid not null,
+  amount numeric(14,2) not null check (amount > 0),
+  applied_amount numeric(14,2) not null default 0 check (applied_amount >= 0),
+  unapplied_amount numeric(14,2) not null default 0 check (unapplied_amount >= 0),
+  channel text not null check (channel in ('mpesa', 'cash', 'bank', 'card')),
+  status text not null default 'succeeded'
+    check (status in ('pending', 'succeeded', 'failed', 'reversed')),
+  origin text not null default 'manual'
+    check (origin in ('manual', 'daraja', 'integration', 'reconciliation')),
+  provider_reference text,
+  idempotency_key text,
+  phone text,
+  note text,
+  received_at timestamptz not null default now(),
+  confirmed_at timestamptz,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  foreign key (invoice_id, business_id)
+    references public.invoices(id, business_id) on delete restrict,
+  unique (business_id, idempotency_key),
+  check (applied_amount + unapplied_amount = amount)
+);
+
+create table public.unmatched_receipts (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  reference text not null,
+  payer_name text,
+  payer_phone text,
+  amount numeric(14,2) not null check (amount > 0),
+  rail text not null check (rail in (
+    'till_paybill', 'pochi', 'send_money', 'bank_transfer', 'manual_mpesa'
+  )),
+  source text not null default 'manual'
+    check (source in ('manual', 'statement', 'callback')),
+  status text not null default 'unmatched'
+    check (status in ('unmatched', 'matched', 'duplicate', 'ignored')),
+  received_at timestamptz not null default now(),
+  matched_invoice_id uuid,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (business_id, reference),
+  foreign key (matched_invoice_id, business_id)
+    references public.invoices(id, business_id) on delete restrict
+);
+
+create table public.expenses (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  expense_date date not null default (now() at time zone 'Africa/Nairobi')::date,
+  category text not null,
+  description text not null,
+  amount numeric(14,2) not null check (amount > 0),
+  channel text not null check (channel in ('mpesa', 'cash', 'bank', 'card')),
+  reference text,
+  note text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
+-- Purchasing and inventory movements
+-- ---------------------------------------------------------------------------
+
+create table public.purchase_orders (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  supplier_id uuid not null,
+  order_number text not null,
+  order_date date not null default (now() at time zone 'Africa/Nairobi')::date,
+  expected_date date,
+  status text not null default 'draft'
+    check (status in ('draft', 'sent', 'partially_received', 'received', 'cancelled')),
+  subtotal numeric(14,2) not null default 0 check (subtotal >= 0),
+  amount_received numeric(14,2) not null default 0 check (amount_received >= 0),
+  note text,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  foreign key (supplier_id, business_id)
+    references public.suppliers(id, business_id) on delete restrict,
+  unique (business_id, order_number),
+  unique (id, business_id)
+);
+
+create table public.purchase_order_items (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null,
+  purchase_order_id uuid not null,
+  product_id uuid not null,
+  product_name text not null,
+  quantity_ordered numeric(14,3) not null check (quantity_ordered > 0),
+  quantity_received numeric(14,3) not null default 0 check (quantity_received >= 0),
+  unit_cost numeric(14,2) not null check (unit_cost >= 0),
+  line_total numeric(14,2) not null check (line_total >= 0),
+  created_at timestamptz not null default now(),
+  foreign key (purchase_order_id, business_id)
+    references public.purchase_orders(id, business_id) on delete cascade,
+  foreign key (product_id, business_id)
+    references public.products(id, business_id) on delete restrict,
+  check (quantity_received <= quantity_ordered)
+);
+
+create table public.inventory_movements (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  product_id uuid not null,
+  movement_type text not null
+    check (movement_type in ('opening', 'sale', 'purchase', 'adjustment', 'return', 'production')),
+  quantity_delta numeric(14,3) not null check (quantity_delta <> 0),
+  unit_cost numeric(14,2) not null default 0 check (unit_cost >= 0),
+  total_cost numeric(14,2) not null default 0 check (total_cost >= 0),
+  source_type text,
+  source_id uuid,
+  reference text,
+  note text,
+  movement_at timestamptz not null default now(),
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  foreign key (product_id, business_id)
+    references public.products(id, business_id) on delete restrict
+);
+
+-- ---------------------------------------------------------------------------
+-- Cash movement and double-entry journal
+-- ---------------------------------------------------------------------------
+
+create table public.cash_movements (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  movement_date date not null default (now() at time zone 'Africa/Nairobi')::date,
+  channel text not null check (channel in ('mpesa', 'cash', 'bank', 'card')),
+  direction text not null check (direction in ('in', 'out')),
+  amount numeric(14,2) not null check (amount > 0),
+  description text not null,
+  reference text,
+  source_type text,
+  source_id uuid,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create table public.journal_entries (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  journal_number text not null,
+  entry_date date not null default (now() at time zone 'Africa/Nairobi')::date,
+  description text not null,
+  reference text,
+  source_type text,
+  source_id uuid,
+  status text not null default 'posted' check (status in ('posted', 'reversed')),
+  posted_by uuid references auth.users(id) on delete set null,
+  posted_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (business_id, journal_number),
+  unique (id, business_id)
+);
+
+create table public.journal_lines (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null,
+  journal_entry_id uuid not null,
+  account_code text,
+  account_name text not null,
+  debit numeric(14,2) not null default 0 check (debit >= 0),
+  credit numeric(14,2) not null default 0 check (credit >= 0),
+  description text,
+  created_at timestamptz not null default now(),
+  foreign key (journal_entry_id, business_id)
+    references public.journal_entries(id, business_id) on delete cascade,
+  check (
+    (debit > 0 and credit = 0)
+    or (credit > 0 and debit = 0)
+  )
+);
+
+create table public.integration_events (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  event_type text not null,
+  source text not null,
+  status text not null default 'pending' check (status in ('pending', 'delivered', 'failed')),
+  reference text,
+  provider_event_id text,
+  detail text,
+  payload jsonb,
+  attempt_count integer not null default 0 check (attempt_count >= 0),
+  last_error text,
+  occurred_at timestamptz not null default now(),
+  processed_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (business_id, source, provider_event_id)
+);
+
+create table public.digest_delivery_logs (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  channel text not null default 'whatsapp' check (channel in ('whatsapp', 'email')),
+  recipient text not null,
+  digest_date date not null,
+  status text not null default 'pending' check (status in ('pending', 'sent', 'delivered', 'failed')),
+  provider_message_id text,
+  error_detail text,
+  sent_at timestamptz,
+  delivered_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
+-- Indexes
+-- ---------------------------------------------------------------------------
+
+create index products_business_active_idx on public.products (business_id, is_active);
+create index products_business_stock_idx on public.products (business_id, quantity_on_hand, reorder_level);
+create index invoices_business_date_idx on public.invoices (business_id, issue_date desc);
+create index invoices_business_status_idx on public.invoices (business_id, status, due_date);
+create index payments_business_received_idx on public.payments (business_id, received_at desc);
+create index payments_invoice_idx on public.payments (invoice_id, business_id);
+create index expenses_business_date_idx on public.expenses (business_id, expense_date desc);
+create index suppliers_business_active_idx on public.suppliers (business_id, is_active);
+create index purchase_orders_business_date_idx on public.purchase_orders (business_id, order_date desc);
+create index inventory_movements_product_idx on public.inventory_movements (business_id, product_id, movement_at desc);
+create index journal_entries_business_date_idx on public.journal_entries (business_id, entry_date desc);
+create index journal_lines_account_idx on public.journal_lines (business_id, account_name);
+create index unmatched_receipts_status_idx on public.unmatched_receipts (business_id, status, received_at desc);
+create index integration_events_status_idx on public.integration_events (business_id, status, occurred_at desc);
+
+-- ---------------------------------------------------------------------------
+-- Updated timestamps
+-- ---------------------------------------------------------------------------
+
+create trigger products_set_updated_at before update on public.products
+for each row execute procedure public.set_updated_at();
+create trigger suppliers_set_updated_at before update on public.suppliers
+for each row execute procedure public.set_updated_at();
+create trigger invoices_set_updated_at before update on public.invoices
+for each row execute procedure public.set_updated_at();
+create trigger expenses_set_updated_at before update on public.expenses
+for each row execute procedure public.set_updated_at();
+create trigger purchase_orders_set_updated_at before update on public.purchase_orders
+for each row execute procedure public.set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Tenant RLS policies
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array[
+    'products', 'suppliers', 'invoices', 'invoice_items', 'payments',
+    'unmatched_receipts', 'expenses', 'purchase_orders', 'purchase_order_items',
+    'inventory_movements', 'cash_movements', 'journal_entries', 'journal_lines',
+    'integration_events', 'digest_delivery_logs'
+  ]
+  loop
+    execute format('alter table public.%I enable row level security', table_name);
+    execute format('revoke all on public.%I from anon, public', table_name);
+    execute format('grant select on public.%I to authenticated', table_name);
+    execute format(
+      'create policy %I on public.%I for select to authenticated using (public.is_business_member(business_id))',
+      table_name || '_select_member', table_name
+    );
+  end loop;
+end $$;
+
+-- Direct catalogue editing is role-controlled. Financial records are written
+-- through RPCs only; SELECT grants above expose no direct INSERT/UPDATE/DELETE.
+grant insert, update, delete on public.products, public.suppliers to authenticated;
+create policy products_insert_inventory on public.products for insert to authenticated
+with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory']));
+create policy products_update_inventory on public.products for update to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'inventory']))
+with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory']));
+create policy products_delete_owner_manager on public.products for delete to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager']));
+
+create policy suppliers_insert_management on public.suppliers for insert to authenticated
+with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
+create policy suppliers_update_management on public.suppliers for update to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']))
+with check (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
+create policy suppliers_delete_owner on public.suppliers for delete to authenticated
+using (public.has_business_role(business_id, array['owner']));
+
+-- Journal lines are immutable for ordinary application clients.
+revoke insert, update, delete on public.journal_entries, public.journal_lines,
+  public.invoices, public.invoice_items, public.payments, public.expenses,
+  public.unmatched_receipts, public.purchase_orders, public.purchase_order_items,
+  public.inventory_movements, public.cash_movements, public.integration_events,
+  public.digest_delivery_logs
+from authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Atomic sale posting
+-- ---------------------------------------------------------------------------
+
+create or replace function public.post_sale(
+  p_business_id uuid,
+  p_customer_name text,
+  p_customer_phone text,
+  p_due_date date,
+  p_discount numeric,
+  p_payment_channel text,
+  p_source text,
+  p_items jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_item jsonb;
+  v_product public.products%rowtype;
+  v_product_id uuid;
+  v_quantity numeric(14,3);
+  v_subtotal numeric(14,2) := 0;
+  v_cost_total numeric(14,2) := 0;
+  v_line_total numeric(14,2);
+  v_total numeric(14,2);
+  v_discount numeric(14,2) := coalesce(p_discount, 0);
+  v_invoice_id uuid := gen_random_uuid();
+  v_invoice_number text;
+  v_sequence bigint;
+  v_journal_id uuid := gen_random_uuid();
+  v_journal_number text;
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.has_business_role(p_business_id, array['owner', 'manager', 'sales']) then
+    raise exception 'You do not have permission to record sales for this business' using errcode = '42501';
+  end if;
+  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'Add at least one sale item' using errcode = '22023';
+  end if;
+  if jsonb_array_length(p_items) > 100 then
+    raise exception 'A sale cannot contain more than 100 item rows' using errcode = '22023';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(p_items) e
+    group by (e ->> 'product_id')
+    having count(*) > 1
+  ) then
+    raise exception 'Each product must appear once in the sale' using errcode = '22023';
+  end if;
+  if p_payment_channel not in ('mpesa', 'cash', 'bank', 'card', 'credit') then
+    raise exception 'Unsupported sale payment channel' using errcode = '22023';
+  end if;
+  if p_source not in ('hesabu', 'website', 'pos', 'manual', 'api') then
+    raise exception 'Unsupported sale source' using errcode = '22023';
+  end if;
+
+  for v_item in select value from jsonb_array_elements(p_items)
+  loop
+    v_product_id := (v_item ->> 'product_id')::uuid;
+    v_quantity := (v_item ->> 'quantity')::numeric;
+    if v_quantity is null or v_quantity <= 0 then
+      raise exception 'Sale quantities must be greater than zero' using errcode = '22023';
+    end if;
+    select * into v_product
+    from public.products
+    where id = v_product_id
+      and business_id = p_business_id
+      and is_active = true
+    for update;
+    if not found then
+      raise exception 'A selected product is not available in this business' using errcode = '22023';
+    end if;
+    if v_quantity > v_product.quantity_on_hand then
+      raise exception 'Not enough stock for %', v_product.name using errcode = '22023';
+    end if;
+    v_line_total := round(v_quantity * v_product.selling_price, 2);
+    v_subtotal := v_subtotal + v_line_total;
+    v_cost_total := v_cost_total + round(v_quantity * v_product.cost_price, 2);
+  end loop;
+
+  v_subtotal := round(v_subtotal, 2);
+  v_cost_total := round(v_cost_total, 2);
+  if v_discount < 0 or v_discount > v_subtotal then
+    raise exception 'Discount must be between zero and the sale subtotal' using errcode = '22023';
+  end if;
+  v_discount := round(v_discount, 2);
+  v_total := round(v_subtotal - v_discount, 2);
+
+  update public.businesses
+  set next_invoice_number = next_invoice_number + 1
+  where id = p_business_id
+  returning next_invoice_number - 1 into v_sequence;
+  if not found then
+    raise exception 'Business not found' using errcode = '22023';
+  end if;
+  v_invoice_number := 'HS-' || lpad(v_sequence::text, 6, '0');
+
+  insert into public.invoices (
+    id, business_id, invoice_number, customer_name, customer_phone,
+    issue_date, due_date, subtotal, discount_amount, total_amount,
+    amount_paid, payment_channel, status, source, created_by
+  ) values (
+    v_invoice_id, p_business_id, coalesce(nullif(trim(p_customer_name), ''), 'Walk-in customer'),
+    nullif(trim(coalesce(p_customer_phone, '')), ''),
+    (now() at time zone 'Africa/Nairobi')::date, p_due_date,
+    v_subtotal, v_discount, v_total, 0, p_payment_channel,
+    'sent', p_source, v_user_id
+  );
+
+  for v_item in select value from jsonb_array_elements(p_items)
+  loop
+    v_product_id := (v_item ->> 'product_id')::uuid;
+    v_quantity := (v_item ->> 'quantity')::numeric;
+    select * into v_product from public.products
+    where id = v_product_id and business_id = p_business_id
+    for update;
+
+    v_line_total := round(v_quantity * v_product.selling_price, 2);
+    insert into public.invoice_items (
+      business_id, invoice_id, product_id, product_name, sku_snapshot,
+      quantity, unit_price, unit_cost, line_total
+    ) values (
+      p_business_id, v_invoice_id, v_product.id, v_product.name, v_product.sku,
+      v_quantity, v_product.selling_price, v_product.cost_price, v_line_total
+    );
+
+    update public.products
+    set quantity_on_hand = quantity_on_hand - v_quantity
+    where id = v_product.id and business_id = p_business_id;
+
+    insert into public.inventory_movements (
+      business_id, product_id, movement_type, quantity_delta,
+      unit_cost, total_cost, source_type, source_id, reference, created_by
+    ) values (
+      p_business_id, v_product.id, 'sale', -v_quantity,
+      v_product.cost_price, round(v_quantity * v_product.cost_price, 2),
+      'invoice', v_invoice_id, v_invoice_number, v_user_id
+    );
+  end loop;
+
+  v_journal_number := 'JRN-' || replace(v_invoice_number, 'HS-', '');
+  insert into public.journal_entries (
+    id, business_id, journal_number, entry_date, description,
+    reference, source_type, source_id, posted_by
+  ) values (
+    v_journal_id, p_business_id, v_journal_number,
+    (now() at time zone 'Africa/Nairobi')::date,
+    'Sale posted · ' || v_invoice_number, v_invoice_number,
+    'invoice', v_invoice_id, v_user_id
+  );
+
+  if v_total > 0 then
+    insert into public.journal_lines (business_id, journal_entry_id, account_name, debit, description)
+    values (p_business_id, v_journal_id, 'Accounts receivable', v_total, 'Invoice issued');
+  end if;
+  if v_discount > 0 then
+    insert into public.journal_lines (business_id, journal_entry_id, account_name, debit, description)
+    values (p_business_id, v_journal_id, 'Sales discounts', v_discount, 'Discount allowed');
+  end if;
+  if v_subtotal > 0 then
+    insert into public.journal_lines (business_id, journal_entry_id, account_name, credit, description)
+    values (p_business_id, v_journal_id, 'Sales revenue', v_subtotal, 'Sale revenue');
+  end if;
+  if v_cost_total > 0 then
+    insert into public.journal_lines (business_id, journal_entry_id, account_name, debit, description)
+    values (p_business_id, v_journal_id, 'Cost of goods sold', v_cost_total, 'Cost of items sold');
+    insert into public.journal_lines (business_id, journal_entry_id, account_name, credit, description)
+    values (p_business_id, v_journal_id, 'Inventory', v_cost_total, 'Inventory relieved');
+  end if;
+
+  return v_invoice_id;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Atomic payment allocation and receipt posting
+-- ---------------------------------------------------------------------------
+
+create or replace function public.post_payment(
+  p_business_id uuid,
+  p_invoice_id uuid,
+  p_amount numeric,
+  p_channel text,
+  p_provider_reference text default null,
+  p_origin text default 'manual',
+  p_phone text default null,
+  p_idempotency_key text default null,
+  p_note text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_invoice public.invoices%rowtype;
+  v_payment_id uuid := gen_random_uuid();
+  v_journal_id uuid := gen_random_uuid();
+  v_applied numeric(14,2);
+  v_unapplied numeric(14,2);
+  v_account text;
+  v_reference text := nullif(trim(coalesce(p_provider_reference, '')), '');
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.has_business_role(p_business_id, array['owner', 'manager', 'sales', 'finance']) then
+    raise exception 'You do not have permission to record payments for this business' using errcode = '42501';
+  end if;
+  if p_amount is null or p_amount <= 0 then
+    raise exception 'Payment amount must be greater than zero' using errcode = '22023';
+  end if;
+  if p_channel not in ('mpesa', 'cash', 'bank', 'card') then
+    raise exception 'Unsupported payment channel' using errcode = '22023';
+  end if;
+  if p_origin not in ('manual', 'daraja', 'integration', 'reconciliation') then
+    raise exception 'Unsupported payment origin' using errcode = '22023';
+  end if;
+
+  if p_idempotency_key is not null then
+    select id into v_payment_id
+    from public.payments
+    where business_id = p_business_id and idempotency_key = p_idempotency_key;
+    if found then return v_payment_id; end if;
+  end if;
+
+  select * into v_invoice
+  from public.invoices
+  where id = p_invoice_id and business_id = p_business_id
+  for update;
+  if not found then
+    raise exception 'Invoice not found in this business' using errcode = '22023';
+  end if;
+
+  v_applied := least(
+    round(p_amount, 2),
+    greatest(0, round(v_invoice.total_amount - v_invoice.amount_paid, 2))
+  );
+  v_unapplied := greatest(0, round(p_amount - v_applied, 2));
+
+  insert into public.payments (
+    id, business_id, invoice_id, amount, applied_amount, unapplied_amount,
+    channel, status, origin, provider_reference, idempotency_key, phone,
+    note, received_at, confirmed_at, created_by
+  ) values (
+    v_payment_id, p_business_id, p_invoice_id, round(p_amount, 2),
+    v_applied, v_unapplied, p_channel, 'succeeded', p_origin, v_reference,
+    p_idempotency_key, nullif(trim(coalesce(p_phone, '')), ''),
+    nullif(trim(coalesce(p_note, '')), ''), now(), now(), v_user_id
+  );
+
+  update public.invoices
+  set amount_paid = amount_paid + v_applied,
+      status = case
+        when amount_paid + v_applied >= total_amount then 'paid'
+        when amount_paid + v_applied > 0 then 'partial'
+        else status
+      end
+  where id = p_invoice_id and business_id = p_business_id;
+
+  v_account := case p_channel
+    when 'mpesa' then 'M-Pesa clearing'
+    when 'cash' then 'Cash on hand'
+    when 'bank' then 'Bank account'
+    when 'card' then 'Card clearing'
+  end;
+
+  insert into public.journal_entries (
+    id, business_id, journal_number, entry_date, description,
+    reference, source_type, source_id, posted_by
+  ) values (
+    v_journal_id, p_business_id,
+    'PAY-' || upper(substr(replace(v_payment_id::text, '-', ''), 1, 12)),
+    (now() at time zone 'Africa/Nairobi')::date,
+    'Customer payment · ' || v_invoice.invoice_number,
+    coalesce(v_reference, v_invoice.invoice_number),
+    'payment', v_payment_id, v_user_id
+  );
+
+  insert into public.journal_lines (business_id, journal_entry_id, account_name, debit, description)
+  values (p_business_id, v_journal_id, v_account, round(p_amount, 2), 'Funds received');
+
+  if v_applied > 0 then
+    insert into public.journal_lines (business_id, journal_entry_id, account_name, credit, description)
+    values (p_business_id, v_journal_id, 'Accounts receivable', v_applied, 'Payment allocated to invoice');
+  end if;
+  if v_unapplied > 0 then
+    insert into public.journal_lines (business_id, journal_entry_id, account_name, credit, description)
+    values (p_business_id, v_journal_id, 'Customer advances', v_unapplied, 'Unapplied customer credit');
+  end if;
+
+  return v_payment_id;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Atomic expense posting
+-- ---------------------------------------------------------------------------
+
+create or replace function public.post_expense(
+  p_business_id uuid,
+  p_category text,
+  p_description text,
+  p_amount numeric,
+  p_channel text,
+  p_expense_date date default null,
+  p_reference text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_expense_id uuid := gen_random_uuid();
+  v_journal_id uuid := gen_random_uuid();
+  v_account text;
+  v_cash_account text;
+  v_expense_date date := coalesce(p_expense_date, (now() at time zone 'Africa/Nairobi')::date);
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
+  if not public.has_business_role(p_business_id, array['owner', 'manager', 'finance']) then
+    raise exception 'You do not have permission to post expenses for this business' using errcode = '42501';
+  end if;
+  if p_amount is null or p_amount <= 0 then
+    raise exception 'Expense amount must be greater than zero' using errcode = '22023';
+  end if;
+  if p_channel not in ('mpesa', 'cash', 'bank', 'card') then
+    raise exception 'Unsupported expense channel' using errcode = '22023';
+  end if;
+  if p_description is null or length(trim(p_description)) = 0 then
+    raise exception 'Expense description is required' using errcode = '22023';
+  end if;
+
+  v_account := case lower(coalesce(p_category, ''))
+    when 'rent' then 'Rent expense'
+    when 'utilities' then 'Utilities expense'
+    when 'staff costs' then 'Staff expense'
+    when 'transport' then 'Transport expense'
+    else 'Operating expenses'
+  end;
+  v_cash_account := case p_channel
+    when 'mpesa' then 'M-Pesa clearing'
+    when 'cash' then 'Cash on hand'
+    when 'bank' then 'Bank account'
+    when 'card' then 'Card clearing'
+  end;
+
+  insert into public.expenses (
+    id, business_id, expense_date, category, description, amount, channel, reference, created_by
+  ) values (
+    v_expense_id, p_business_id, v_expense_date,
+    coalesce(nullif(trim(p_category), ''), 'Other'),
+    trim(p_description), round(p_amount, 2), p_channel,
+    nullif(trim(coalesce(p_reference, '')), ''), v_user_id
+  );
+
+  insert into public.cash_movements (
+    business_id, movement_date, channel, direction, amount, description,
+    reference, source_type, source_id, created_by
+  ) values (
+    p_business_id, v_expense_date, p_channel, 'out',
+    round(p_amount, 2), trim(p_description),
+    nullif(trim(coalesce(p_reference, '')), ''), 'expense', v_expense_id, v_user_id
+  );
+
+  insert into public.journal_entries (
+    id, business_id, journal_number, entry_date, description,
+    reference, source_type, source_id, posted_by
+  ) values (
+    v_journal_id, p_business_id,
+    'EXP-' || upper(substr(replace(v_expense_id::text, '-', ''), 1, 12)),
+    v_expense_date, trim(p_description), p_reference, 'expense', v_expense_id, v_user_id
+  );
+
+  insert into public.journal_lines (business_id, journal_entry_id, account_name, debit, description)
+  values (p_business_id, v_journal_id, v_account, round(p_amount, 2), trim(p_description));
+  insert into public.journal_lines (business_id, journal_entry_id, account_name, credit, description)
+  values (p_business_id, v_journal_id, v_cash_account, round(p_amount, 2), trim(p_description));
+
+  return v_expense_id;
+end;
+$$;
+
+-- No browser role can post directly to ledger tables. All RPCs perform explicit
+-- active-membership/role checks and create their dependent records in one txn.
+revoke all on function public.post_sale(uuid, text, text, date, numeric, text, text, jsonb) from public, anon;
+revoke all on function public.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) from public, anon;
+revoke all on function public.post_expense(uuid, text, text, numeric, text, date, text) from public, anon;
+grant execute on function public.post_sale(uuid, text, text, date, numeric, text, text, jsonb) to authenticated;
+grant execute on function public.post_payment(uuid, uuid, numeric, text, text, text, text, text, text) to authenticated;
+grant execute on function public.post_expense(uuid, text, text, numeric, text, date, text) to authenticated;
+
+commit;
