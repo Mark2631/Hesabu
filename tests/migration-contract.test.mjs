@@ -10,16 +10,16 @@ const ledger = await readFile(resolve(root, 'MVP/supabase/migrations/20261116000
 
 test('foundation migration creates cloud identity and tenant boundaries', () => {
   for (const table of ['profiles', 'businesses', 'business_members', 'business_settings']) {
-    assert.match(foundation, new RegExp('create table public\\.' + table + '\\b'));
-    assert.match(foundation, new RegExp('alter table public\\.' + table + ' enable row level security'));
+    assert.ok(foundation.includes('create table public.' + table), table + ' table');
+    assert.ok(foundation.includes('alter table public.' + table + ' enable row level security'), table + ' RLS');
   }
-  assert.match(foundation, /create or replace function public\\.create_business\\(/);
-  assert.match(foundation, /create or replace function public\\.is_business_member\\(/);
-  assert.match(foundation, /create or replace function public\\.has_business_role\\(/);
-  assert.match(foundation, /set search_path = ''/);
-  assert.match(foundation, /ai_assistant_enabled boolean/);
-  assert.match(foundation, /whatsapp_digest_enabled boolean/);
-  assert.doesNotMatch(foundation, /grant select, delete on public\\.businesses/);
+  assert.ok(foundation.includes('create or replace function public.create_business('));
+  assert.ok(foundation.includes('create or replace function public.is_business_member('));
+  assert.ok(foundation.includes('create or replace function public.has_business_role('));
+  assert.ok(foundation.includes("set search_path = ''"));
+  assert.ok(foundation.includes('ai_assistant_enabled boolean'));
+  assert.ok(foundation.includes('whatsapp_digest_enabled boolean'));
+  assert.ok(!foundation.includes('grant select, delete on public.businesses'));
 });
 
 test('operational migration creates the records used by Hesabu', () => {
@@ -30,8 +30,8 @@ test('operational migration creates the records used by Hesabu', () => {
     'integration_events', 'digest_delivery_logs',
   ];
   for (const table of tables) {
-    assert.match(ledger, new RegExp('create table public\\.' + table + '\\b'), table);
-    assert.match(ledger, new RegExp("'" + table + "'"), table + ' is included in RLS setup');
+    assert.ok(ledger.includes('create table public.' + table), table + ' table');
+    assert.ok(ledger.includes("'" + table + "'"), table + ' is included in RLS setup');
   }
 });
 
@@ -41,13 +41,13 @@ test('ledger writes go through server-side posting functions', () => {
     'post_purchase_receipt', 'post_supplier_payment', 'post_stock_adjustment',
     'get_daily_digest',
   ]) {
-    assert.match(ledger, new RegExp('create or replace function public\\.' + fn + '\\('), fn);
-    assert.match(ledger, new RegExp('grant execute on function public\\.' + fn + '\\('), fn);
-    assert.match(ledger, new RegExp('revoke all on function public\\.' + fn + '\\('), fn);
+    assert.ok(ledger.includes('create or replace function public.' + fn + '('), fn + ' definition');
+    assert.ok(ledger.includes('grant execute on function public.' + fn + '('), fn + ' grant');
+    assert.ok(ledger.includes('revoke all on function public.' + fn + '('), fn + ' revoke');
   }
-  assert.match(ledger, /public\\.has_business_role\\(p_business_id/);
-  assert.match(ledger, /pg_advisory_xact_lock/);
-  assert.match(ledger, /constraint trigger journal_lines_balanced_check/);
+  assert.ok(ledger.includes('public.has_business_role(p_business_id'));
+  assert.ok(ledger.includes('pg_advisory_xact_lock'));
+  assert.ok(ledger.includes('constraint trigger journal_lines_balanced_check'));
 });
 
 test('direct stock updates cannot bypass the stock movement ledger', () => {
@@ -55,9 +55,10 @@ test('direct stock updates cannot bypass the stock movement ledger', () => {
     ledger.indexOf('-- Product stock quantity is deliberately excluded'),
     ledger.indexOf('create policy products_insert_inventory'),
   );
-  assert.match(productGrantBlock, /grant update \\([\\s\\S]*?reorder_level/);
-  assert.doesNotMatch(productGrantBlock, /quantity_on_hand/);
-  assert.match(ledger, /insert into public\\.inventory_movements/);
+  assert.ok(productGrantBlock.includes('grant update'));
+  assert.ok(productGrantBlock.includes('reorder_level'));
+  assert.ok(!productGrantBlock.includes('quantity_on_hand'));
+  assert.ok(ledger.includes('insert into public.inventory_movements'));
 });
 
 test('sensitive finance tables have role-specific read policies', () => {
@@ -66,7 +67,7 @@ test('sensitive finance tables have role-specific read policies', () => {
     'journal_entries_select_finance', 'journal_lines_select_finance',
     'cash_movements_select_finance', 'integration_events_select_management',
   ]) {
-    assert.match(ledger, new RegExp('create policy ' + name + '\\b'), name);
+    assert.ok(ledger.includes('create policy ' + name), name);
   }
-  assert.match(ledger, /revoke insert, update, delete on public\\.journal_entries/);
+  assert.ok(ledger.includes('revoke insert, update, delete on public.journal_entries'));
 });
