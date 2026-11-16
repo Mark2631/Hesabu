@@ -324,7 +324,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_business_id uuid;
   v_entry_id uuid;
@@ -354,7 +354,7 @@ begin
 
   return null;
 end;
-$;
+$$;
 
 create constraint trigger journal_lines_balanced_check
 after insert or update or delete on public.journal_lines
@@ -396,12 +396,12 @@ create or replace function app_private.initialise_supplier_balance()
 returns trigger
 language plpgsql
 set search_path = ''
-as $
+as $$
 begin
   new.current_balance := new.opening_balance;
   return new;
 end;
-$;
+$$;
 create trigger suppliers_initialise_balance
 before insert on public.suppliers
 for each row execute procedure app_private.initialise_supplier_balance();
@@ -937,7 +937,7 @@ returns uuid
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_user_id uuid := auth.uid();
   v_item jsonb;
@@ -1026,7 +1026,7 @@ begin
 
   return v_purchase_order_id;
 end;
-$;
+$$;
 
 create or replace function app_private.post_purchase_receipt(
   p_business_id uuid,
@@ -1038,7 +1038,7 @@ returns uuid
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_user_id uuid := auth.uid();
   v_order public.purchase_orders%rowtype;
@@ -1181,7 +1181,7 @@ begin
 
   return v_journal_id;
 end;
-$;
+$$;
 
 create or replace function app_private.post_supplier_payment(
   p_business_id uuid,
@@ -1195,7 +1195,7 @@ returns uuid
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_user_id uuid := auth.uid();
   v_supplier public.suppliers%rowtype;
@@ -1266,7 +1266,7 @@ begin
 
   return v_payment_id;
 end;
-$;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Inventory adjustments and server-calculated daily digest
@@ -1282,7 +1282,7 @@ returns uuid
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_user_id uuid := auth.uid();
   v_product public.products%rowtype;
@@ -1362,7 +1362,7 @@ begin
 
   return v_movement_id;
 end;
-$;
+$$;
 
 create or replace function app_private.get_daily_digest(
   p_business_id uuid,
@@ -1372,7 +1372,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_timezone text;
   v_date date;
@@ -1451,7 +1451,7 @@ begin
     'generated_at', now()
   );
 end;
-$;
+$$;
 
 
 -- Public Data API entry points are SECURITY INVOKER wrappers only. The
