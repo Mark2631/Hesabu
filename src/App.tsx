@@ -1022,10 +1022,11 @@ function AuthPage({
           <label className="auth-field"><span>Business email</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
           <label className="auth-field"><span>Password</span><input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /></label>
           {mode === 'signup' && <section className="auth-preferences" aria-label="Optional business preferences">
-            <div className="auth-preferences-heading"><strong>How should Hesabu support your daily work?</strong><small>Manual records are always available. You can use either option or both.</small></div>
+            <div className="auth-preferences-heading"><strong>How should Hesabu support your daily work?</strong><small>These options work together. Manual entry is always available.</small></div>
+            <div className="auth-preference-manual"><span><strong>Manual records</strong><small>Record sales, payments, expenses and stock yourself.</small></span><span>Always on</span></div>
             <label className="auth-preference-option">
               <input type="checkbox" checked={aiAssistantEnabled} onChange={event => setAiAssistantEnabled(event.target.checked)} />
-              <span><strong>AI assistant</strong><small>Ask questions about sales, stock, expenses and balances.</small></span>
+              <span><strong>AI assistant</strong><small>Optional. Ask questions about sales, stock, expenses and balances when the AI service is connected.</small></span>
             </label>
             <label className="auth-preference-option">
               <input type="checkbox" checked={whatsappDigestEnabled} onChange={event => setWhatsappDigestEnabled(event.target.checked)} />
