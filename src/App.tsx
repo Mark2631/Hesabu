@@ -807,6 +807,126 @@ function HesabuMark({ className = '' }: { className?: string }) {
   </svg>;
 }
 
+function PublicLandingPage({
+  onSignIn, onCreateAccount, onPreview,
+}: {
+  onSignIn: () => void;
+  onCreateAccount: () => void;
+  onPreview: () => void;
+}) {
+  return <div className="public-site">
+    <header className="public-header">
+      <div className="public-header-inner">
+        <a className="public-brand" href="#top" aria-label="Hesabu home">
+          <span className="brand-mark"><HesabuMark /></span>
+          <span>hesabu<span>.</span></span>
+        </a>
+        <nav className="public-nav" aria-label="Main navigation">
+          <a href="#product">Product</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#businesses">Who it serves</a>
+          <a href="#trust">Your records</a>
+        </nav>
+        <div className="public-header-actions">
+          <button type="button" className="public-signin" onClick={onSignIn}>Sign in</button>
+          <button type="button" className="public-get-started" onClick={onCreateAccount}>Get started <ArrowRight size={15} /></button>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <section className="public-hero">
+        <div className="public-hero-copy">
+          <span className="public-eyebrow">BUSINESS RECORDS, BROUGHT TOGETHER</span>
+          <h1>Know what is happening in your business.</h1>
+          <p>Hesabu brings daily sales, payments, stock, expenses and customer balances into one clear business record. Spend less time chasing scattered notes and more time making informed decisions.</p>
+          <div className="public-hero-actions">
+            <button type="button" className="public-primary-action" onClick={onCreateAccount}>Create your business account <ArrowRight size={16} /></button>
+            <button type="button" className="public-secondary-action" onClick={onPreview}>Explore the sample workspace</button>
+          </div>
+          <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
+        </div>
+        <div className="public-hero-visual" aria-label="Illustrative Hesabu business overview">
+          <div className="public-visual-top">
+            <div><span>BUSINESS OVERVIEW</span><strong>Today at a glance</strong></div>
+            <span className="public-visual-date">SAMPLE DATA</span>
+          </div>
+          <div className="public-visual-metrics">
+            <div><span>Sales recorded</span><strong>KSh 48,250</strong><small>Today's activity</small></div>
+            <div><span>Payments received</span><strong>KSh 35,600</strong><small>Matched collections</small></div>
+            <div><span>Operating expenses</span><strong>KSh 4,850</strong><small>Recorded today</small></div>
+            <div><span>Stock alerts</span><strong>3 items</strong><small>Need a closer look</small></div>
+          </div>
+          <div className="public-visual-activity">
+            <div><span className="public-activity-dot"></span><span><strong>Sale recorded</strong><small>Counter sale · 10:42 AM</small></span><b>KSh 2,400</b></div>
+            <div><span className="public-activity-dot public-activity-blue"></span><span><strong>Stock updated</strong><small>Flour · Goods received</small></span><b>+12 bags</b></div>
+            <div><span className="public-activity-dot public-activity-amber"></span><span><strong>Customer balance</strong><small>Invoice HS-0021 · Due today</small></span><b>KSh 1,800</b></div>
+          </div>
+          <p className="public-visual-footnote">Illustrative figures shown for product demonstration.</p>
+        </div>
+      </section>
+
+      <section className="public-value-section" id="product">
+        <div className="public-section-intro">
+          <span className="public-eyebrow">WHAT HESABU DOES</span>
+          <h2>The important parts of the business, in one place.</h2>
+          <p>Each record contributes to a clearer view of what the business has sold, collected, spent and still needs to do.</p>
+        </div>
+        <div className="public-value-grid">
+          <article><span className="public-value-number">01</span><h3>Sales and payments</h3><p>Record what was sold, how the customer paid and what remains outstanding.</p></article>
+          <article><span className="public-value-number">02</span><h3>Stock and suppliers</h3><p>Track quantities, purchase orders, goods received and the cost of stock.</p></article>
+          <article><span className="public-value-number">03</span><h3>Expenses and performance</h3><p>Understand daily costs, margins, cash movement and business activity.</p></article>
+        </div>
+      </section>
+
+      <section className="public-workflow-section" id="how-it-works">
+        <div className="public-section-intro">
+          <span className="public-eyebrow">HOW IT FITS YOUR DAY</span>
+          <h2>Record the work. Understand the result.</h2>
+        </div>
+        <div className="public-workflow">
+          <div><span>1</span><strong>Capture daily activity</strong><p>Enter a sale, receipt, expense or stock change as it happens.</p></div>
+          <div><span>2</span><strong>Keep records connected</strong><p>Link transactions to products, customers, suppliers and balances.</p></div>
+          <div><span>3</span><strong>Review your business</strong><p>See the day’s figures and prepare a digest to share with your team.</p></div>
+        </div>
+      </section>
+
+      <section className="public-business-section" id="businesses">
+        <div>
+          <span className="public-eyebrow">BUILT FOR EVERYDAY OPERATIONS</span>
+          <h2>Useful from the counter to the back office.</h2>
+          <p>Hesabu is being shaped for shops, food businesses, wholesalers, distributors and service businesses that need a dependable record of daily operations.</p>
+        </div>
+        <div className="public-business-list">
+          <span>Retail and convenience shops</span>
+          <span>Food, bakeries and hospitality</span>
+          <span>Wholesale and distribution</span>
+          <span>Service and production businesses</span>
+        </div>
+      </section>
+
+      <section className="public-trust-section" id="trust">
+        <div className="public-trust-mark"><ShieldCheck size={21} /></div>
+        <div><span className="public-eyebrow">YOUR BUSINESS, YOUR RECORDS</span><h2>Clear access. Clear records. Clear decisions.</h2><p>Hesabu’s cloud workspace is being built around individual accounts and business-level access. Manual entry remains the foundation; optional AI assistance and WhatsApp summaries can be enabled independently.</p></div>
+        <button type="button" className="public-secondary-action" onClick={onCreateAccount}>Set up your workspace <ArrowRight size={15} /></button>
+      </section>
+    </main>
+
+    <footer className="public-footer">
+      <div className="public-footer-main">
+        <div className="public-footer-brand">
+          <a className="public-brand" href="#top"><span className="brand-mark"><HesabuMark /></span><span>hesabu<span>.</span></span></a>
+          <p>A clearer business record for the people who run the business every day.</p>
+        </div>
+        <div className="public-footer-group"><strong>Product</strong><a href="#product">Sales and payments</a><a href="#product">Stock and purchasing</a><a href="#product">Reports and digest</a></div>
+        <div className="public-footer-group"><strong>Learn</strong><a href="#how-it-works">How it works</a><a href="#businesses">Who Hesabu serves</a><a href="#trust">Your records</a></div>
+        <div className="public-footer-group"><strong>Your account</strong><button type="button" onClick={onSignIn}>Sign in</button><button type="button" onClick={onCreateAccount}>Create a business account</button><button type="button" onClick={onPreview}>Explore sample data</button></div>
+      </div>
+      <div className="public-footer-bottom"><span>© 2026 Hesabu. Built for business operations in Kenya.</span><span>Product information is subject to change as integrations are completed.</span></div>
+    </footer>
+  </div>;
+}
+
 function AuthPage({
   onPreview, onSignIn, onSignUp, initialMessage,
 }: {
