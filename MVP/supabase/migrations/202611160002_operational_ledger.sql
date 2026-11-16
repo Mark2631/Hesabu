@@ -313,6 +313,51 @@ create table public.digest_delivery_logs (
   created_at timestamptz not null default now()
 );
 
+-- A journal entry must balance at transaction commit. The deferred trigger lets
+-- a posting RPC insert the debit and credit rows as separate statements while
+-- preventing a partially posted entry from committing.
+create or replace function public.assert_journal_entry_balanced()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_business_id uuid;
+  v_entry_id uuid;
+  v_line_count bigint;
+  v_debits numeric(14,2);
+  v_credits numeric(14,2);
+begin
+  if tg_op = 'DELETE' then
+    v_business_id := old.business_id;
+    v_entry_id := old.journal_entry_id;
+  else
+    v_business_id := new.business_id;
+    v_entry_id := new.journal_entry_id;
+  end if;
+
+  select count(*), coalesce(sum(debit), 0), coalesce(sum(credit), 0)
+  into v_line_count, v_debits, v_credits
+  from public.journal_lines
+  where business_id = v_business_id
+    and journal_entry_id = v_entry_id;
+
+  if v_line_count > 0 and (
+    v_line_count < 2 or abs(v_debits - v_credits) >= 0.01
+  ) then
+    raise exception 'Journal entry % is not balanced', v_entry_id using errcode = '23514';
+  end if;
+
+  return null;
+end;
+$;
+
+create constraint trigger journal_lines_balanced_check
+after insert or update or delete on public.journal_lines
+deferrable initially deferred
+for each row execute procedure public.assert_journal_entry_balanced();
+
 -- ---------------------------------------------------------------------------
 -- Indexes
 -- ---------------------------------------------------------------------------
@@ -323,6 +368,9 @@ create index invoices_business_date_idx on public.invoices (business_id, issue_d
 create index invoices_business_status_idx on public.invoices (business_id, status, due_date);
 create index payments_business_received_idx on public.payments (business_id, received_at desc);
 create index payments_invoice_idx on public.payments (invoice_id, business_id);
+create unique index payments_provider_reference_unique
+  on public.payments (business_id, provider_reference)
+  where provider_reference is not null;
 create index expenses_business_date_idx on public.expenses (business_id, expense_date desc);
 create index suppliers_business_active_idx on public.suppliers (business_id, is_active);
 create index purchase_orders_business_date_idx on public.purchase_orders (business_id, order_date desc);
@@ -371,6 +419,56 @@ begin
     );
   end loop;
 end $$;
+
+-- Restrict sensitive reads to the staff who need them. The generic tenant
+-- policies remain for product, invoice and invoice-item reads.
+drop policy expenses_select_member on public.expenses;
+create policy expenses_select_finance on public.expenses for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+
+drop policy payments_select_member on public.payments;
+create policy payments_select_finance_sales on public.payments for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'sales', 'finance']));
+
+drop policy unmatched_receipts_select_member on public.unmatched_receipts;
+create policy unmatched_receipts_select_finance on public.unmatched_receipts for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+
+drop policy suppliers_select_member on public.suppliers;
+create policy suppliers_select_operations on public.suppliers for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
+
+drop policy purchase_orders_select_member on public.purchase_orders;
+create policy purchase_orders_select_operations on public.purchase_orders for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
+
+drop policy purchase_order_items_select_member on public.purchase_order_items;
+create policy purchase_order_items_select_operations on public.purchase_order_items for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'inventory', 'finance']));
+
+drop policy inventory_movements_select_member on public.inventory_movements;
+create policy inventory_movements_select_operations on public.inventory_movements for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'inventory']));
+
+drop policy cash_movements_select_member on public.cash_movements;
+create policy cash_movements_select_finance on public.cash_movements for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+
+drop policy journal_entries_select_member on public.journal_entries;
+create policy journal_entries_select_finance on public.journal_entries for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+
+drop policy journal_lines_select_member on public.journal_lines;
+create policy journal_lines_select_finance on public.journal_lines for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
+
+drop policy integration_events_select_member on public.integration_events;
+create policy integration_events_select_management on public.integration_events for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager']));
+
+drop policy digest_delivery_logs_select_member on public.digest_delivery_logs;
+create policy digest_delivery_logs_select_management on public.digest_delivery_logs for select to authenticated
+using (public.has_business_role(business_id, array['owner', 'manager', 'finance']));
 
 -- Direct catalogue editing is role-controlled. Financial records are written
 -- through RPCs only; SELECT grants above expose no direct INSERT/UPDATE/DELETE.
@@ -441,7 +539,7 @@ begin
   if not public.has_business_role(p_business_id, array['owner', 'manager', 'sales']) then
     raise exception 'You do not have permission to record sales for this business' using errcode = '42501';
   end if;
-  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'Add at least one sale item' using errcode = '22023';
   end if;
   if jsonb_array_length(p_items) > 100 then
@@ -455,10 +553,10 @@ begin
   ) then
     raise exception 'Each product must appear once in the sale' using errcode = '22023';
   end if;
-  if p_payment_channel not in ('mpesa', 'cash', 'bank', 'card', 'credit') then
+  if p_payment_channel is null or p_payment_channel not in ('mpesa', 'cash', 'bank', 'card', 'credit') then
     raise exception 'Unsupported sale payment channel' using errcode = '22023';
   end if;
-  if p_source not in ('hesabu', 'website', 'pos', 'manual', 'api') then
+  if p_source is null or p_source not in ('hesabu', 'website', 'pos', 'manual', 'api') then
     raise exception 'Unsupported sale source' using errcode = '22023';
   end if;
 
@@ -619,7 +717,7 @@ begin
   if p_amount is null or p_amount <= 0 then
     raise exception 'Payment amount must be greater than zero' using errcode = '22023';
   end if;
-  if p_channel not in ('mpesa', 'cash', 'bank', 'card') then
+  if p_channel is null or p_channel not in ('mpesa', 'cash', 'bank', 'card') then
     raise exception 'Unsupported payment channel' using errcode = '22023';
   end if;
   if p_origin not in ('manual', 'daraja', 'integration', 'reconciliation') then
@@ -627,6 +725,9 @@ begin
   end if;
 
   if p_idempotency_key is not null then
+    perform pg_advisory_xact_lock(
+      hashtextextended(p_business_id::text || ':' || p_idempotency_key, 0)
+    );
     select id into v_payment_id
     from public.payments
     where business_id = p_business_id and idempotency_key = p_idempotency_key;
