@@ -1595,7 +1595,7 @@ create or replace function public.create_product(
   p_selling_price numeric, p_supplier_id uuid default null
 )
 returns uuid language sql security invoker set search_path = ''
-as $ select app_private.create_product($1,$2,$3,$4,$5,$6,$7,$8,$9,$10); $;
+as $$ select app_private.create_product($1,$2,$3,$4,$5,$6,$7,$8,$9,$10); $$;
 
 -- Public Data API entry points are SECURITY INVOKER wrappers only. The
 -- SECURITY DEFINER implementations above live in the non-exposed app_private
