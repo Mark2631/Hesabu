@@ -9,7 +9,7 @@ This folder is the implementation brief for the cloud-backed Hesabu MVP. It is i
 - Working branch: `build/hesabu-mvp-cloud-foundation`
 - Frontend: React 18, TypeScript and Vite
 - Existing app: a local-first product preview, not a connected production workspace
-- Supabase: **not connected in this branch yet**. The requested Spike Digital organisation is not visible in the Supabase connection currently available to this workspace. Do not apply the draft migration until the correct project is visible and its project reference is confirmed.
+- Supabase target: `waadpyucxpgvbkpzbnju` (`https://waadpyucxpgvbkpzbnju.supabase.co`) in the Mark Sanchez account. The owner dashboard screenshot supplied on 16 November 2026 shows the project as Healthy, with no migrations, no branches and no backups. The connected Supabase API in this workspace still does not expose this project or permit schema inspection; no migration has been applied.
 
 ## Product definition
 
@@ -42,15 +42,18 @@ These are branch changes, not production changes. The sign-in flow, AI generatio
 - `DATABASE.md` — proposed tenant model and migration order.
 - `INTEGRATIONS.md` — actual versus simulated integrations and their completion criteria.
 - `.env.example` — browser-safe environment variable names only.
-- `supabase/migrations/202611160001_mvp_foundation.sql` — draft identity/business/preferences migration. It has **not** been applied to any database.
+- `supabase/migrations/202611160001_mvp_foundation.sql` — draft identity/business/preferences migration.
+- `supabase/migrations/202611160002_operational_ledger.sql` — draft operations tables, tenant RLS, atomic posting RPCs and daily digest query.
+
+Both migrations remain **drafts** and have not been applied to the Supabase project.
 
 ## Build sequence
 
-### Gate 0 — confirm the correct Supabase project
-Connect the Supabase account/organisation named **Spike Digital** to the project integration. Confirm the project reference, region and status. Read the existing tables, migrations and advisors before applying anything.
+### Gate 0 — obtain live project access
+The correct project reference is `waadpyucxpgvbkpzbnju`. Connect the Supabase integration to the Mark Sanchez account/project so that the actual schema, region, policies and advisors can be inspected. The dashboard currently reports no migrations and no backups, but the project API could not be read from this workspace. Do not apply the draft migrations until live access is verified.
 
 ### Stage 1 — identity and business tenancy
-Apply the reviewed foundation migration to the confirmed project. Connect Supabase Auth, create a business atomically, add the owner membership, load the user's businesses and persist onboarding preferences. Every business-owned record must carry a `business_id` and be protected by RLS.
+Review and apply the foundation migration to the confirmed project. Connect Supabase Auth, create a business atomically, add the owner membership, load the user's businesses and persist onboarding preferences. Every business-owned record must carry a `business_id` and be protected by RLS.
 
 ### Stage 2 — core business records
 Migrate products, sales, sale items, payments, expenses and suppliers. Move sale posting into a database transaction/RPC so invoice, stock movement, payment and journal effects cannot partially save. Keep the local demo data as preview-only seed data.
@@ -60,6 +63,10 @@ Replace local storage as the source of truth with Supabase queries. Add live Wha
 
 ### Stage 4 — production hardening
 Run security, performance and health advisors; verify tenant isolation with two test businesses; test failed/duplicate callbacks; check backups, audit trails, observability and mobile accessibility.
+
+## Current environment configuration
+
+The two browser-safe Supabase values have been configured in Vercel for the `build/hesabu-mvp-cloud-foundation` **Preview** branch only. Production environment variables were not changed, and no manual production deployment was triggered. The app's `src/lib/supabase.ts` currently calls Supabase Auth and PostgREST directly; it is a small browser client, not the official `@supabase/supabase-js` SDK.
 
 ## Safety boundaries
 
