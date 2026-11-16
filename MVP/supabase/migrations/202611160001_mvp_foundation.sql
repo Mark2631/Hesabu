@@ -215,7 +215,10 @@ using (public.is_business_member(business_id));
 create policy "business_members_insert_owner_or_manager"
 on public.business_members for insert to authenticated
 with check (
-  public.has_business_role(business_id, array['owner'])
+  (
+    public.has_business_role(business_id, array['owner'])
+    and role in ('manager', 'sales', 'inventory', 'finance')
+  )
   or (
     public.has_business_role(business_id, array['manager'])
     and role in ('sales', 'inventory', 'finance')
@@ -224,14 +227,28 @@ with check (
 
 create policy "business_members_update_owner"
 on public.business_members for update to authenticated
-using (public.has_business_role(business_id, array['owner']))
-with check (public.has_business_role(business_id, array['owner']));
+using (
+  user_id <> auth.uid()
+  and role <> 'owner'
+  and public.has_business_role(business_id, array['owner'])
+)
+with check (
+  role <> 'owner'
+  and public.has_business_role(business_id, array['owner'])
+);
 
 create policy "business_members_delete_owner_or_manager"
 on public.business_members for delete to authenticated
 using (
   user_id <> auth.uid()
-  and public.has_business_role(business_id, array['owner', 'manager'])
+  and role <> 'owner'
+  and (
+    public.has_business_role(business_id, array['owner'])
+    or (
+      public.has_business_role(business_id, array['manager'])
+      and role in ('sales', 'inventory', 'finance')
+    )
+  )
 );
 
 create policy "business_settings_select_member"
