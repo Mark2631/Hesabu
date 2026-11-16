@@ -1167,36 +1167,38 @@ function CloudAccountScreen({
           <div><span className="public-eyebrow">BUSINESS SUMMARY</span><h2>Daily digest</h2></div>
           <span className="cloud-data-label">CLOUD RECORDS</span>
         </div>
-        {#if loadingDigest}
+        {loadingDigest ? (
           <div className="cloud-digest-skeleton" aria-label="Loading daily digest">
             <span></span><span></span><span></span><span></span>
           </div>
-        {:else if digest}
-          <div className="cloud-digest-date">{dateLabel(digest.date)}</div>
-          <div className="cloud-digest-metrics">
-            <div><span>Sales</span><strong>{money(digest.sales_total)}</strong></div>
-            <div><span>Received</span><strong>{money(digest.payments_received)}</strong></div>
-            <div><span>Expenses</span><strong>{money(digest.expenses_total)}</strong></div>
-            <div><span>Gross profit</span><strong>{money(digest.gross_profit)}</strong></div>
-          </div>
-          <div className="cloud-digest-foot">
-            <span>{numberText(digest.invoice_count)} invoices · {numberText(digest.units_sold)} units sold</span>
-            <span>{numberText(digest.low_stock_count)} low-stock items</span>
-          </div>
-          <label className="cloud-digest-recipient">
-            <span>WhatsApp destination</span>
-            <input type="tel" inputMode="tel" value={destination} onChange={event => { setDestination(event.target.value); setDigestError(''); setDigestNotice(''); }} placeholder="2547XXXXXXXX" />
-          </label>
-          <div className="cloud-digest-actions">
-            <Button variant="outline" onClick={() => { void saveDestination(); }} disabled={savingDestination || !settings}>
-              {savingDestination ? 'Saving…' : 'Save destination'}
-            </Button>
-            <Button onClick={shareDigest}><MessageCircle size={15} /> Open WhatsApp</Button>
-          </div>
-          <p className="cloud-digest-note">Hesabu prepares the message from saved business records. Review it in WhatsApp and press Send; automatic delivery is not enabled.</p>
-        {:else}
+        ) : digest ? (
+          <>
+            <div className="cloud-digest-date">{dateLabel(digest.date)}</div>
+            <div className="cloud-digest-metrics">
+              <div><span>Sales</span><strong>{money(digest.sales_total)}</strong></div>
+              <div><span>Received</span><strong>{money(digest.payments_received)}</strong></div>
+              <div><span>Expenses</span><strong>{money(digest.expenses_total)}</strong></div>
+              <div><span>Gross profit</span><strong>{money(digest.gross_profit)}</strong></div>
+            </div>
+            <div className="cloud-digest-foot">
+              <span>{numberText(digest.invoice_count)} invoices · {numberText(digest.units_sold)} units sold</span>
+              <span>{numberText(digest.low_stock_count)} low-stock items</span>
+            </div>
+            <label className="cloud-digest-recipient">
+              <span>WhatsApp destination</span>
+              <input type="tel" inputMode="tel" value={destination} onChange={event => { setDestination(event.target.value); setDigestError(''); setDigestNotice(''); }} placeholder="2547XXXXXXXX" />
+            </label>
+            <div className="cloud-digest-actions">
+              <Button variant="outline" onClick={() => { void saveDestination(); }} disabled={savingDestination || !settings}>
+                {savingDestination ? 'Saving…' : 'Save destination'}
+              </Button>
+              <Button onClick={shareDigest}><MessageCircle size={15} /> Open WhatsApp</Button>
+            </div>
+            <p className="cloud-digest-note">Hesabu prepares the message from saved business records. Review it in WhatsApp and press Send; automatic delivery is not enabled.</p>
+          </>
+        ) : (
           <p className="cloud-digest-unavailable">{digestError || 'The cloud summary is not available yet.'}</p>
-        {/if}
+        )}
         {digestError && digest && <p className="cloud-digest-error" role="alert">{digestError}</p>}
         {digestNotice && <p className="cloud-digest-success" role="status">{digestNotice}</p>}
       </section>
