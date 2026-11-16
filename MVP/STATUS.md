@@ -9,47 +9,64 @@ Last updated: 16 November 2026
 - Production `main` has not been changed.
 - No production deployment has been requested or triggered.
 
-## Completed in this branch
+## Implemented on this branch
 
-- Hand-audited the existing React/Vite application and documented findings.
-- Added a separate public service page with a compact header, product explanation, business workflow, audience section, trust explanation and structured footer.
-- Routed public landing-page actions into a separate sign-in/create-account screen.
-- Added Supabase Auth sign-up/sign-in, token refresh, sign-out, session restoration, business creation and onboarding preference calls in `src/lib/supabase.ts`.
-- Added email-confirmation recovery for onboarding details. The pending draft excludes the password.
-- Added always-available manual entry plus independent optional AI and WhatsApp onboarding preferences. Both optional choices can be enabled together.
-- Added a coordinated floating Daily digest / Ask Hesabu dock in the preview workspace. Only one panel opens at a time.
-- Added an editable WhatsApp destination and click-to-chat digest preparation. The user still presses Send in WhatsApp.
-- Reduced the dashboard quick-action panel height and tightened type and spacing without shrinking normal body text.
-- Drafted tenant foundation and operational database migrations with role-based RLS and server-side transaction functions.
-- Added migration contract tests to the GitHub Actions test suite.
-- Added browser-safe Vite environment examples. The project URL and publishable key are configured in Vercel for the MVP Preview branch only.
+- Public Hesabu product page with responsive navigation, service explanation, business workflow, audience section, trust information and structured footer.
+- Separate sign-in and create-account screen.
+- Browser-side Supabase Auth/PostgREST integration for sign-up, sign-in, token refresh, session restore and sign-out.
+- Atomic business creation call, owner membership setup and business onboarding-preference persistence.
+- Email-confirmation recovery using non-secret onboarding information; passwords are not stored in the pending onboarding draft.
+- Signup choices for manual entry, optional AI assistant and optional WhatsApp digest. Manual entry is always available; AI and WhatsApp can both be enabled.
+- Cloud account screen that reads business settings and the daily-digest RPC and prepares a WhatsApp share from cloud figures. The user reviews the message and presses Send.
+- Floating Daily digest / Ask Hesabu dock in the local preview workspace; only one panel is open at a time.
+- Compact dashboard quick actions and revised responsive typography/spacing. Inter is retained.
+- Foundation and operational migrations with business tenancy, RLS, role permissions, private SECURITY DEFINER implementations and public SECURITY INVOKER RPC wrappers.
+- Atomic product creation/opening stock, sale posting, payment allocation, expense posting, purchase-order creation, partial goods receipt, supplier settlement, stock adjustment and daily-digest functions.
+- SQL contract checks and PostgreSQL 17 CI validation with end-to-end tenant and ledger tests.
+- Supabase URL and publishable key configured in the Vercel Preview environment for this branch only. Production environment was not changed.
 
-## Supabase project status
-
-The supplied project reference is `waadpyucxpgvbkpzbnju` at `https://waadpyucxpgvbkpzbnju.supabase.co`, in the Mark Sanchez account. The dashboard screenshot supplied on 16 November showed Healthy, no migrations, no branches and no backups.
-
-The current Supabase connector does not list this project and returns a permission error when its tables/advisors are requested. Therefore:
-- No migration has been applied.
-- Existing tables, policies and database backups have not been independently inspected.
-- Auth and PostgREST calls have been prepared in the frontend, but live sign-up and business creation have not been verified against the project.
-
-## Remaining before the cloud workspace is usable
-
-1. Restore Supabase connector access to project `waadpyucxpgvbkpzbnju`.
-2. Inspect its actual tables, extensions, Auth settings, RLS, migrations and advisors.
-3. Review and apply the two migration drafts in a non-production branch/project.
-4. Run real tenant-isolation tests with at least two users and two businesses.
-5. Replace the current lightweight REST/Auth client with the official `@supabase/supabase-js` SDK before production.
-6. Connect the operational React screens to persisted products, sales, payments, expenses, suppliers and reports. The existing ledger workspace remains local preview data for now.
-7. Deploy and test the branch Preview after the Vercel Nexus team access approval is completed.
-
-## Integrations not live yet
-
-- Generative AI: not connected to a model or server-side Edge Function.
-- WhatsApp scheduled delivery: not connected to WhatsApp Business Platform. The prepared click-to-chat flow requires the user to press Send.
-- M-Pesa/Daraja: existing payment request UI remains a simulation, not a real STK push/callback.
-- Website checkout/webhooks: still demonstration-only.
+The current frontend client in `src/lib/supabase.ts` uses direct `fetch` calls to Supabase Auth/PostgREST. It is not yet the official `@supabase/supabase-js` SDK and should be migrated before production.
 
 ## Verification
 
-The existing business-ledger unit tests and GitHub Actions TypeScript build have passed on recent commits. The migration contract tests check that the draft schema retains expected tables, RLS, role policies and posting functions; they are static source checks and do not parse or execute SQL. No database migration or live Auth request has been validated yet.
+<badge>CI passed</badge> Latest verified branch commit: `a3fd78b258507e42dc5e73ca0ee9c89541c94e84`.
+
+GitHub Actions passed:
+- Existing ledger tests and migration-contract tests.
+- TypeScript check and Vite production build.
+- Both migrations applied to a temporary PostgreSQL 17 database using a minimal Supabase Auth test schema.
+- Sale, payment idempotency, expense, purchase-order receipt, supplier settlement, stock-adjustment and daily-digest runtime checks.
+- Two-business tenant isolation tests.
+- RLS-enabled table and public/private function privilege checks.
+
+This is CI verification in a disposable PostgreSQL database. It is not a live migration or live Auth test against the user's Supabase project.
+
+## Live Supabase project status
+
+Target project: `waadpyucxpgvbkpzbnju` at `https://waadpyucxpgvbkpzbnju.supabase.co`, under the Mark Sanchez account.
+
+The supplied Supabase dashboard screenshot showed Healthy, no migrations, no branches and no backups. However, the Supabase connector available in this workspace does not list this project and returns a permission error when its project/tables are requested.
+
+Therefore:
+- Neither migration has been applied to the live project.
+- Existing live tables, RLS policies, Auth settings, extensions and advisor reports have not been inspected.
+- The branch's Auth and cloud digest flows have not been verified against the live project.
+- No live business data has been written.
+
+## Remaining before the cloud workspace is production-usable
+
+1. Restore connector access to project `waadpyucxpgvbkpzbnju`.
+2. Inspect its current schema, Auth settings, migrations, RLS and security/performance advisors.
+3. Reconcile and apply the migrations to a non-production branch/project, preserving any existing objects and data.
+4. Verify Auth and cloud digest flows against the real project.
+5. Replace the custom browser REST/Auth client with the official Supabase JS SDK.
+6. Connect the operational React screens to persisted products, sales, payments, expenses, suppliers, purchasing, inventory and reports. The main ledger screens still use local preview data.
+7. Inspect the Vercel Preview deployment after the team access approval. Production remains untouched.
+
+## Integrations not live yet
+
+- Generative AI: signup preference is stored, but no model or server-side Edge Function is connected.
+- WhatsApp scheduled delivery: not connected to WhatsApp Business Platform. Click-to-chat preparation requires the user to press Send.
+- M-Pesa/Daraja: existing payment request UI is a simulation, not a real STK push/callback.
+- Website checkout/webhooks: demonstration-only.
+
