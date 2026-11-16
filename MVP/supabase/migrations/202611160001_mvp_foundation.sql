@@ -204,10 +204,6 @@ on public.businesses for update to authenticated
 using (public.has_business_role(id, array['owner', 'manager']))
 with check (public.has_business_role(id, array['owner', 'manager']));
 
-create policy "businesses_delete_owner"
-on public.businesses for delete to authenticated
-using (owner_id = auth.uid());
-
 create policy "business_members_select_member"
 on public.business_members for select to authenticated
 using (public.is_business_member(business_id));
@@ -271,7 +267,7 @@ revoke all on public.profiles, public.businesses, public.business_members, publi
 grant select, insert, update on public.profiles to authenticated;
 -- Business creation must go through create_business() so the owner membership
 -- and settings row are created atomically. owner_id is never client-updatable.
-grant select, delete on public.businesses to authenticated;
+grant select on public.businesses to authenticated;
 grant update (name, legal_name, industry, phone, email, county, timezone)
   on public.businesses to authenticated;
 grant select, insert, update, delete on public.business_members to authenticated;
