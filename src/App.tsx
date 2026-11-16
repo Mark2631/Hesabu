@@ -11,6 +11,10 @@ import {
 } from 'lucide-react';
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
+import {
+  createBusiness, getCurrentUser, listMyBusinesses, restoreCloudSession, saveBusinessPreferences,
+  signInWithPassword, signOut, signUpWithPassword, type SignUpInput, type SupabaseUser,
+} from './lib/supabase';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
   NewPaymentInput, NewPurchaseInput, NewUnmatchedReceiptInput, Payment, PaymentChannel, Product,
@@ -803,17 +807,63 @@ function HesabuMark({ className = '' }: { className?: string }) {
   </svg>;
 }
 
-function AuthPage({ onPreview }: { onPreview: () => void }) {
+function AuthPage({
+  onPreview, onSignIn, onSignUp, initialMessage,
+}: {
+  onPreview: () => void;
+  onSignIn: (email: string, password: string) => Promise<void>;
+  onSignUp: (input: SignUpInput) => Promise<'confirm_email' | void>;
+  initialMessage?: string;
+}) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [fullName, setFullName] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [industry, setIndustry] = useState('Retail / shop');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [message, setMessage] = useState('');
-  const submit = (event: FormEvent) => {
+  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(false);
+  const [whatsappDigestEnabled, setWhatsappDigestEnabled] = useState(false);
+  const [whatsappRecipientPhone, setWhatsappRecipientPhone] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(initialMessage ?? '');
+
+  useEffect(() => {
+    if (initialMessage) setMessage(initialMessage);
+  }, [initialMessage]);
+
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    setMessage(mode === 'signin'
-      ? 'Secure sign-in is not connected in this preview yet. Your password has not been saved.'
-      : 'Account creation will be enabled after secure authentication and cloud storage are connected.');
+    if (busy) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      if (mode === 'signin') {
+        await onSignIn(email, password);
+      } else {
+        if (!fullName.trim() || !businessName.trim()) {
+          setMessage('Enter your name and business name to continue.');
+          return;
+        }
+        if (whatsappDigestEnabled && !normaliseWhatsAppNumber(whatsappRecipientPhone)) {
+          setMessage('Enter a valid WhatsApp number, including the Kenyan country code or a local mobile number.');
+          return;
+        }
+        const result = await onSignUp({
+          fullName, businessName, industry, phone, email, password,
+          aiAssistantEnabled, whatsappDigestEnabled, whatsappRecipientPhone,
+        });
+        if (result === 'confirm_email') {
+          setMessage('Your account has been created. Check your email for the confirmation link, then return here to sign in.');
+        }
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.');
+    } finally {
+      setBusy(false);
+    }
   };
+
   return <main className="auth-page">
     <section className="auth-shell">
       <div className="auth-form-panel">
@@ -831,21 +881,44 @@ function AuthPage({ onPreview }: { onPreview: () => void }) {
           <button type="button" role="tab" aria-selected={mode === 'signup'} className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setMessage(''); }}>Create account</button>
         </div>
         <form className="auth-form" onSubmit={submit}>
+          {mode === 'signup' && <>
+            <label className="auth-field"><span>Your full name</span><input autoComplete="name" value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Name of the business owner" required /></label>
+            <label className="auth-field"><span>Business name</span><input value={businessName} onChange={event => setBusinessName(event.target.value)} placeholder="e.g. Muriuki Stores" required /></label>
+            <label className="auth-field"><span>Business type</span>
+              <select value={industry} onChange={event => setIndustry(event.target.value)}>
+                <option>Retail / shop</option><option>Food & hospitality</option><option>Wholesale / distribution</option>
+                <option>Services</option><option>Manufacturing / production</option><option>Other</option>
+              </select>
+            </label>
+            <label className="auth-field"><span>Business phone <small>(optional)</small></span><input type="tel" autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="07XX XXX XXX" /></label>
+          </>}
           <label className="auth-field"><span>Business email</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
           <label className="auth-field"><span>Password</span><input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /></label>
-          <Button type="submit" block>{mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
+          {mode === 'signup' && <section className="auth-preferences" aria-label="Optional business preferences">
+            <div className="auth-preferences-heading"><strong>How should Hesabu support your daily work?</strong><small>Manual records are always available. You can use either option or both.</small></div>
+            <label className="auth-preference-option">
+              <input type="checkbox" checked={aiAssistantEnabled} onChange={event => setAiAssistantEnabled(event.target.checked)} />
+              <span><strong>AI assistant</strong><small>Ask questions about sales, stock, expenses and balances.</small></span>
+            </label>
+            <label className="auth-preference-option">
+              <input type="checkbox" checked={whatsappDigestEnabled} onChange={event => setWhatsappDigestEnabled(event.target.checked)} />
+              <span><strong>WhatsApp daily digest</strong><small>Prepare a daily business summary for WhatsApp.</small></span>
+            </label>
+            {whatsappDigestEnabled && <label className="auth-field auth-whatsapp-field"><span>WhatsApp destination</span><input type="tel" inputMode="tel" value={whatsappRecipientPhone} onChange={event => setWhatsappRecipientPhone(event.target.value)} placeholder="2547XXXXXXXX" required /></label>}
+          </section>}
+          <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
         </form>
         {message && <p className="auth-message" role="status">{message}</p>}
         <div className="auth-divider"><span>OR</span></div>
         <Button variant="outline" block onClick={onPreview}>Explore the sample workspace <ArrowRight size={15} /></Button>
-        <p className="auth-footnote">Preview access uses this browser only. Business data is not yet synced between devices or users.</p>
+        <p className="auth-footnote">The sample workspace is stored only in this browser. Sign-in creates a separate cloud account.</p>
       </div>
       <aside className="auth-aside">
-        <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">PRODUCT PREVIEW</span></div>
+        <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">BUSINESS OPERATIONS</span></div>
         <div className="auth-aside-copy">
           <span>ONE VIEW OF THE BUSINESS</span>
-          <h2>Make the next business decision with better numbers.</h2>
-          <p>Follow money, stock and customer balances without moving between disconnected records.</p>
+          <h2>Know what is happening in your business.</h2>
+          <p>Bring sales, payments, stock and daily expenses into one clear business record.</p>
         </div>
         <div className="auth-preview-stack">
           <div className="auth-preview-row"><span className="auth-preview-icon"><TrendingUp size={17} /></span><span><strong>Sales & performance</strong><small>Daily totals, margin and trends</small></span><ChevronRight size={17} /></div>
@@ -854,6 +927,37 @@ function AuthPage({ onPreview }: { onPreview: () => void }) {
         </div>
         <div className="auth-aside-footer"><span>Built for everyday business operations</span><span>Hesabu · Kenya</span></div>
       </aside>
+    </section>
+  </main>;
+}
+
+function CloudAccountScreen({
+  user, business, onSignOut, onPreview,
+}: {
+  user: SupabaseUser;
+  business: { id: string; name: string; industry?: string | null };
+  onSignOut: () => void;
+  onPreview: () => void;
+}) {
+  return <main className="auth-page cloud-account-page">
+    <section className="cloud-account-card">
+      <div className="auth-brand">
+        <span className="brand-mark"><HesabuMark /></span>
+        <span className="brand-text"><strong>hesabu<span>.</span></strong><small>CLOUD ACCOUNT</small></span>
+      </div>
+      <span className="cloud-account-status"><CheckCircle2 size={15} /> Account connected</span>
+      <h1>{business.name}</h1>
+      <p className="cloud-account-intro">Your business identity and account are connected to Hesabu cloud services.</p>
+      <div className="cloud-account-details">
+        <span>Account email</span><strong>{user.email || 'Verified account'}</strong>
+        <span>Business type</span><strong>{business.industry || 'Not specified'}</strong>
+        <span>Business workspace</span><strong>Private business account</strong>
+      </div>
+      <p className="cloud-account-note">The cloud identity and business setup are ready. The operational ledger screens will switch to cloud records as the remaining database tables and posting flows are connected. The sample workspace remains separate.</p>
+      <div className="cloud-account-actions">
+        <Button variant="outline" onClick={onSignOut}>Sign out</Button>
+        <Button onClick={onPreview}>Open sample workspace</Button>
+      </div>
     </section>
   </main>;
 }
