@@ -388,9 +388,9 @@ create index integration_events_status_idx on public.integration_events (busines
 -- ---------------------------------------------------------------------------
 
 create trigger products_set_updated_at before update on public.products
-for each row execute procedure public.set_updated_at();
+for each row execute procedure app_private.set_updated_at();
 create trigger suppliers_set_updated_at before update on public.suppliers
-for each row execute procedure public.set_updated_at();
+for each row execute procedure app_private.set_updated_at();
 
 create or replace function app_private.initialise_supplier_balance()
 returns trigger
@@ -406,11 +406,11 @@ create trigger suppliers_initialise_balance
 before insert on public.suppliers
 for each row execute procedure app_private.initialise_supplier_balance();
 create trigger invoices_set_updated_at before update on public.invoices
-for each row execute procedure public.set_updated_at();
+for each row execute procedure app_private.set_updated_at();
 create trigger expenses_set_updated_at before update on public.expenses
-for each row execute procedure public.set_updated_at();
+for each row execute procedure app_private.set_updated_at();
 create trigger purchase_orders_set_updated_at before update on public.purchase_orders
-for each row execute procedure public.set_updated_at();
+for each row execute procedure app_private.set_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- Tenant RLS policies
