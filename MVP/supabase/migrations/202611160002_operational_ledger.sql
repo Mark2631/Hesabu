@@ -864,6 +864,7 @@ declare
   v_user_id uuid := auth.uid();
   v_invoice public.invoices%rowtype;
   v_payment_id uuid := gen_random_uuid();
+  v_existing_payment_id uuid;
   v_journal_id uuid := gen_random_uuid();
   v_applied numeric(14,2);
   v_unapplied numeric(14,2);
@@ -890,10 +891,10 @@ begin
     perform pg_advisory_xact_lock(
       hashtextextended(p_business_id::text || ':' || p_idempotency_key, 0)
     );
-    select id into v_payment_id
+    select id into v_existing_payment_id
     from public.payments
     where business_id = p_business_id and idempotency_key = p_idempotency_key;
-    if found then return v_payment_id; end if;
+    if found then return v_existing_payment_id; end if;
   end if;
 
   select * into v_invoice
