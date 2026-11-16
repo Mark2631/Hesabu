@@ -188,7 +188,20 @@ export async function signUpWithPassword(input: SignUpInput): Promise<{ session:
     body: {
       email: input.email.trim(),
       password: input.password,
-      data: { display_name: input.fullName.trim() },
+      // This metadata contains only user-entered onboarding information. It is
+      // never used to authorize access; business roles are assigned in the DB.
+      data: {
+        display_name: input.fullName.trim(),
+        business_onboarding: {
+          business_name: input.businessName.trim(),
+          industry: input.industry.trim() || null,
+          phone: input.phone.trim() || null,
+          email: input.email.trim(),
+          ai_assistant_enabled: input.aiAssistantEnabled,
+          whatsapp_digest_enabled: input.whatsappDigestEnabled,
+          whatsapp_recipient_phone: input.whatsappDigestEnabled ? input.whatsappRecipientPhone.trim() : null,
+        },
+      },
     },
     accessToken: publishableKey,
   });
