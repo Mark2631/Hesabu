@@ -305,12 +305,16 @@ export interface CloudDailyDigest {
 }
 
 export async function getBusinessSettings(businessId: string): Promise<CloudBusinessSettings> {
+  const current = await validSession();
+  if (!current) throw new SupabaseRequestError('Sign in again to load business preferences.', 401);
   const query = new URLSearchParams({
     select: 'business_id,ai_assistant_enabled,whatsapp_digest_enabled,whatsapp_recipient_phone,digest_time,timezone',
     business_id: 'eq.' + businessId,
     limit: '1',
   });
-  const rows = await request<CloudBusinessSettings[]>('rest/v1/business_settings?' + query.toString());
+  const rows = await request<CloudBusinessSettings[]>('rest/v1/business_settings?' + query.toString(), {
+    accessToken: current.access_token,
+  });
   if (!rows?.[0]) {
     throw new SupabaseRequestError('Business preferences are not available yet. Apply the Hesabu foundation migration first.', 404);
   }
@@ -318,8 +322,11 @@ export async function getBusinessSettings(businessId: string): Promise<CloudBusi
 }
 
 export async function getCloudDailyDigest(businessId: string, date?: string): Promise<CloudDailyDigest> {
+  const current = await validSession();
+  if (!current) throw new SupabaseRequestError('Sign in again to load the daily digest.', 401);
   const digest = await request<CloudDailyDigest>('rest/v1/rpc/get_daily_digest', {
     method: 'POST',
+    accessToken: current.access_token,
     body: { p_business_id: businessId, p_date: date ?? null },
   });
   if (!digest || !digest.date || digest.business_id !== businessId) {
@@ -618,12 +625,16 @@ export async function saveCloudBusinessProfile(
 }
 
 export async function getCloudWorkspace(businessId: string, user: SupabaseUser): Promise<AppData> {
+  const current = await validSession();
+  if (!current) throw new SupabaseRequestError('Your session has expired. Sign in again to load this business.', 401);
   const [
     businesses, productsRows, suppliersRows, invoiceRows, invoiceItemRows, paymentRows,
     receiptRows, expenseRows, purchaseRows, purchaseItemRows, movementRows,
     journalEntryRows, journalLineRows, eventRows, memberRows, profileRows,
   ] = await Promise.all([
-    request<DbRow[]>('rest/v1/businesses?select=id,name,legal_name,industry,phone,email,county,currency,next_invoice_number,next_purchase_order_number&id=eq.' + businessId),
+    request<DbRow[]>('rest/v1/businesses?select=id,name,legal_name,industry,phone,email,county,currency,next_invoice_number,next_purchase_order_number&id=eq.' + businessId, {
+      accessToken: current.access_token,
+    }),
     businessRows('products', businessId, 'id,sku,name,category,unit,quantity_on_hand,reorder_level,cost_price,selling_price,supplier_id,updated_at,created_at', 'name.asc'),
     businessRows('suppliers', businessId, 'id,name,phone,email,payment_terms,opening_balance,current_balance,is_active', 'name.asc'),
     businessRows('invoices', businessId, 'id,invoice_number,customer_name,customer_phone,issue_date,due_date,subtotal,discount_amount,total_amount,amount_paid,payment_channel,status,source', 'issue_date.desc'),
@@ -638,7 +649,9 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
     businessRows('journal_lines', businessId, 'id,journal_entry_id,account_name,debit,credit,description'),
     businessRows('integration_events', businessId, 'id,event_type,source,status,reference,detail,occurred_at', 'occurred_at.desc'),
     businessRows('business_members', businessId, 'user_id,role,status,created_at', 'created_at.asc'),
-    request<DbRow[]>('rest/v1/profiles?select=id,display_name&id=eq.' + user.id),
+    request<DbRow[]>('rest/v1/profiles?select=id,display_name&id=eq.' + user.id, {
+      accessToken: current.access_token,
+    }),
   ]);
 
   const business = businesses[0];
