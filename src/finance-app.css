@@ -245,3 +245,8 @@ body{background:var(--canvas);color:var(--ink)}
  .recent-activity-amount { font-size:10px; }
  .report-bars-year .report-bar-column>span { font-size:8px; }
 }
+
+@media(max-width:720px) {
+  .report-bars-year { gap:4px; }
+  .report-bars-year .report-bar-column>span { font-size:7px; letter-spacing:-.02em; }
+}

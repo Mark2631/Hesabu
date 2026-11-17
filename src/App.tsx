@@ -1367,28 +1367,34 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
       </div>
     </section>
     <div className="content-grid content-grid-main">
-      <SectionCard title="Sales trend" detail="Recorded sales over the last seven days.">
-        <div className="chart-summary"><strong>{money(sum(chartValues))}</strong><span>Last 7 days</span></div>
-        <MiniBars values={chartValues} labels={chartLabels} />
-      </SectionCard>
-      <SectionCard title={role === 'Sales' ? 'Customer follow-up' : 'Stock watch'} detail={role === 'Sales' ? 'Customer balances requiring attention.' : 'Products that could interrupt sales or tie up cash.'}>
-        {role === 'Sales' ? (unsettled.length ? <div className="followup-list">
+      {role === 'Sales' ? <SectionCard title="Customer follow-up" detail="Customer balances requiring attention.">
+        {unsettled.length ? <div className="followup-list">
           {unsettled.map(invoice => <button key={invoice.id} onClick={() => onSelectInvoice(invoice.id)}>
             <span><strong>{invoice.customer}</strong><small>{invoice.number} · Due {dateLabel(invoice.dueDate)}</small></span>
             <strong>{money(invoiceBalance(invoice))}</strong>
           </button>)}
-        </div> : <EmptyState title="No balances to follow up" body="Unpaid and part-paid sales will appear here." />) : <div className="stock-watch-list">
+        </div> : <EmptyState title="No balances to follow up" body="Unpaid and part-paid sales will appear here." />}
+      </SectionCard> : role === 'Finance' ? <SectionCard title="Collections & obligations" detail="Customer and supplier balances that require attention.">
+        <div className="working-capital-list">
+          <div><span>Customer receivables</span><strong>{money(metrics.receivables)}</strong></div>
+          <div><span>Open customer invoices</span><strong>{numberText(metrics.unpaidInvoices)}</strong></div>
+          <div><span>Supplier payables</span><strong className="negative-text">{money(metrics.payables)}</strong></div>
+          <div><span>Unapplied customer advances</span><strong>{money(metrics.customerAdvances)}</strong></div>
+        </div>
+        <button className="text-link stock-watch-link" onClick={() => onNavigate('accounts')}>Review financial records <ArrowRight size={13} /></button>
+      </SectionCard> : <SectionCard title="Stock watch" detail="Products that could interrupt sales or tie up cash.">
+        <div className="stock-watch-list">
           <button onClick={() => onNavigate('inventory')}><span><strong>Out of stock</strong><small>Products unavailable to sell</small></span><b>{zeroStock.length}</b></button>
           <button onClick={() => onNavigate('inventory')}><span><strong>Reorder soon</strong><small>At or below the reorder point</small></span><b>{lowStock.length}</b></button>
           {role !== 'Inventory' && <button onClick={() => onNavigate('inventory')}><span><strong>Slow stock</strong><small>No recorded sale in 30 days</small></span><b>{slowStock.length}</b></button>}
-        </div>}
-        {role !== 'Sales' && <button className="text-link stock-watch-link" onClick={() => onNavigate('inventory')}>Review inventory <ArrowRight size={13} /></button>}
-      </SectionCard>
+        </div>
+        <button className="text-link stock-watch-link" onClick={() => onNavigate('inventory')}>Review inventory <ArrowRight size={13} /></button>
+      </SectionCard>}
     </div>
     <SectionCard title="Recent transactions" detail="Money in, money out and the latest business activity." action={<button className="text-link" onClick={() => onNavigate(role === 'Inventory' ? 'procurement' : 'payments')}>See all <ArrowRight size={13} /></button>}>
       {activity.length ? <div className="recent-activity-list">
         {activity.map(item => <button type="button" className="recent-activity-row" key={item.id}
-          onClick={() => item.invoiceId ? onSelectInvoice(item.invoiceId) : onNavigate(item.direction === 'out' ? (role === 'Inventory' ? 'procurement' : 'accounts') : 'payments')}>
+          onClick={() => item.invoiceId ? onSelectInvoice(item.invoiceId) : onNavigate(role === 'Inventory' ? 'procurement' : item.direction === 'out' ? 'accounts' : 'payments')}>
           <span className={'recent-activity-icon ' + (item.direction === 'in' ? 'is-in' : item.direction === 'out' ? 'is-out' : 'is-neutral')}>
             {item.direction === 'in' ? <ArrowDownLeft size={17} /> : item.direction === 'out' ? <ArrowUpRight size={17} /> : <Receipt size={17} />}
           </span>
@@ -1956,7 +1962,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
         {role !== 'Sales' && <span>{money(digest.supplierPaymentTotal)} supplier payments</span>}
         <span>{numberText(digest.unitsSold)} units sold</span>
         {role !== 'Sales' && <span>{numberText(digest.purchaseOrders.length)} supplier orders raised</span>}
-        {role !== 'Sales' && <span>{numberText(digest.inventoryActivity.length)} stock updates</span>}
+        {(role === 'Owner' || role === 'Manager') && <span>{numberText(digest.inventoryActivity.length)} stock updates</span>}
         <span>{numberText(digest.lowStock.length)} products at reorder level</span>
       </div>
       <div className="daily-digest-actions">
