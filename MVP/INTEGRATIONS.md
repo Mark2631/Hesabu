@@ -2,6 +2,8 @@
 
 Last reviewed: 17 November 2026
 
+The atomic-sale and team-invitation release is merged into `main` and deployed to production.
+
 ## Supabase Auth and business data
 
 **Connected:** email/password sign-up, sign-in, session restore and sign-out use the live Supabase project. Business workspace creation, membership checks and the operational read/write flows use authenticated PostgREST requests and database RPCs. Public RPC wrappers are SECURITY INVOKER; privileged implementations are isolated in the `app_private` schema and check the caller's business role.

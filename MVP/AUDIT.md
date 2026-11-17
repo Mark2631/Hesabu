@@ -2,6 +2,8 @@
 
 Audit date: 17 November 2026
 
+The verified release is merged into `main` and its Vercel production deployment is READY.
+
 ## Current architecture
 
 Hesabu is a React/Vite business workspace backed by Supabase Auth, Postgres and PostgREST. The business data model separates sales, invoice lines, payments, unmatched receipts, expenses, products, suppliers, purchase orders, stock movements, cash movements and accounting journals.

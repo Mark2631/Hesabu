@@ -5,9 +5,9 @@ Last updated: 17 November 2026
 ## Release target
 
 - Repository: `Mark2631/Hesabu`
-- Release branch: `feature/atomic-ledger-team-access` (all checks passed; ready for promotion)
+- Production release branch: `main` (merged and deployed)
 - Production application: [https://hesabu-seven.vercel.app](https://hesabu-seven.vercel.app)
-- Finance-first frontend redesign was deployed to production before this release
+- Production release commit: `273f3b1ef0f45acb037547da05aaa12786168ac0`
 - Supabase project: `waadpyucxpgvbkpzbnju` (Mark Sanchez Supabase account)
 - Currency and timezone defaults: KES and `Africa/Nairobi`
 
@@ -46,7 +46,7 @@ The atomic sales/team invitation migration and its foreign-key index migration h
 
 ## Verification boundaries
 
-The release branch has passed the TypeScript and Vite production build, standard JavaScript tests, PostgreSQL migration suite, tenant isolation tests, invitation/role permission tests, atomic sale rollback tests and database exposure checks. The preview deployment is marked READY.
+The merged `main` release has passed the TypeScript and Vite production build, standard JavaScript tests, PostgreSQL migration suite, tenant isolation tests, invitation/role permission tests, atomic sale rollback tests and database exposure checks. The Vercel production deployment is marked READY.
 
 A successful migration test in disposable PostgreSQL is not the same as an end-to-end test with a real email account, real business staff or a live merchant payment. No business data was present in the live project during the last schema inspection.
 
