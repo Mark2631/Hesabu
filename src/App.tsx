@@ -3112,7 +3112,7 @@ function App() {
       {cloudWorkspaceError
         ? <><p>{cloudWorkspaceError}</p><div className="modal-footer">
             <Button variant="outline" onClick={() => { void handleCloudSignOut(); }}>Sign out</Button>
-            <Button onClick={() => { void reloadCloudWorkspace(); }} loading={cloudWorkspaceLoading}>Try again</Button>
+            <Button onClick={() => { void reloadCloudWorkspace(); }} disabled={cloudWorkspaceLoading}>{cloudWorkspaceLoading ? 'Loading…' : 'Try again'}</Button>
           </div></>
         : <p>Loading your secure business records…</p>}
     </section>
