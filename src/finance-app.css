@@ -185,3 +185,24 @@ body{background:var(--canvas);color:var(--ink)}
  .finance-balance-actions button{min-height:60px;display:flex;justify-content:center}
 }
 @media(prefers-reduced-motion:reduce){.finance-balance-actions button,.mobile-bottom-nav,.surface-card{transition:none!important}}
+
+
+/* Database-backed team access and expiring invitation controls. */
+.team-invite-explainer { margin:0; color:var(--muted); font-size:12px; line-height:1.6; }
+.team-role-select {
+  min-height:34px; max-width:132px; padding:0 9px;
+  border:1px solid var(--line); border-radius:8px;
+  background:var(--surface); color:var(--ink); font:inherit; font-size:12px;
+}
+.team-role-select:disabled { opacity:.65; }
+.team-invitations-section {
+  display:grid; gap:13px; margin:22px 20px 20px; padding-top:18px;
+  border-top:1px solid var(--line);
+}
+.team-invitations-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.team-invitations-heading strong { color:var(--ink); font-size:13px; }
+.team-invitations-heading span { color:var(--muted); font-size:11px; }
+.team-role-select:focus-visible { outline:2px solid var(--green); outline-offset:2px; }
+.theme-dark .team-invitations-section { border-color:#2d3a47; }
+.theme-dark .team-invitations-heading strong { color:#edf2ee; }
+.theme-dark .team-role-select { background:#171f2a; border-color:#344052; color:#edf2ee; }

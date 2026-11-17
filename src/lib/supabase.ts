@@ -1,6 +1,6 @@
 import type {
   AppData, BusinessProfile, CashMovement, Expense, IntegrationEvent, Invoice, JournalLine,
-  Payment, PaymentChannel, PurchaseOrder, Supplier, TeamMember, TeamRole, UnmatchedReceipt,
+  Payment, PaymentChannel, PurchaseOrder, Supplier, TeamInvitation, TeamMember, TeamRole, UnmatchedReceipt,
 } from '../types';
 
 export interface SupabaseUser {
@@ -500,7 +500,7 @@ export async function postCloudSale(businessId: string, input: {
   channel: PaymentChannel; source: Invoice['source'];
   items: Array<{ productId: string; quantity: number }>;
 }): Promise<string> {
-  return rpc<string>('post_sale', {
+  return rpc<string>('post_sale_with_payment', {
     p_business_id: businessId,
     p_customer_name: input.customer.trim(),
     p_customer_phone: input.phone.trim() || null,
@@ -594,6 +594,29 @@ export async function adjustCloudStock(businessId: string, input: {
   });
 }
 
+export async function createCloudBusinessInvitation(businessId: string, input: {
+  name: string; email: string; role: Exclude<TeamRole, 'Owner'>;
+}): Promise<string> {
+  return rpc<string>('create_business_invitation', {
+    p_business_id: businessId, p_invitee_name: input.name.trim(),
+    p_invitee_email: input.email.trim().toLowerCase(), p_role: input.role.toLowerCase(),
+  });
+}
+export async function acceptCloudBusinessInvitation(token: string): Promise<string> {
+  return rpc<string>('accept_business_invitation', { p_invite_token: token });
+}
+export async function updateCloudBusinessMember(businessId: string, userId: string, input: {
+  role: Exclude<TeamRole, 'Owner'>; status: 'active' | 'suspended';
+}): Promise<void> {
+  await rpc<null>('update_business_member', {
+    p_business_id: businessId, p_user_id: userId,
+    p_role: input.role.toLowerCase(), p_status: input.status,
+  });
+}
+export async function revokeCloudBusinessInvitation(businessId: string, invitationId: string): Promise<void> {
+  await rpc<null>('revoke_business_invitation', { p_business_id: businessId, p_invitation_id: invitationId });
+}
+
 export async function saveCloudBusinessProfile(
   businessId: string,
   profile: BusinessProfile,
@@ -630,7 +653,7 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
   const [
     businesses, productsRows, suppliersRows, invoiceRows, invoiceItemRows, paymentRows,
     receiptRows, expenseRows, purchaseRows, purchaseItemRows, movementRows,
-    journalEntryRows, journalLineRows, eventRows, memberRows, profileRows,
+    journalEntryRows, journalLineRows, eventRows, teamRows, invitationRows, profileRows,
   ] = await Promise.all([
     request<DbRow[]>('rest/v1/businesses?select=id,name,legal_name,industry,phone,email,county,currency,next_invoice_number,next_purchase_order_number&id=eq.' + businessId, {
       accessToken: current.access_token,
@@ -648,7 +671,12 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
     businessRows('journal_entries', businessId, 'id,journal_number,entry_date,description,reference,status', 'entry_date.desc'),
     businessRows('journal_lines', businessId, 'id,journal_entry_id,account_name,debit,credit,description'),
     businessRows('integration_events', businessId, 'id,event_type,source,status,reference,detail,occurred_at', 'occurred_at.desc'),
-    businessRows('business_members', businessId, 'user_id,role,status,created_at', 'created_at.asc'),
+    request<DbRow[]>('rest/v1/rpc/get_business_team', {
+      method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
+    }),
+    request<DbRow[]>('rest/v1/rpc/list_business_invitations', {
+      method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
+    }),
     request<DbRow[]>('rest/v1/profiles?select=id,display_name&id=eq.' + user.id, {
       accessToken: current.access_token,
     }),
@@ -783,12 +811,17 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
   const memberRoles: Record<string, TeamRole> = {
     owner: 'Owner', manager: 'Manager', sales: 'Sales', inventory: 'Inventory', finance: 'Finance',
   };
-  const teamMembers: TeamMember[] = memberRows.map(row => ({
-    id: asText(row.user_id),
-    name: asText(asText(row.user_id) === user.id ? profile.owner : 'Team member'),
-    email: asText(asText(row.user_id) === user.id ? user.email : ''),
-    role: memberRoles[asText(row.role)] ?? 'Sales',
+  const teamMembers: TeamMember[] = teamRows.map(row => ({
+    id: asText(row.user_id), name: asText(row.display_name, 'Team member'),
+    email: asText(row.email), role: memberRoles[asText(row.role)] ?? 'Sales',
     status: asText(row.status) === 'active' ? 'active' : 'suspended',
+  }));
+  const teamInvitations: TeamInvitation[] = invitationRows.map(row => ({
+    id: asText(row.id), name: asText(row.invitee_name, 'Team member'),
+    email: asText(row.invitee_email),
+    role: (memberRoles[asText(row.role)] ?? 'Sales') as Exclude<TeamRole, 'Owner'>,
+    status: asText(row.invitation_status, 'pending') as TeamInvitation['status'],
+    token: asText(row.invite_token), createdAt: asText(row.created_at), expiresAt: asText(row.expires_at),
   }));
 
   const cashMovements: AppData['cashMovements'] = movementRows
@@ -803,7 +836,7 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
 
   return {
     profile, products, invoices, payments, unmatchedReceipts, expenses, suppliers,
-    purchaseOrders, teamMembers, journal, events, cashMovements,
+    purchaseOrders, teamMembers, teamInvitations, journal, events, cashMovements,
     openingBalances: { cash: 0, mpesa: 0, bank: 0, inventory: 0 },
     nextInvoice: asNumber(business.next_invoice_number) || 1001,
     nextPurchaseOrder: asNumber(business.next_purchase_order_number) || 1,
