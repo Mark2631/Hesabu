@@ -1,9 +1,9 @@
 \set ON_ERROR_STOP on
 
 -- Two independent Auth users exercise real RLS under the authenticated role.
-insert into auth.users (id, raw_user_meta_data) values
-  ('11111111-1111-4111-8111-111111111111', '{"display_name":"Alpha Owner"}'),
-  ('22222222-2222-4222-8222-222222222222', '{"display_name":"Beta Owner"}');
+insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data) values
+  ('11111111-1111-4111-8111-111111111111', 'alpha@example.test', now(), '{"display_name":"Alpha Owner"}'),
+  ('22222222-2222-4222-8222-222222222222', 'beta@example.test', now(), '{"display_name":"Beta Owner"}');
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', false);
@@ -74,6 +74,30 @@ select 1 / case
   else 0
 end;
 
+select public.post_sale_with_payment(
+  :'alpha_business_id'::uuid,
+  'Atomic counter customer',
+  null,
+  null,
+  0,
+  'cash',
+  'manual',
+  jsonb_build_array(jsonb_build_object(
+    'product_id', :'alpha_product_id'::uuid,
+    'quantity', 1
+  ))
+) as alpha_atomic_invoice_id \\gset
+
+select 1 / case
+  when (select amount_paid from public.invoices where id = :'alpha_atomic_invoice_id'::uuid) = 100
+   and exists (
+     select 1 from public.payments
+     where invoice_id = :'alpha_atomic_invoice_id'::uuid
+       and amount = 100 and status = 'succeeded' and channel = 'cash'
+   )
+  then 1 else 0
+end;
+
 select public.post_expense(
   :'alpha_business_id'::uuid,
   'Rent',
@@ -123,16 +147,17 @@ select public.post_stock_adjustment(
 );
 
 select 1 / case
-  when (public.get_daily_digest(:'alpha_business_id'::uuid, null)->>'sales_total')::numeric = 200
-   and (public.get_daily_digest(:'alpha_business_id'::uuid, null)->>'payments_received')::numeric = 200
+  when (public.get_daily_digest(:'alpha_business_id'::uuid, null)->>'sales_total')::numeric = 300
+   and (public.get_daily_digest(:'alpha_business_id'::uuid, null)->>'payments_received')::numeric = 300
    and (public.get_daily_digest(:'alpha_business_id'::uuid, null)->>'expenses_total')::numeric = 50
-   and (public.get_daily_digest(:'alpha_business_id'::uuid, null)->>'units_sold')::numeric = 2
+   and (public.get_daily_digest(:'alpha_business_id'::uuid, null)->>'units_sold')::numeric = 3
   then 1 else 0
 end;
 
 select 1 / case
   when (select amount_paid from public.invoices where id = :'alpha_invoice_id'::uuid) = 200
-   and (select quantity_on_hand from public.products where id = :'alpha_product_id'::uuid) = 10
+   and (select amount_paid from public.invoices where id = :'alpha_atomic_invoice_id'::uuid) = 100
+   and (select quantity_on_hand from public.products where id = :'alpha_product_id'::uuid) = 9
    and (select current_balance from public.suppliers where id = :'alpha_supplier_id'::uuid) = 190
   then 1 else 0
 end;
@@ -199,6 +224,17 @@ $$;
 
 select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', false);
 
+select public.accept_business_invitation(:'alpha_invite_token'::uuid) as accepted_alpha_business_id \\gset
+
+select 1 / case
+  when exists (
+    select 1 from public.business_members
+    where business_id = :'alpha_business_id'::uuid
+      and user_id = '22222222-2222-4222-8222-222222222222'
+      and role = 'sales' and status = 'active'
+  ) then 1 else 0
+end;
+
 select public.create_business(
   'Beta Test Shop', 'Services', '0711000003', 'beta@example.test', 'Meru'
 ) as beta_business_id \gset
@@ -218,6 +254,22 @@ select public.create_product(
 
 -- Switch back to Alpha: Beta's business and product rows must be invisible.
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', false);
+
+select 1 / case
+  when exists (
+    select 1 from public.get_business_team(:'alpha_business_id'::uuid)
+    where user_id = '22222222-2222-4222-8222-222222222222' and role = 'sales'
+  )
+  then 1 else 0
+end;
+
+select 1 / case
+  when exists (
+    select 1 from public.list_business_invitations(:'alpha_business_id'::uuid)
+    where invitee_email = 'beta@example.test' and invitation_status = 'accepted'
+  )
+  then 1 else 0
+end;
 
 select 1 / case
   when not exists (

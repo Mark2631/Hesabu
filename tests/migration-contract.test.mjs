@@ -84,3 +84,33 @@ test('sensitive finance tables have role-specific read policies', () => {
   }
   assert.ok(ledger.includes('revoke insert, update, delete on public.journal_entries'));
 });
+
+
+const team = await readFile(resolve(root, 'MVP/supabase/migrations/202611170002_atomic_sales_team_invitations.sql'), 'utf8');
+
+test('cash sales post invoice, stock, payment and journal as one database transaction', () => {
+  assert.ok(team.includes('create or replace function app_private.post_sale_with_payment('));
+  assert.ok(team.includes('app_private.post_sale('));
+  assert.ok(team.includes('app_private.post_payment('));
+  assert.ok(team.includes("if p_payment_channel <> 'credit' then"));
+  assert.ok(team.includes('create or replace function public.post_sale_with_payment('));
+  assert.ok(team.includes('security invoker'));
+  assert.ok(team.includes("raise exception 'A completed cash sale must have a positive total'"));
+});
+
+test('team invitations are email-bound, single-use, expiring and protected by RLS', () => {
+  assert.ok(team.includes('create table public.business_invitations'));
+  assert.ok(team.includes('alter table public.business_invitations enable row level security'));
+  assert.ok(team.includes('create policy business_invitations_select_management'));
+  assert.ok(team.includes("email_confirmed_at is not null"));
+  assert.ok(team.includes('v_invitation.invitee_email <> v_user_email'));
+  assert.ok(team.includes("now() + interval '7 days'"));
+  assert.ok(team.includes('pg_advisory_xact_lock'));
+  assert.ok(team.includes('create or replace function app_private.accept_business_invitation('));
+  assert.ok(team.includes('create or replace function public.accept_business_invitation('));
+  assert.ok(team.includes('create or replace function app_private.update_business_member('));
+  assert.ok(team.includes('create or replace function app_private.get_business_team('));
+  assert.ok(team.includes('create or replace function app_private.list_business_invitations('));
+  assert.ok(!/create or replace function public\\.[\\s\\S]*?security definer/i.test(team));
+  assert.ok(team.includes('revoke all on function public.accept_business_invitation(uuid) from public, anon'));
+});

@@ -6,6 +6,7 @@ on:
       - build/hesabu-ledger-mvp
       - build/platform-foundation
       - build/hesabu-mvp-cloud-foundation
+      - feature/atomic-ledger-team-access
   pull_request:
     branches:
       - main
@@ -64,6 +65,8 @@ jobs:
           create schema auth;
           create table auth.users (
             id uuid primary key,
+            email text unique,
+            email_confirmed_at timestamptz,
             raw_user_meta_data jsonb not null default '{}'::jsonb
           );
           create function auth.uid()
@@ -76,10 +79,12 @@ jobs:
           grant usage on schema auth to anon, authenticated, service_role;
           grant execute on function auth.uid() to anon, authenticated, service_role;
           SQL
-      - name: Apply Hesabu foundation and operational migrations
+      - name: Apply Hesabu migrations
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611160001_mvp_foundation.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611160002_operational_ledger.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611170001_performance_indexes_and_policy_initplan.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611170002_atomic_sales_team_invitations.sql
       - name: Run tenant and ledger integration tests
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/tests/tenant_isolation.sql
@@ -94,7 +99,7 @@ jobs:
               'products','suppliers','invoices','invoice_items','payments',
               'unmatched_receipts','expenses','purchase_orders','purchase_order_items',
               'inventory_movements','cash_movements','journal_entries','journal_lines',
-              'integration_events','digest_delivery_logs'
+              'integration_events','digest_delivery_logs','business_invitations'
             ];
           begin
             foreach t in array required_tables loop
@@ -118,6 +123,40 @@ jobs:
                 and not p.prosecdef
             ) then
               raise exception 'Public post_sale wrapper must be SECURITY INVOKER';
+            end if;
+            if not exists (
+              select 1 from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public'
+                and p.proname = 'post_sale_with_payment'
+                and not p.prosecdef
+            ) then
+              raise exception 'Public post_sale_with_payment wrapper must be SECURITY INVOKER';
+            end if;
+            if not exists (
+              select 1 from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'app_private'
+                and p.proname = 'post_sale_with_payment'
+                and p.prosecdef
+            ) then
+              raise exception 'Private post_sale_with_payment implementation must be SECURITY DEFINER';
+            end if;
+            if has_function_privilege('anon', 'public.post_sale_with_payment(uuid,text,text,date,numeric,text,text,jsonb)', 'EXECUTE') then
+              raise exception 'Anonymous role must not execute post_sale_with_payment';
+            end if;
+            if not has_function_privilege('authenticated', 'public.post_sale_with_payment(uuid,text,text,date,numeric,text,text,jsonb)', 'EXECUTE') then
+              raise exception 'Authenticated role must execute post_sale_with_payment';
+            end if;
+            if not exists (
+              select 1 from pg_class c
+              join pg_namespace n on n.oid = c.relnamespace
+              where n.nspname = 'public' and c.relname = 'business_invitations' and c.relrowsecurity
+            ) then
+              raise exception 'Business invitations must have RLS enabled';
+            end if;
+            if has_table_privilege('anon', 'public.business_invitations', 'SELECT') then
+              raise exception 'Anonymous role must not read business invitations';
             end if;
             if not exists (
               select 1 from pg_proc p
