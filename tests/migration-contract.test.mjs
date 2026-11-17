@@ -121,3 +121,10 @@ test('membership rows cannot be written directly from PostgREST', () => {
   assert.ok(team.includes('create or replace function app_private.update_business_member('));
   assert.ok(team.includes('create or replace function app_private.accept_business_invitation('));
 });
+
+
+const invitationIndexes = await readFile(resolve(root, 'MVP/supabase/migrations/202611170003_business_invitation_fk_indexes.sql'), 'utf8');
+test('team invitation foreign keys are indexed for business growth', () => {
+  assert.ok(invitationIndexes.includes('business_invitations_accepted_user_id_idx'));
+  assert.ok(invitationIndexes.includes('business_invitations_created_by_idx'));
+});
