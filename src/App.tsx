@@ -1071,10 +1071,6 @@ function AuthPage({
             <div className="auth-preferences-heading"><strong>How should Hesabu support your daily work?</strong><small>These options work together. Manual entry is always available.</small></div>
             <div className="auth-preference-manual"><span><strong>Manual records</strong><small>Record sales, payments, expenses and stock yourself.</small></span><span>Always on</span></div>
             <label className="auth-preference-option">
-              <input type="checkbox" checked={aiAssistantEnabled} onChange={event => setAiAssistantEnabled(event.target.checked)} />
-              <span><strong>AI assistant · planned</strong><small>Register your interest. This release provides rules-based business summaries; AI chat is not connected yet.</small></span>
-            </label>
-            <label className="auth-preference-option">
               <input type="checkbox" checked={whatsappDigestEnabled} onChange={event => setWhatsappDigestEnabled(event.target.checked)} />
               <span><strong>WhatsApp daily digest</strong><small>Prepare a daily business summary for WhatsApp.</small></span>
             </label>
@@ -1271,22 +1267,20 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
   return <div className="page-stack">
     <div className="overview-welcome">
-      <div><div className="eyebrow">BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Here is what needs your attention today.</p></div>
-      <div className="overview-welcome-actions">
-        <span className="date-chip"><CalendarDays size={14} /> {dateLabel(today())}</span>
-        <Button onClick={onCreateSale}><Plus size={15} /> Record sale</Button>
-      </div>
+      <div><div className="eyebrow">BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Your business, at a glance.</p></div>
+      <div className="overview-welcome-actions"><span className="date-chip"><CalendarDays size={14} /> {dateLabel(today())}</span></div>
     </div>
-    <section className="business-overview-panel" aria-label="Quick actions">
-      <div className="business-overview-top">
-        <div><span className="business-overview-kicker">YOUR BUSINESS</span><h3>Quick actions</h3><p>Keep your daily work moving.</p></div>
+    <section className="finance-balance-hero" aria-label="Business balance">
+      <div className="finance-balance-top">
+        <div><span>Total business balance</span><small>Cash, M-Pesa, bank and card records</small></div>
+        <span className="finance-balance-mark"><Wallet size={20} /></span>
       </div>
-      <div className="business-quick-actions" aria-label="Quick actions">
-        <button type="button" onClick={onCreateSale}><span className="quick-action-icon"><Receipt size={19} /></span><strong>Record a sale</strong><small>Enter items sold</small></button>
-        <button type="button" onClick={onRecordExpense}><span className="quick-action-icon"><TrendingDown size={19} /></span><strong>Add expense</strong><small>Record money spent</small></button>
-        <button type="button" onClick={onRecordPayment}><span className="quick-action-icon"><Wallet size={19} /></span><strong>Receive payment</strong><small>Update a balance</small></button>
-        <button type="button" onClick={onCreatePurchase}><span className="quick-action-icon"><ShoppingCart size={19} /></span><strong>Buy stock</strong><small>Record stock bought</small></button>
-        <button type="button" onClick={onQuickStock}><span className="quick-action-icon"><Package size={19} /></span><strong>Update inventory</strong><small>Change stock levels</small></button>
+      <strong className="finance-balance-value">{money(metrics.cashPosition)}</strong>
+      <div className="finance-balance-actions" aria-label="Quick business actions">
+        <button type="button" onClick={onCreateSale}><span><ArrowUpRight size={19} /></span><strong>Sale</strong></button>
+        <button type="button" onClick={onRecordExpense}><span><ArrowDownLeft size={19} /></span><strong>Expense</strong></button>
+        <button type="button" onClick={onRecordPayment}><span><Wallet size={19} /></span><strong>Payment</strong></button>
+        <button type="button" onClick={onCreatePurchase}><span><ShoppingCart size={19} /></span><strong>Buy stock</strong></button>
       </div>
     </section>
     <section className="daily-summary-section" aria-label="Daily business figures">
@@ -1298,19 +1292,19 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
           <small>Recorded customer sales</small>
         </div>
         <div className="daily-summary-item daily-summary-expenses">
+          <div className="daily-summary-top"><span>Payments received</span><span className="daily-summary-icon"><ArrowDownLeft size={16} /></span></div>
+          <strong>{money(metrics.collectedToday)}</strong>
+          <small>Customer payments recorded</small>
+        </div>
+        <div className="daily-summary-item daily-summary-stock">
           <div className="daily-summary-top"><span>Expenses today</span><span className="daily-summary-icon"><TrendingDown size={16} /></span></div>
           <strong>{money(sum(data.expenses.filter(expense => expense.date === today()).map(expense => expense.amount)))}</strong>
           <small>Business costs recorded</small>
         </div>
-        <div className="daily-summary-item daily-summary-stock">
-          <div className="daily-summary-top"><span>Items in stock</span><span className="daily-summary-icon"><Package size={16} /></span></div>
-          <strong>{data.products.reduce((total, product) => total + product.quantity, 0).toLocaleString('en-KE')}</strong>
-          <small>Across {data.products.length} products</small>
-        </div>
         <div className="daily-summary-item daily-summary-payables">
-          <div className="daily-summary-top"><span>Bills to pay</span><span className="daily-summary-icon"><Wallet size={16} /></span></div>
-          <strong>{money(metrics.payables)}</strong>
-          <small>Unpaid supplier bills</small>
+          <div className="daily-summary-top"><span>Stock alerts</span><span className="daily-summary-icon"><Package size={16} /></span></div>
+          <strong>{numberText(lowStock.length)}</strong>
+          <small>Products at reorder level</small>
         </div>
       </div>
     </section>
@@ -3226,17 +3220,18 @@ function App() {
       <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Secure cloud workspace · Synced with Hesabu</span></footer>
     </main>
 
-    <nav className="mobile-bottom-nav">
+    <nav className="mobile-bottom-nav" aria-label="Primary navigation">
       {[
-        { id: 'overview' as ModuleKey, label: 'Home', icon: LayoutDashboard },
-        { id: 'sales' as ModuleKey, label: 'Sales', icon: Receipt },
-        { id: 'payments' as ModuleKey, label: 'Money', icon: Wallet },
-        { id: 'inventory' as ModuleKey, label: 'Stock', icon: Package },
-        { id: 'more' as ModuleKey, label: 'More', icon: MoreHorizontal },
-      ].filter(item => allowedModules.includes(item.id)).map(item => {
-        const Icon = item.icon;
-        return <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span></button>;
-      })}
+        { id: 'overview' as ModuleKey, label: 'Home', icon: 'home' },
+        { id: 'sales' as ModuleKey, label: 'Sales', icon: 'receipt_long' },
+        { id: 'reports' as ModuleKey, label: 'Analytics', icon: 'monitoring' },
+        { id: 'payments' as ModuleKey, label: 'Payments', icon: 'account_balance_wallet' },
+        { id: 'more' as ModuleKey, label: 'More', icon: 'grid_view' },
+      ].filter(item => allowedModules.includes(item.id)).map(item =>
+        <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)} aria-current={active === item.id ? 'page' : undefined}>
+          <span className="material-symbols-rounded" aria-hidden="true">{item.icon}</span><span>{item.label}</span>
+        </button>
+      )}
     </nav>
 
     <FloatingAssistant
