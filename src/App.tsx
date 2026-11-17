@@ -2398,13 +2398,13 @@ function App() {
     business: { id: string; name: string; industry: string | null };
   } | null>(null);
   const [cloudRestoring, setCloudRestoring] = useState(true);
+  const [cloudWorkspaceReady, setCloudWorkspaceReady] = useState(false);
+  const [cloudWorkspaceLoading, setCloudWorkspaceLoading] = useState(false);
+  const [cloudWorkspaceError, setCloudWorkspaceError] = useState('');
   const [authNotice, setAuthNotice] = useState('');
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
-  const [previewAccess, setPreviewAccess] = useState(() => {
-    try { return localStorage.getItem('hesabu:preview-access:v1') === 'true'; }
-    catch { return false; }
-  });
+  const [previewAccess, setPreviewAccess] = useState(false);
   const [whatsappNumber, setWhatsAppNumber] = useState(() => {
     try { return localStorage.getItem('hesabu:whatsapp-number:v1') || ''; }
     catch { return ''; }
@@ -2413,7 +2413,7 @@ function App() {
     try { return localStorage.getItem('hesabu:theme:v2') === 'dark' ? 'dark' : 'light'; }
     catch { return 'light'; }
   });
-  const [activeMemberId, setActiveMemberId] = useState('team-001');
+  const [activeMemberId, setActiveMemberId] = useState('');
   const [userSwitcherOpen, setUserSwitcherOpen] = useState(false);
   const [active, setActive] = useState<ModuleKey>('overview');
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -2471,6 +2471,35 @@ function App() {
       .finally(() => { if (active) setCloudRestoring(false); });
     return () => { active = false; };
   }, []);
+
+  const reloadCloudWorkspace = async () => {
+    if (!cloudAccount) return;
+    setCloudWorkspaceLoading(true);
+    setCloudWorkspaceError('');
+    try {
+      const [workspace, settings] = await Promise.all([
+        getCloudWorkspace(cloudAccount.business.id, cloudAccount.user),
+        getBusinessSettings(cloudAccount.business.id),
+      ]);
+      setData(workspace);
+      setWhatsAppNumber(settings.whatsapp_recipient_phone || '');
+      const currentMember = workspace.teamMembers.find(member => member.id === cloudAccount.user.id);
+      setActiveMemberId(currentMember?.id || cloudAccount.user.id);
+      setCloudWorkspaceReady(true);
+    } catch (error) {
+      setCloudWorkspaceError(error instanceof Error ? error.message : 'The business workspace could not be loaded.');
+      setCloudWorkspaceReady(false);
+    } finally {
+      setCloudWorkspaceLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!cloudAccount) return;
+    setCloudWorkspaceReady(false);
+    void reloadCloudWorkspace();
+    // The business ID changes only when a user enters a different cloud workspace.
+  }, [cloudAccount?.business.id]);
 
   const handleCloudSignIn = async (email: string, password: string) => {
     const session = await signInWithPassword(email, password);
@@ -2536,13 +2565,17 @@ function App() {
   const handleCloudSignOut = async () => {
     await signOut();
     setCloudAccount(null);
+    setCloudWorkspaceReady(false);
+    setCloudWorkspaceError('');
     setAuthNotice('');
     setShowAuthScreen(false);
     setPreviewAccess(false);
     try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Keep the screen transition available. */ }
   };
 
-  useEffect(() => { saveWorkspace(data); }, [data]);
+  useEffect(() => {
+    if (!cloudAccount && previewAccess) saveWorkspace(data);
+  }, [data, cloudAccount, previewAccess]);
   useEffect(() => {
     try {
       if (whatsappNumber.trim()) localStorage.setItem('hesabu:whatsapp-number:v1', whatsappNumber.trim());
@@ -3049,11 +3082,11 @@ function App() {
 
   const activeMeta = moduleMeta[active];
   const enterPreview = () => {
-    try { localStorage.setItem('hesabu:preview-access:v1', 'true'); } catch { /* Session can still continue. */ }
+    setData(readWorkspace());
+    setActiveMemberId('team-001');
     setPreviewAccess(true);
   };
   const exitPreview = () => {
-    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Keep the screen transition available. */ }
     setUserSwitcherOpen(false);
     setPreviewAccess(false);
   };
@@ -3062,18 +3095,23 @@ function App() {
     notify('Add a WhatsApp destination', 'Enter your business WhatsApp number in Settings before preparing the daily summary.');
   };
   if (cloudRestoring) return <main className="auth-page"><section className="cloud-account-card cloud-loading-card"><span className="brand-mark"><HesabuMark /></span><h1>Hesabu</h1><p>Checking your secure business session…</p></section></main>;
-  if (cloudAccount) return <CloudAccountScreen
-    user={cloudAccount.user}
-    business={cloudAccount.business}
-    onSignOut={() => { void handleCloudSignOut(); }}
-    onPreview={() => { setCloudAccount(null); enterPreview(); }}
-  />;
-  if (!previewAccess && !showAuthScreen) return <PublicLandingPage
+  if (cloudAccount && !cloudWorkspaceReady) return <main className="auth-page">
+    <section className="cloud-account-card cloud-loading-card">
+      <span className="brand-mark"><HesabuMark /></span><h1>{cloudAccount.business.name}</h1>
+      {cloudWorkspaceError
+        ? <><p>{cloudWorkspaceError}</p><div className="modal-footer">
+            <Button variant="outline" onClick={() => { void handleCloudSignOut(); }}>Sign out</Button>
+            <Button onClick={() => { void reloadCloudWorkspace(); }} loading={cloudWorkspaceLoading}>Try again</Button>
+          </div></>
+        : <p>Loading your secure business records…</p>}
+    </section>
+  </main>;
+  if (!previewAccess && !showAuthScreen && !cloudAccount) return <PublicLandingPage
     onSignIn={() => { setAuthInitialMode('signin'); setShowAuthScreen(true); }}
     onCreateAccount={() => { setAuthInitialMode('signup'); setShowAuthScreen(true); }}
     onPreview={enterPreview}
   />;
-  if (!previewAccess) return <AuthPage
+  if (!previewAccess && !cloudAccount) return <AuthPage
     onPreview={enterPreview}
     onSignIn={handleCloudSignIn}
     onSignUp={handleCloudSignUp}
