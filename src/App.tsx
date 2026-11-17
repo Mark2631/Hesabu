@@ -3321,24 +3321,26 @@ function App() {
           <span className="topbar-divider" />
           <button className="topbar-date" onClick={() => notify('Workspace date', dateLabel(today()))}><CalendarDays size={15} /> <span>{dateLabel(today())}</span></button>
           <button className="notification-button" onClick={() => notify('Operational attention', data.products.filter(product => product.quantity <= product.reorderLevel).length + ' stock items are at or below reorder level.')}><Bell size={17} /><i /></button>
-          <button className="topbar-avatar" aria-label="Switch role preview" aria-expanded={userSwitcherOpen} onClick={() => setUserSwitcherOpen(value => !value)}><Initials name={activeMember?.name || data.profile.name} /></button>
-          {userSwitcherOpen && <div className="user-switcher-panel"><div className="user-switcher-heading"><strong>Preview workspace as</strong><small>Switch between the owner and staff views.</small></div>{data.teamMembers.filter(member => member.status === 'active').map(member => <button key={member.id} className={member.id === activeMember?.id ? 'user-switcher-active' : ''} onClick={() => { setActiveMemberId(member.id); setUserSwitcherOpen(false); setActive('overview'); setDialog(null); setSelectedInvoiceId(null); setSearch(''); }}><Initials name={member.name} /><span><strong>{member.name}</strong><small>{member.role}</small></span>{member.id === activeMember?.id && <span className="user-switcher-current">Current</span>}</button>)}<button type="button" className="user-switcher-logout" onClick={exitPreview}><LogOut size={15} /> Exit preview workspace</button></div>}
+          {previewAccess
+            ? <button className="topbar-avatar" aria-label="Switch role preview" aria-expanded={userSwitcherOpen} onClick={() => setUserSwitcherOpen(value => !value)}><Initials name={activeMember?.name || data.profile.name} /></button>
+            : <span className="topbar-avatar" aria-label="Signed-in user"><Initials name={activeMember?.name || data.profile.name} /></span>}
+          {previewAccess && userSwitcherOpen && <div className="user-switcher-panel"><div className="user-switcher-heading"><strong>Preview workspace as</strong><small>Switch between the owner and staff views.</small></div>{data.teamMembers.filter(member => member.status === 'active').map(member => <button key={member.id} className={member.id === activeMember?.id ? 'user-switcher-active' : ''} onClick={() => { setActiveMemberId(member.id); setUserSwitcherOpen(false); setActive('overview'); setDialog(null); setSelectedInvoiceId(null); setSearch(''); }}><Initials name={member.name} /><span><strong>{member.name}</strong><small>{member.role}</small></span>{member.id === activeMember?.id && <span className="user-switcher-current">Current</span>}</button>)}<button type="button" className="user-switcher-logout" onClick={exitPreview}><LogOut size={15} /> Exit preview workspace</button></div>}
         </div>
       </header>
 
       <div className="page-container">
         {active === 'overview' && <OverviewPage data={data} metrics={metrics} onCreateSale={() => setDialog({ kind: 'sale' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
-        {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} />}
+        {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} cloudMode={Boolean(cloudAccount)} />}
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
-        {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
+        {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} onAddSupplier={() => setDialog({ kind: 'supplier' })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} />}
-        {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} />}
-        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} />}
+        {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} />}
+        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
       </div>
-      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Preview workspace · Saved in this browser</span></footer>
+      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> {cloudAccount ? 'Secure cloud workspace · Synced with Hesabu' : 'Sample workspace · Saved in this browser'}</span></footer>
     </main>
 
     <nav className="mobile-bottom-nav">
@@ -3356,6 +3358,7 @@ function App() {
 
     <FloatingAssistant
       data={data}
+      cloudMode={Boolean(cloudAccount)}
       whatsappNumber={whatsappNumber}
       onWhatsAppNumberChange={setWhatsAppNumber}
       onRecordSale={() => setDialog({ kind: 'sale' })}
@@ -3363,12 +3366,13 @@ function App() {
       onUpdateStock={() => setDialog({ kind: 'stock-picker' })}
     />
 
-    {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} />}
-    {dialog?.kind === 'stk' && <StkDialog invoices={data.invoices} initialInvoiceId={dialog.invoiceId} onClose={() => setDialog(null)} onCreate={createPaymentRequest} />}
+    {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} cloudMode={Boolean(cloudAccount)} />}
+    {dialog?.kind === 'stk' && <StkDialog invoices={data.invoices} initialInvoiceId={dialog.invoiceId} onClose={() => setDialog(null)} onCreate={createPaymentRequest} cloudMode={Boolean(cloudAccount)} />}
     {dialog?.kind === 'receipt' && <ReceiptDialog onClose={() => setDialog(null)} onCreate={addUnmatchedReceipt} />}
     {dialog?.kind === 'match-receipt' && selectedReceipt && <MatchReceiptDialog receipt={selectedReceipt} invoices={data.invoices} onClose={() => setDialog(null)} onMatch={invoiceId => matchUnmatchedReceipt(selectedReceipt.id, invoiceId)} />}
     {dialog?.kind === 'expense' && <ExpenseDialog onClose={() => setDialog(null)} onCreate={createExpense} />}
     {dialog?.kind === 'product' && <ProductDialog onClose={() => setDialog(null)} onCreate={createProduct} />}
+    {dialog?.kind === 'supplier' && <SupplierDialog onClose={() => setDialog(null)} onCreate={addSupplier} />}
     {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} initialProductId={dialog.productId} initialQuantity={dialog.quantity} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
     {dialog?.kind === 'receive-purchase' && selectedPurchaseOrder && <ReceivePurchaseDialog order={selectedPurchaseOrder} onClose={() => setDialog(null)} onReceive={items => receivePurchaseOrder(selectedPurchaseOrder.id, items)} />}
     {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={amount => paySupplier(selectedSupplier.id, amount)} />}
