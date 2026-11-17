@@ -384,7 +384,6 @@ export interface CloudSupplierInput {
   phone: string;
   email: string;
   terms: string;
-  openingBalance: number;
 }
 
 export async function createCloudSupplier(businessId: string, input: CloudSupplierInput): Promise<void> {
@@ -400,8 +399,7 @@ export async function createCloudSupplier(businessId: string, input: CloudSuppli
       phone: input.phone.trim() || null,
       email: input.email.trim() || null,
       payment_terms: input.terms.trim() || null,
-      opening_balance: input.openingBalance,
-      current_balance: input.openingBalance,
+      opening_balance: 0,
       is_active: true,
     },
   });
@@ -732,4 +730,21 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
     nextInvoice: asNumber(business.next_invoice_number) || 1001,
     nextPurchaseOrder: asNumber(business.next_purchase_order_number) || 1,
   };
+}
+
+
+export async function saveCloudWhatsAppDestination(businessId: string, phone: string): Promise<void> {
+  const current = await validSession();
+  if (!current) throw new SupabaseRequestError('Sign in again to save the WhatsApp destination.', 401);
+  const query = new URLSearchParams({ business_id: 'eq.' + businessId });
+  const normalized = phone.trim();
+  await request<unknown>('rest/v1/business_settings?' + query.toString(), {
+    method: 'PATCH',
+    accessToken: current.access_token,
+    prefer: 'return=minimal',
+    body: {
+      whatsapp_recipient_phone: normalized || null,
+      whatsapp_digest_enabled: Boolean(normalized),
+    },
+  });
 }
