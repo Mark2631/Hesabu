@@ -15,7 +15,7 @@ export function businessDate(date: Date): string {
 
 /** Add calendar days to an ISO date without inheriting the device timezone. */
 export function addBusinessDays(source: string, amount: number): string {
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(source) || !Number.isInteger(amount)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(source) || !Number.isInteger(amount)) {
     throw new Error('A valid ISO date and whole-day offset are required.');
   }
   const date = new Date(source + 'T12:00:00.000Z');
@@ -29,7 +29,7 @@ export function formatBusinessDate(value: string): string {
 }
 
 export function formatBusinessDay(value: string, options: Intl.DateTimeFormatOptions): string {
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return '—';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return '—';
   const date = new Date(value + 'T12:00:00.000Z');
   return new Intl.DateTimeFormat('en-KE', { ...options, timeZone: 'UTC' }).format(date);
 }
