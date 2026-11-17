@@ -625,8 +625,8 @@ function ReceivePurchaseDialog({ order, onClose, onReceive }: {
   </Modal>;
 }
 
-function InvoiceDialog({ invoice, onClose, onRequestPayment }: {
-  invoice: Invoice; onClose: () => void; onRequestPayment: () => void;
+function InvoiceDialog({ invoice, onClose, onRequestPayment, cloudMode }: {
+  invoice: Invoice; onClose: () => void; onRequestPayment: () => void; cloudMode: boolean;
 }) {
   return <Modal title={invoice.number} detail="Invoice record and settlement history." onClose={onClose} size="lg">
     <div className="modal-body">
@@ -654,7 +654,7 @@ function InvoiceDialog({ invoice, onClose, onRequestPayment }: {
       </div>
       <div className="modal-footer">
         <Button variant="ghost" onClick={onClose}>Close</Button>
-        {invoiceBalance(invoice) > 0 && <Button onClick={onRequestPayment}><Send size={15} /> Request balance</Button>}
+        {invoiceBalance(invoice) > 0 && <Button onClick={onRequestPayment}><Send size={15} /> {cloudMode ? 'Record payment' : 'Request balance'}</Button>}
       </div>
     </div>
   </Modal>;
@@ -1066,7 +1066,7 @@ function AuthPage({
             <div className="auth-preference-manual"><span><strong>Manual records</strong><small>Record sales, payments, expenses and stock yourself.</small></span><span>Always on</span></div>
             <label className="auth-preference-option">
               <input type="checkbox" checked={aiAssistantEnabled} onChange={event => setAiAssistantEnabled(event.target.checked)} />
-              <span><strong>AI assistant</strong><small>Optional. Ask questions about sales, stock, expenses and balances when the AI service is connected.</small></span>
+              <span><strong>AI assistant · planned</strong><small>Register your interest. This release provides rules-based business summaries; AI chat is not connected yet.</small></span>
             </label>
             <label className="auth-preference-option">
               <input type="checkbox" checked={whatsappDigestEnabled} onChange={event => setWhatsappDigestEnabled(event.target.checked)} />
@@ -1176,12 +1176,12 @@ function FloatingAssistant({
     {panel === 'assistant' && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu assistant">
       <header className="assistant-drawer-header">
         <span className="assistant-drawer-mark"><HesabuMark /></span>
-        <span><strong>{cloudMode ? 'Hesabu insights' : 'Hesabu assistant'}</strong><small>{cloudMode ? 'Saved business records · Rules-based' : 'Answers from this workspace · Preview'}</small></span>
+        <span><strong>{cloudMode ? 'Business insights' : 'Hesabu assistant'}</strong><small>{cloudMode ? 'Saved business records · Rules-based' : 'Answers from this workspace · Preview'}</small></span>
         <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setPanel(null)}><X size={18} /></button>
       </header>
       <div className="assistant-drawer-body">
         <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>{cloudMode
-          ? 'I can summarise the sales, balances and stock records saved for this business.'
+          ? 'I can answer a small set of business questions using calculations from the records saved for this business.'
           : 'I can summarise the sales, balances and stock records currently saved in this browser.'}</p></div>
         <div className="assistant-suggestions">{suggestions.map(item => <button key={item} type="button" onClick={() => ask(item)}>{item}<ArrowRight size={13} /></button>)}</div>
         <div className="assistant-quick-actions">
@@ -1199,7 +1199,7 @@ function FloatingAssistant({
         <button type="submit" aria-label="Send question" disabled={!question.trim()}><ArrowUpRight size={18} /></button>
       </form>
       <p className="assistant-drawer-note">{cloudMode
-        ? 'These are fixed calculations against your saved records, not generative AI. AI assistance is not connected yet.'
+        ? 'These are fixed calculations against your saved records. Generative AI is not connected in this release.'
         : 'This preview uses saved records and fixed queries. Generative AI is not connected yet.'}</p>
     </section>}
     {panel === 'digest' && <section className="assistant-drawer digest-drawer" role="dialog" aria-modal="false" aria-label="Daily WhatsApp digest">
@@ -1867,7 +1867,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: {
         <Button variant="outline" onClick={() => window.print()}><FileText size={16} /> Save as PDF</Button>
         <Button onClick={() => openDailyDigestWhatsApp(data, whatsappNumber, onWhatsAppUnavailable)}><MessageCircle size={16} /> Prepare WhatsApp summary</Button>
       </div>
-      <p className="daily-digest-note">The workbook is generated from the latest records in this browser. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery requires the WhatsApp Business API and a secure server connection.</p>
+      <p className="daily-digest-note">The workbook is generated from the latest records loaded for this business. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery requires the WhatsApp Business API and a secure server connection.</p>
     </SectionCard>
     <div className="metric-grid metric-grid-six compact-metrics">
       <MetricCard label="Sales recorded" value={money(sales)} note={filteredInvoices.length + ' invoices · ' + days + ' days'} icon={TrendingUp} tone="green" />
@@ -3023,6 +3023,10 @@ function App() {
 
   const adjustStock = (productId: string, quantity: number, reason: string) => {
     const product = data.products.find(item => item.id === productId);
+    if (cloudAccount && !product) {
+      notify('Product not found', 'Refresh the inventory list and try the stock count again.');
+      return;
+    }
     if (cloudAccount && product) {
       const delta = quantity - product.quantity;
       if (delta === 0) {
