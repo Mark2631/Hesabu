@@ -7,9 +7,11 @@ on:
       - build/platform-foundation
       - build/hesabu-mvp-cloud-foundation
       - feature/atomic-ledger-team-access
+      - preview
   pull_request:
     branches:
       - main
+      - preview
 permissions:
   contents: read
 jobs:
@@ -86,6 +88,7 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611170001_performance_indexes_and_policy_initplan.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611170002_atomic_sales_team_invitations.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611170003_business_invitation_fk_indexes.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/migrations/202611170004_cloud_receipt_reconciliation.sql
       - name: Run tenant and ledger integration tests
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f MVP/supabase/tests/tenant_isolation.sql

@@ -59,3 +59,11 @@ A successful migration test in disposable PostgreSQL is not the same as an end-t
 - Google OAuth or other social sign-in providers.
 
 The application must not label these as active until their server-side integrations, secrets, provider configuration and end-to-end tests exist.
+
+
+## Cloud receipts and preview release
+
+- Manual M-Pesa/bank receipt capture is available in the cloud Payments workspace.
+- Receipt allocation uses an idempotent database posting function; duplicate retries cannot create a second payment.
+- Provider statement import, verified M-Pesa callbacks and automatic receipt ingestion remain separate provider integrations.
+- Preview branch: `preview`; production `main` remains unchanged by this release.
