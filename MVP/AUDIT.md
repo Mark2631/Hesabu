@@ -18,9 +18,9 @@ The browser client in `src/lib/supabase.ts` currently wraps Auth and PostgREST u
 - Business operations post through database functions with server-side role checks.
 - Sales, payments, purchasing and journal entries use database posting functions rather than direct browser-side table mutations.
 - The finance-first mobile dashboard and redesigned authentication shell are deployed to production.
-- The release branch adds a transaction that commits a cash sale, stock movements, payment and journal entries together.
-- The release branch adds database-backed team invitations and role management, with verified-email matching and invitation expiry.
-- Standard JavaScript tests and the branch's Vite production build have passed. The disposable PostgreSQL migration/tenant job is the remaining required gate before promotion.
+- The live database now commits cash sales, stock movements, payment and journal entries through one transaction.
+- The live database now has database-backed team invitations and role management, with verified-email matching, seven-day expiry, revocation and direct membership table writes blocked.
+- Standard JavaScript tests, the Vite production build, PostgreSQL migrations, invitation acceptance/role tests, atomic transaction rollback, tenant isolation and database exposure checks all passed in CI. The feature branch preview is READY.
 
 ## Known integration boundaries
 

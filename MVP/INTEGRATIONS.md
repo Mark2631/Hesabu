@@ -12,7 +12,7 @@ Last reviewed: 17 November 2026
 
 ## Team invitations
 
-**Current design:** an owner or manager creates a seven-day invitation link and shares it with the recipient. The token is stored as a single-use UUID. The recipient must sign in or create an account using the invited email address, verify that email through Supabase Auth, then redeem the token. The database checks role permissions, expiry, revocation, email match and previous acceptance.
+**Current design:** an owner or manager creates a seven-day invitation link and shares it with the recipient. The token is stored as a single-use UUID. The recipient must sign in or create an account using the invited email address, verify that email through Supabase Auth, then redeem the token. The database functions and invitation table are now deployed. The database checks role permissions, expiry, revocation, email match and previous acceptance.
 
 **Access boundaries:** only owners/managers can create or revoke invitations or change staff roles. Managers may manage Sales, Inventory and Finance staff; only owners may assign the Manager role. All active business members can view the team roster, but only owners/managers receive invitation tokens.
 

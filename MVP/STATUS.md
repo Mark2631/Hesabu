@@ -5,9 +5,9 @@ Last updated: 17 November 2026
 ## Release target
 
 - Repository: `Mark2631/Hesabu`
-- Active release branch: `feature/atomic-ledger-team-access`
+- Release branch: `feature/atomic-ledger-team-access` (all checks passed; ready for promotion)
 - Production application: [https://hesabu-seven.vercel.app](https://hesabu-seven.vercel.app)
-- Production frontend baseline on `main`: `3e0c13ee99b6bd10366189a0427ad0de0f9a8a3b`
+- Finance-first frontend redesign was deployed to production before this release
 - Supabase project: `waadpyucxpgvbkpzbnju` (Mark Sanchez Supabase account)
 - Currency and timezone defaults: KES and `Africa/Nairobi`
 
@@ -20,6 +20,8 @@ The live Supabase project is active. The following migrations were confirmed as 
 1. `202611160001_mvp_foundation`
 2. `202611160002_operational_ledger`
 3. `performance_indexes_and_policy_initplan`
+4. `atomic_sales_team_invitations`
+5. `business_invitation_fk_indexes`
 
 The public schema includes the business, team membership, settings, products, suppliers, invoices, invoice lines, payments, receipts, expenses, purchasing, inventory movements, cash movements, journals, integration events and digest delivery logs. RLS is enabled on the business tables. The security advisor returned no lints at the last check.
 
@@ -31,7 +33,7 @@ The application reads and writes persisted cloud records for the core operationa
 - Database-enforced role changes and invitation revocation.
 - Roster visibility for business members while invitation tokens remain restricted to owners and managers.
 
-The new migration has not yet been applied to the live Supabase project in this documentation snapshot. The CI PostgreSQL job validates it before live application.
+The atomic sales/team invitation migration and its foreign-key index migration have both been applied to the live Supabase project. The CI PostgreSQL job also passed the full migration, tenant-isolation, invitation, membership-write and ledger rollback suite.
 
 ## Current product behaviour
 
@@ -44,7 +46,7 @@ The new migration has not yet been applied to the live Supabase project in this 
 
 ## Verification boundaries
 
-The preview build has passed its TypeScript and Vite build in the current release branch. The standard JavaScript tests have passed. The PostgreSQL job must also complete the migration, tenant isolation, invitation and ledger tests before the branch is promoted.
+The release branch has passed the TypeScript and Vite production build, standard JavaScript tests, PostgreSQL migration suite, tenant isolation tests, invitation/role permission tests, atomic sale rollback tests and database exposure checks. The preview deployment is marked READY.
 
 A successful migration test in disposable PostgreSQL is not the same as an end-to-end test with a real email account, real business staff or a live merchant payment. No business data was present in the live project during the last schema inspection.
 
