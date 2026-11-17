@@ -90,7 +90,7 @@ select public.post_sale_with_payment(
     'product_id', :'alpha_product_id'::uuid,
     'quantity', 1
   ))
-) as alpha_atomic_invoice_id \\gset
+) as alpha_atomic_invoice_id \gset
 
 select 1 / case
   when (select amount_paid from public.invoices where id = :'alpha_atomic_invoice_id'::uuid) = 100
@@ -103,32 +103,37 @@ select 1 / case
 end;
 
 -- A zero-value cash sale must roll back invoice, payment, journal and stock changes.
-do $$
+select set_config('hesabu.test_alpha_business_id', :'alpha_business_id', false);
+select set_config('hesabu.test_alpha_product_id', :'alpha_product_id', false);
+
+do $
 declare
   v_invoice_count bigint;
   v_payment_count bigint;
   v_quantity numeric(14,3);
+  v_business_id uuid := current_setting('hesabu.test_alpha_business_id')::uuid;
+  v_product_id uuid := current_setting('hesabu.test_alpha_product_id')::uuid;
 begin
-  select count(*) into v_invoice_count from public.invoices where business_id = :'alpha_business_id'::uuid;
-  select count(*) into v_payment_count from public.payments where business_id = :'alpha_business_id'::uuid;
-  select quantity_on_hand into v_quantity from public.products where id = :'alpha_product_id'::uuid;
+  select count(*) into v_invoice_count from public.invoices where business_id = v_business_id;
+  select count(*) into v_payment_count from public.payments where business_id = v_business_id;
+  select quantity_on_hand into v_quantity from public.products where id = v_product_id;
   begin
     perform public.post_sale_with_payment(
-      :'alpha_business_id'::uuid, 'Zero total rollback test', null, null, 100,
+      v_business_id, 'Zero total rollback test', null, null, 100,
       'cash', 'manual',
-      jsonb_build_array(jsonb_build_object('product_id', :'alpha_product_id'::uuid, 'quantity', 1))
+      jsonb_build_array(jsonb_build_object('product_id', v_product_id, 'quantity', 1))
     );
     raise exception 'A zero-value cash sale unexpectedly succeeded';
   exception when sqlstate '22023' then
     null;
   end;
-  if (select count(*) from public.invoices where business_id = :'alpha_business_id'::uuid) <> v_invoice_count then
+  if (select count(*) from public.invoices where business_id = v_business_id) <> v_invoice_count then
     raise exception 'Failed atomic sale left an invoice behind';
   end if;
-  if (select count(*) from public.payments where business_id = :'alpha_business_id'::uuid) <> v_payment_count then
+  if (select count(*) from public.payments where business_id = v_business_id) <> v_payment_count then
     raise exception 'Failed atomic sale left a payment behind';
   end if;
-  if (select quantity_on_hand from public.products where id = :'alpha_product_id'::uuid) <> v_quantity then
+  if (select quantity_on_hand from public.products where id = v_product_id) <> v_quantity then
     raise exception 'Failed atomic sale changed stock';
   end if;
 end;
@@ -260,7 +265,7 @@ $$;
 
 select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', false);
 
-select public.accept_business_invitation(:'alpha_invite_token'::uuid) as accepted_alpha_business_id \\gset
+select public.accept_business_invitation(:'alpha_invite_token'::uuid) as accepted_alpha_business_id \gset
 
 select 1 / case
   when exists (
@@ -277,11 +282,14 @@ select 1 / case
   then 1 else 0
 end;
 
-do $$
+select set_config('hesabu.test_alpha_business_id', :'alpha_business_id', false);
+
+do $
 begin
   begin
     perform public.create_business_invitation(
-      :'alpha_business_id'::uuid, 'Another Person', 'other@example.test', 'finance'
+      current_setting('hesabu.test_alpha_business_id')::uuid,
+      'Another Person', 'other@example.test', 'finance'
     );
     raise exception 'A Sales member unexpectedly created an invitation';
   exception when insufficient_privilege then
