@@ -2,6 +2,7 @@ import type {
   AppData, BusinessProfile, CashMovement, Expense, IntegrationEvent, Invoice, JournalLine,
   Payment, PaymentChannel, PurchaseOrder, ReceiptRail, Supplier, TeamInvitation, TeamMember, TeamRole, UnmatchedReceipt,
 } from '../types';
+import { getWorkspaceReadPlan } from '../workspace-access';
 
 export interface SupabaseUser {
   id: string;
@@ -686,36 +687,75 @@ export async function saveCloudBusinessProfile(
 export async function getCloudWorkspace(businessId: string, user: SupabaseUser): Promise<AppData> {
   const current = await validSession();
   if (!current) throw new SupabaseRequestError('Your session has expired. Sign in again to load this business.', 401);
-  const [
-    businesses, productsRows, suppliersRows, invoiceRows, invoiceItemRows, paymentRows,
-    receiptRows, expenseRows, purchaseRows, purchaseItemRows, movementRows,
-    journalEntryRows, journalLineRows, eventRows, teamRows, invitationRows, profileRows,
-  ] = await Promise.all([
+
+  // Resolve the caller's role before reading operational tables. The RLS policies
+  // intentionally hide other teams' records; querying every table and hoping RLS
+  // returns [] would make valid Sales/Inventory/Finance accounts fail Promise.all.
+  const [businesses, teamRows, profileRows] = await Promise.all([
     request<DbRow[]>('rest/v1/businesses?select=id,name,legal_name,industry,phone,email,county,currency,next_invoice_number,next_purchase_order_number&id=eq.' + businessId, {
       accessToken: current.access_token,
     }),
-    businessRows('products', businessId, 'id,sku,name,category,unit,quantity_on_hand,reorder_level,cost_price,selling_price,supplier_id,updated_at,created_at', 'name.asc'),
-    businessRows('suppliers', businessId, 'id,name,phone,email,payment_terms,opening_balance,current_balance,is_active', 'name.asc'),
-    businessRows('invoices', businessId, 'id,invoice_number,customer_name,customer_phone,issue_date,due_date,subtotal,discount_amount,total_amount,amount_paid,payment_channel,status,source', 'issue_date.desc'),
-    businessRows('invoice_items', businessId, 'id,invoice_id,product_id,product_name,sku_snapshot,quantity,unit_price,unit_cost,line_total'),
-    businessRows('payments', businessId, 'id,invoice_id,amount,applied_amount,unapplied_amount,channel,status,origin,provider_reference,phone,note,received_at,confirmed_at', 'received_at.desc'),
-    businessRows('unmatched_receipts', businessId, 'id,reference,payer_name,payer_phone,amount,rail,source,status,received_at,matched_invoice_id', 'received_at.desc'),
-    businessRows('expenses', businessId, 'id,expense_date,category,description,amount,channel,reference', 'expense_date.desc'),
-    businessRows('purchase_orders', businessId, 'id,supplier_id,order_number,order_date,expected_date,status,subtotal,note', 'order_date.desc'),
-    businessRows('purchase_order_items', businessId, 'id,purchase_order_id,product_id,product_name,quantity_ordered,quantity_received,unit_cost,line_total'),
-    businessRows('cash_movements', businessId, 'id,movement_date,channel,direction,amount,description,reference,source_type', 'movement_date.desc'),
-    businessRows('journal_entries', businessId, 'id,journal_number,entry_date,description,reference,status', 'entry_date.desc'),
-    businessRows('journal_lines', businessId, 'id,journal_entry_id,account_name,debit,credit,description'),
-    businessRows('integration_events', businessId, 'id,event_type,source,status,reference,detail,occurred_at', 'occurred_at.desc'),
     request<DbRow[]>('rest/v1/rpc/get_business_team', {
-      method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
-    }),
-    request<DbRow[]>('rest/v1/rpc/list_business_invitations', {
       method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
     }),
     request<DbRow[]>('rest/v1/profiles?select=id,display_name&id=eq.' + user.id, {
       accessToken: current.access_token,
     }),
+  ]);
+
+  const self = teamRows.find(row => asText(row.user_id) === user.id && asText(row.status) === 'active');
+  if (!self) {
+    throw new SupabaseRequestError('This account is not an active member of the selected business.', 403);
+  }
+  const readPlan = getWorkspaceReadPlan(asText(self.role));
+
+  const [
+    productsRows, suppliersRows, invoiceRows, invoiceItemRows, paymentRows,
+    receiptRows, expenseRows, purchaseRows, purchaseItemRows, movementRows,
+    journalEntryRows, journalLineRows, eventRows, invitationRows,
+  ] = await Promise.all([
+    businessRows('products', businessId, 'id,sku,name,category,unit,quantity_on_hand,reorder_level,cost_price,selling_price,supplier_id,updated_at,created_at', 'name.asc'),
+    readPlan.purchasing
+      ? businessRows('suppliers', businessId, 'id,name,phone,email,payment_terms,opening_balance,current_balance,is_active', 'name.asc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.sales
+      ? businessRows('invoices', businessId, 'id,invoice_number,customer_name,customer_phone,issue_date,due_date,subtotal,discount_amount,total_amount,amount_paid,payment_channel,status,source', 'issue_date.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.sales
+      ? businessRows('invoice_items', businessId, 'id,invoice_id,product_id,product_name,sku_snapshot,quantity,unit_price,unit_cost,line_total')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.sales
+      ? businessRows('payments', businessId, 'id,invoice_id,amount,applied_amount,unapplied_amount,channel,status,origin,provider_reference,phone,note,received_at,confirmed_at', 'received_at.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.sales
+      ? businessRows('unmatched_receipts', businessId, 'id,reference,payer_name,payer_phone,amount,rail,source,status,received_at,matched_invoice_id', 'received_at.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.finance
+      ? businessRows('expenses', businessId, 'id,expense_date,category,description,amount,channel,reference', 'expense_date.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.purchasing
+      ? businessRows('purchase_orders', businessId, 'id,supplier_id,order_number,order_date,expected_date,status,subtotal,note', 'order_date.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.purchasing
+      ? businessRows('purchase_order_items', businessId, 'id,purchase_order_id,product_id,product_name,quantity_ordered,quantity_received,unit_cost,line_total')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.finance
+      ? businessRows('cash_movements', businessId, 'id,movement_date,channel,direction,amount,description,reference,source_type', 'movement_date.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.finance
+      ? businessRows('journal_entries', businessId, 'id,journal_number,entry_date,description,reference,status', 'entry_date.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.finance
+      ? businessRows('journal_lines', businessId, 'id,journal_entry_id,account_name,debit,credit,description')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.management
+      ? businessRows('integration_events', businessId, 'id,event_type,source,status,reference,detail,occurred_at', 'occurred_at.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.management
+      ? request<DbRow[]>('rest/v1/rpc/list_business_invitations', {
+          method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
+        })
+      : Promise.resolve([] as DbRow[]),
   ]);
 
   const business = businesses[0];

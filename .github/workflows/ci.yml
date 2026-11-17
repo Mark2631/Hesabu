@@ -7,6 +7,7 @@ on:
       - build/platform-foundation
       - build/hesabu-mvp-cloud-foundation
       - feature/atomic-ledger-team-access
+      - feat/exhibition-hardening
       - preview
   pull_request:
     branches:
