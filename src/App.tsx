@@ -857,11 +857,10 @@ function HesabuMark({ className = '' }: { className?: string }) {
 }
 
 function PublicLandingPage({
-  onSignIn, onCreateAccount, onPreview,
+  onSignIn, onCreateAccount,
 }: {
   onSignIn: () => void;
   onCreateAccount: () => void;
-  onPreview: () => void;
 }) {
   return <div className="public-site">
     <header className="public-header">
@@ -891,7 +890,6 @@ function PublicLandingPage({
           <p>Hesabu brings daily sales, payments, stock, expenses and customer balances into one clear business record. Spend less time chasing scattered notes and more time making informed decisions.</p>
           <div className="public-hero-actions">
             <button type="button" className="public-primary-action" onClick={onCreateAccount}>Create your business account <ArrowRight size={16} /></button>
-            <button type="button" className="public-secondary-action" onClick={onPreview}>Explore the sample workspace</button>
           </div>
           <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
         </div>
@@ -969,7 +967,7 @@ function PublicLandingPage({
         </div>
         <div className="public-footer-group"><strong>Product</strong><a href="#product">Sales and payments</a><a href="#product">Stock and purchasing</a><a href="#product">Reports and digest</a></div>
         <div className="public-footer-group"><strong>Learn</strong><a href="#how-it-works">How it works</a><a href="#businesses">Who Hesabu serves</a><a href="#trust">Your records</a></div>
-        <div className="public-footer-group"><strong>Your account</strong><button type="button" onClick={onSignIn}>Sign in</button><button type="button" onClick={onCreateAccount}>Create a business account</button><button type="button" onClick={onPreview}>Explore sample data</button></div>
+        <div className="public-footer-group"><strong>Your account</strong><button type="button" onClick={onSignIn}>Sign in</button><button type="button" onClick={onCreateAccount}>Create a business account</button></div>
       </div>
       <div className="public-footer-bottom"><span>© 2026 Hesabu. Built for business operations in Kenya.</span><span>Product information is subject to change as integrations are completed.</span></div>
     </footer>
@@ -977,9 +975,8 @@ function PublicLandingPage({
 }
 
 function AuthPage({
-  onPreview, onSignIn, onSignUp, initialMessage, initialMode, onBack,
+  onSignIn, onSignUp, initialMessage, initialMode, onBack,
 }: {
-  onPreview: () => void;
   onSignIn: (email: string, password: string) => Promise<void>;
   onSignUp: (input: SignUpInput) => Promise<'confirm_email' | void>;
   initialMessage?: string;
@@ -1086,9 +1083,7 @@ function AuthPage({
           <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
         </form>
         {message && <p className="auth-message" role="status">{message}</p>}
-        <div className="auth-divider"><span>OR</span></div>
-        <Button variant="outline" block onClick={onPreview}>Explore the sample workspace <ArrowRight size={15} /></Button>
-        <p className="auth-footnote">The sample workspace is stored only in this browser. Sign-in creates a separate cloud account.</p>
+        <p className="auth-footnote">Your business records are stored in your secure Hesabu account and are separate from every other business.</p>
       </div>
       <aside className="auth-aside">
         <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">BUSINESS OPERATIONS</span></div>
@@ -3112,28 +3107,7 @@ function App() {
     }));
   };
 
-  const resetDemo = () => {
-    if (cloudAccount) {
-      notify('Cloud records are protected', 'Sample data reset is not available in a real business workspace.');
-      return;
-    }
-    if (!window.confirm('Reset this browser to the original Hesabu demo workspace? Current local demo changes will be lost.')) return;
-    const fresh = makeDemoData();
-    setData(fresh);
-    setDialog(null);
-    notify('Demo workspace reset', 'The original sample records have been restored.');
-  };
-
   const activeMeta = moduleMeta[active];
-  const enterPreview = () => {
-    setData(readWorkspace());
-    setActiveMemberId('team-001');
-    setPreviewAccess(true);
-  };
-  const exitPreview = () => {
-    setUserSwitcherOpen(false);
-    setPreviewAccess(false);
-  };
   const requestWhatsAppDestination = () => {
     navigate('settings');
     notify('Add a WhatsApp destination', 'Enter your business WhatsApp number in Settings before preparing the daily summary.');
@@ -3150,13 +3124,11 @@ function App() {
         : <p>Loading your secure business records…</p>}
     </section>
   </main>;
-  if (!previewAccess && !showAuthScreen && !cloudAccount) return <PublicLandingPage
+  if (!showAuthScreen && !cloudAccount) return <PublicLandingPage
     onSignIn={() => { setAuthInitialMode('signin'); setShowAuthScreen(true); }}
     onCreateAccount={() => { setAuthInitialMode('signup'); setShowAuthScreen(true); }}
-    onPreview={enterPreview}
   />;
-  if (!previewAccess && !cloudAccount) return <AuthPage
-    onPreview={enterPreview}
+  if (!cloudAccount) return <AuthPage
     onSignIn={handleCloudSignIn}
     onSignUp={handleCloudSignUp}
     initialMessage={authNotice}
@@ -3190,7 +3162,7 @@ function App() {
       {!sidebarCollapsed && <div className="sidebar-bottom">
         <div className="sidebar-help"><div><span className="sidebar-help-mark">H</span><strong>Built for the whole business</strong></div><p>Keep sales, stock and purchasing in sync.</p><button onClick={() => navigate('reports')}>View performance <ArrowRight size={12} /></button></div>
         <div className="sidebar-profile" onClick={() => navigate('settings')} role="button" tabIndex={0}>
-          <Initials name={activeMember?.name || data.profile.name} /><span><strong>{activeMember?.name || data.profile.name}</strong><small>{activeMember?.role || 'Owner'} · role preview</small></span><MoreHorizontal size={17} />
+          <Initials name={activeMember?.name || data.profile.name} /><span><strong>{activeMember?.name || data.profile.name}</strong><small>{activeMember?.role || 'Owner'}</small></span><MoreHorizontal size={17} />
         </div>
       </div>}
     </aside>
@@ -3208,10 +3180,7 @@ function App() {
           <span className="topbar-divider" />
           <button className="topbar-date" onClick={() => notify('Workspace date', dateLabel(today()))}><CalendarDays size={15} /> <span>{dateLabel(today())}</span></button>
           <button className="notification-button" onClick={() => notify('Operational attention', data.products.filter(product => product.quantity <= product.reorderLevel).length + ' stock items are at or below reorder level.')}><Bell size={17} /><i /></button>
-          {previewAccess
-            ? <button className="topbar-avatar" aria-label="Switch role preview" aria-expanded={userSwitcherOpen} onClick={() => setUserSwitcherOpen(value => !value)}><Initials name={activeMember?.name || data.profile.name} /></button>
-            : <span className="topbar-avatar" aria-label="Signed-in user"><Initials name={activeMember?.name || data.profile.name} /></span>}
-          {previewAccess && userSwitcherOpen && <div className="user-switcher-panel"><div className="user-switcher-heading"><strong>Preview workspace as</strong><small>Switch between the owner and staff views.</small></div>{data.teamMembers.filter(member => member.status === 'active').map(member => <button key={member.id} className={member.id === activeMember?.id ? 'user-switcher-active' : ''} onClick={() => { setActiveMemberId(member.id); setUserSwitcherOpen(false); setActive('overview'); setDialog(null); setSelectedInvoiceId(null); setSearch(''); }}><Initials name={member.name} /><span><strong>{member.name}</strong><small>{member.role}</small></span>{member.id === activeMember?.id && <span className="user-switcher-current">Current</span>}</button>)}<button type="button" className="user-switcher-logout" onClick={exitPreview}><LogOut size={15} /> Exit preview workspace</button></div>}
+          <span className="topbar-avatar" aria-label="Signed-in user"><Initials name={activeMember?.name || data.profile.name} /></span>
         </div>
       </header>
 
@@ -3227,7 +3196,7 @@ function App() {
         {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
       </div>
-      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> {cloudAccount ? 'Secure cloud workspace · Synced with Hesabu' : 'Sample workspace · Saved in this browser'}</span></footer>
+      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Secure cloud workspace · Synced with Hesabu</span></footer>
     </main>
 
     <nav className="mobile-bottom-nav">
