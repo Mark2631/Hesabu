@@ -430,6 +430,14 @@ const asNumber = (value: unknown) => {
 
 const asText = (value: unknown, fallback = '') => typeof value === 'string' ? value : fallback;
 
+const receiptRailLabels: Record<string, ReceiptRail> = {
+  till_paybill: 'Till / PayBill',
+  pochi: 'Pochi la Biashara',
+  send_money: 'Send Money to business',
+  bank_transfer: 'Bank transfer',
+  manual_mpesa: 'Manual M-Pesa receipt',
+};
+
 async function businessRows<T extends DbRow>(
   table: string,
   businessId: string,
@@ -787,7 +795,7 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
     .map(row => ({
       id: asText(row.id), reference: asText(row.reference),
       payer: asText(row.payer_name), phone: asText(row.payer_phone),
-      amount: asNumber(row.amount), rail: asText(row.rail, 'Manual M-Pesa receipt') as UnmatchedReceipt['rail'],
+      amount: asNumber(row.amount), rail: receiptRailLabels[asText(row.rail)] ?? 'Manual M-Pesa receipt',
       receivedAt: asText(row.received_at), source: asText(row.source, 'manual') as UnmatchedReceipt['source'],
     }));
 
