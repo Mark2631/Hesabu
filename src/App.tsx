@@ -16,23 +16,23 @@ const EMPTY_WORKSPACE_DATA: AppData = {
     location: '', currency: 'KES', taxPin: '', industry: 'Other',
   },
   products: [], invoices: [], payments: [], unmatchedReceipts: [], expenses: [],
-  cashMovements: [], suppliers: [], purchaseOrders: [], teamMembers: [], journal: [],
+  cashMovements: [], suppliers: [], purchaseOrders: [], teamMembers: [], teamInvitations: [], journal: [],
   events: [], openingBalances: { cash: 0, mpesa: 0, bank: 0, inventory: 0 },
   nextInvoice: 1001, nextPurchaseOrder: 1,
 };
 import {
-  adjustCloudStock, completeAuthCallback, createBusiness, createCloudProduct, createCloudSupplier,
+  acceptCloudBusinessInvitation, adjustCloudStock, completeAuthCallback, createBusiness, createCloudProduct, createCloudSupplier, createCloudBusinessInvitation,
   createCloudPurchaseOrder, getBusinessSettings, getCloudWorkspace,
   listMyBusinesses, postCloudExpense, postCloudPayment, postCloudSale,
   postCloudSupplierPayment, receiveCloudPurchaseOrder, restoreCloudSession,
-  saveBusinessPreferences, saveCloudBusinessProfile, saveCloudWhatsAppDestination,
+  saveBusinessPreferences, saveCloudBusinessProfile, saveCloudWhatsAppDestination, updateCloudBusinessMember, revokeCloudBusinessInvitation,
   signInWithPassword, signOut, signUpWithPassword,
   type SignUpInput, type SupabaseUser,
 } from './lib/supabase';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
   NewPaymentInput, NewPurchaseInput, NewUnmatchedReceiptInput, Payment, PaymentChannel, Product,
-  PurchaseOrder, ReceiptRail, Supplier, TeamMember, TeamRole, UnmatchedReceipt,
+  PurchaseOrder, ReceiptRail, Supplier, TeamInvitation, TeamMember, TeamRole, UnmatchedReceipt,
 } from './types';
 
 type Notice = { title: string; detail?: string } | null;
