@@ -2500,34 +2500,59 @@ function App() {
 
   const createInvoice = (input: NewInvoiceInput) => {
     if (cloudAccount) {
-      const saleTotal = Math.max(0, sum(input.items.map(item => {
+      const saleTotal = Math.round((sum(input.items.map(item => {
         const product = data.products.find(candidate => candidate.id === item.productId);
         return product ? product.sellingPrice * item.quantity : 0;
-      })) - input.discount);
-      void runCloudMutation(async () => {
-        const invoiceId = await postCloudSale(cloudAccount.business.id, {
-          customer: input.customer,
-          phone: input.phone,
-          dueDate: input.dueDate,
-          discount: input.discount,
-          channel: input.channel,
-          source: input.source,
-          items: input.items,
-        });
-        if (input.channel !== 'credit' && saleTotal > 0) {
-          await postCloudPayment(cloudAccount.business.id, {
-            invoiceId,
-            amount: saleTotal,
-            channel: input.channel,
+      })) - input.discount) * 100) / 100;
+      if (input.channel !== 'credit' && saleTotal <= 0) {
+        notify('Sale total must be greater than zero', 'Choose a positive sale total or record the transaction as a credit sale.');
+        return;
+      }
+      if (cloudMutationLock.current) return;
+      cloudMutationLock.current = true;
+      void (async () => {
+        try {
+          const invoiceId = await postCloudSale(cloudAccount.business.id, {
+            customer: input.customer,
             phone: input.phone,
-            reference: '',
-            idempotencyKey: 'sale-payment:' + invoiceId,
-            note: 'Collected at point of sale',
+            dueDate: input.dueDate,
+            discount: input.discount,
+            channel: input.channel,
+            source: input.source,
+            items: input.items,
           });
+          if (input.channel !== 'credit') {
+            try {
+              await postCloudPayment(cloudAccount.business.id, {
+                invoiceId,
+                amount: saleTotal,
+                channel: input.channel,
+                phone: input.phone,
+                reference: '',
+                idempotencyKey: 'sale-payment:' + invoiceId,
+                note: 'Collected at point of sale',
+              });
+            } catch (paymentError) {
+              await reloadCloudWorkspace();
+              setDialog(null);
+              notify('Sale saved; payment needs checking',
+                'The invoice and stock movement were saved. The payment response was not confirmed. Check the invoice and payment register before trying to record that payment again.');
+              return;
+            }
+          }
+          const refreshed = await reloadCloudWorkspace();
+          setDialog(null);
+          notify('Sale recorded', refreshed
+            ? input.channel === 'credit'
+              ? 'The invoice, stock movement and accounting entries are saved to your business.'
+              : 'The sale, payment, stock movement and accounting entries are saved to your business.'
+            : 'The transaction was submitted. Refresh the workspace to verify the latest invoice and stock balances.');
+        } catch (error) {
+          notify('Sale could not be recorded', error instanceof Error ? error.message : 'The cloud operation failed. No sale success was reported.');
+        } finally {
+          cloudMutationLock.current = false;
         }
-      }, 'Sale recorded', input.channel === 'credit'
-        ? 'The invoice, stock movement and accounting entries are saved to your business.'
-        : 'The sale, payment, stock movement and accounting entries are saved to your business.');
+      })();
       return;
     }
     const requestedQuantities = new Map<string, number>();
