@@ -990,7 +990,6 @@ function AuthPage({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(false);
   const [whatsappDigestEnabled, setWhatsappDigestEnabled] = useState(false);
   const [whatsappRecipientPhone, setWhatsappRecipientPhone] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1023,7 +1022,7 @@ function AuthPage({
         }
         const result = await onSignUp({
           fullName, businessName, industry, phone, email, password,
-          aiAssistantEnabled, whatsappDigestEnabled, whatsappRecipientPhone,
+          aiAssistantEnabled: false, whatsappDigestEnabled, whatsappRecipientPhone,
         });
         if (result === 'confirm_email') {
           setMessage('Your account has been created. Check your email for the confirmation link, then return here to sign in.');
@@ -1280,7 +1279,7 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
         <button type="button" onClick={onCreateSale}><span><ArrowUpRight size={19} /></span><strong>Sale</strong></button>
         <button type="button" onClick={onRecordExpense}><span><ArrowDownLeft size={19} /></span><strong>Expense</strong></button>
         <button type="button" onClick={onRecordPayment}><span><Wallet size={19} /></span><strong>Payment</strong></button>
-        <button type="button" onClick={onCreatePurchase}><span><ShoppingCart size={19} /></span><strong>Buy stock</strong></button>
+        <button type="button" onClick={onQuickStock}><span><Package size={19} /></span><strong>Stock</strong></button>
       </div>
     </section>
     <section className="daily-summary-section" aria-label="Daily business figures">
