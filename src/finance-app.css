@@ -250,3 +250,7 @@ body{background:var(--canvas);color:var(--ink)}
   .report-bars-year { gap:4px; }
   .report-bars-year .report-bar-column>span { font-size:7px; letter-spacing:-.02em; }
 }
+
+.report-bars-month { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); }
+.report-bars-month .report-bar-column>span { font-size:10px; }
+@media(max-width:720px) { .report-bars-month .report-bar-column>span { font-size:9px; } }

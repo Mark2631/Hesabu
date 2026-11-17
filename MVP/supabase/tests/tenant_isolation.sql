@@ -305,6 +305,27 @@ select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222
 
 select public.accept_business_invitation(:'alpha_invite_token'::uuid) as accepted_alpha_business_id \gset
 
+-- A Sales member can read their own role, but not enumerate all team email addresses.
+select 1 / case
+  when exists (
+    select 1 from public.business_members
+    where business_id = :'alpha_business_id'::uuid
+      and user_id = auth.uid() and role = 'sales' and status = 'active'
+  ) then 1 else 0
+end;
+
+select set_config('hesabu.test_alpha_business_id', :'alpha_business_id', false);
+do $team_privacy$
+begin
+  begin
+    perform 1 from public.get_business_team(current_setting('hesabu.test_alpha_business_id')::uuid);
+    raise exception 'A Sales member unexpectedly listed business staff emails';
+  exception when insufficient_privilege then
+    null;
+  end;
+end;
+$team_privacy$;
+
 -- Sales can see and allocate a receipt. Retrying the same allocation is safe.
 select 1 / case
   when exists (

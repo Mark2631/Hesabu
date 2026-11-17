@@ -143,3 +143,9 @@ test('cloud receipt recording and allocation use restricted atomic ledger functi
   assert.ok(receipt.includes('security invoker'));
   assert.ok(receipt.includes('revoke all on function public.match_unmatched_receipt(uuid,uuid,uuid) from public, anon'));
 });
+
+const workspaceAccessMigration = await readFile(resolve(root, 'MVP/supabase/migrations/202611170005_workspace_access_inventory_history.sql'), 'utf8');
+test('the team roster RPC restricts email visibility to business management', () => {
+  assert.ok(workspaceAccessMigration.includes("has_business_role(p_business_id, array['owner','manager']::text[])"));
+  assert.ok(workspaceAccessMigration.includes('Only an owner or manager can view the business team'));
+});

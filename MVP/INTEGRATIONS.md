@@ -49,3 +49,8 @@ The atomic-sale and team-invitation release is merged into `main` and deployed t
 ## Google sign-in
 
 **Current status:** email/password only. Google OAuth is not configured. Add it only after the Supabase provider, redirect URLs, allowed origins and account-linking behaviour are configured and tested.
+
+
+## Inventory movement history
+
+Inventory reads stock movement records for Owner, Manager and Inventory roles. Sales velocity is based on recorded stock movements rather than customer invoices, allowing Inventory staff to perform replenishment work without customer-data access. The full team email directory is restricted to Owners and Managers.

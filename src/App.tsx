@@ -17,7 +17,7 @@ const EMPTY_WORKSPACE_DATA: AppData = {
     location: '', currency: 'KES', taxPin: '', industry: 'Other',
   },
   products: [], invoices: [], payments: [], unmatchedReceipts: [], expenses: [],
-  cashMovements: [], suppliers: [], purchaseOrders: [], teamMembers: [], teamInvitations: [], journal: [],
+  cashMovements: [], inventoryMovements: [], suppliers: [], purchaseOrders: [], teamMembers: [], teamInvitations: [], journal: [],
   events: [], openingBalances: { cash: 0, mpesa: 0, bank: 0, inventory: 0 },
   nextInvoice: 1001, nextPurchaseOrder: 1,
 };
@@ -1517,9 +1517,11 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
   const [view, setView] = useState<'all' | 'attention' | 'slow'>('all');
   const since = addDays(today(), -30);
   const soldByProduct = new Map<string, number>();
-  data.invoices.filter(invoice => invoice.date >= since).forEach(invoice => invoice.lines.forEach(line => {
-    soldByProduct.set(line.productId, (soldByProduct.get(line.productId) ?? 0) + line.quantity);
-  }));
+  data.inventoryMovements
+    .filter(movement => movement.type === 'sale' && dateKey(new Date(movement.occurredAt)) >= since)
+    .forEach(movement => {
+      soldByProduct.set(movement.productId, (soldByProduct.get(movement.productId) ?? 0) + Math.abs(movement.quantityDelta));
+    });
   const incomingByProduct = new Map<string, number>();
   data.purchaseOrders.filter(order => order.status === 'sent' || order.status === 'partially_received')
     .forEach(order => order.lines.forEach(line => {
@@ -1606,6 +1608,21 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
           </tr>;
         })}
       </DataTable> : <EmptyState title="No products match" body="Change the search or choose another stock view." />}
+    </SectionCard>
+    <SectionCard title="Stock movement history" detail="Opening stock, sales, deliveries, count adjustments and returns.">
+      {data.inventoryMovements.length ? <DataTable headers={['When', 'Product', 'Movement', 'Quantity', 'Reference', 'Note', 'Value']}>
+        {data.inventoryMovements.slice(0, 20).map(movement => <tr key={movement.id}>
+          <td>{dateTimeLabel(movement.occurredAt)}</td>
+          <td><strong>{movement.productName}</strong></td>
+          <td><StatusPill status={movement.type === 'sale' ? 'pending' : movement.type === 'adjustment' ? 'draft' : 'delivered'}>{movement.type.replaceAll('_', ' ')}</StatusPill></td>
+          <td className={movement.quantityDelta < 0 ? 'negative-text' : 'amount-cell'}>
+            {movement.quantityDelta > 0 ? '+' : ''}{new Intl.NumberFormat('en-KE', { maximumFractionDigits: 3 }).format(movement.quantityDelta)}
+          </td>
+          <td className="mono-text">{movement.reference || '—'}</td>
+          <td>{movement.note || movement.source || '—'}</td>
+          <td>{money(movement.totalCost)}</td>
+        </tr>)}
+      </DataTable> : <EmptyState title="No stock movements yet" body="Opening stock, sales, received deliveries and stock counts will be recorded here automatically." />}
     </SectionCard>
   </div>;
 }
@@ -1900,18 +1917,36 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
 }) {
   const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
   const todayDate = today();
+  const currentMonthStart = todayDate.slice(0, 7) + '-01';
   const yearStart = todayDate.slice(0, 4) + '-01-01';
-  const startDate = period === 'week' ? addDays(todayDate, -6) : period === 'month' ? addDays(todayDate, -29) : yearStart;
+  const startDate = period === 'week' ? addDays(todayDate, -6) : period === 'month' ? currentMonthStart : yearStart;
   const elapsedDays = Math.max(1, Math.floor((Date.parse(todayDate + 'T12:00:00Z') - Date.parse(startDate + 'T12:00:00Z')) / 86400000) + 1);
   const periodLabel = period === 'week' ? 'Weekly' : period === 'month' ? 'Monthly' : 'Yearly';
 
-  const dailyRows = (count: number) => Array.from({ length: count }, (_, index) => {
-    const date = addDays(todayDate, index - (count - 1));
-    const invoices = data.invoices.filter(invoice => invoice.date === date);
+  const weeklyRows = Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(todayDate, index - 6);
+    const invoices = data.invoices.filter(invoice => invoice.date === date && invoice.date <= todayDate);
     return {
       key: date,
-      label: period === 'week' ? formatBusinessDay(date, { weekday: 'short' }) : formatBusinessDay(date, { day: 'numeric' }),
+      label: formatBusinessDay(date, { weekday: 'short' }),
       title: dateLabel(date),
+      sales: sum(invoices.map(invoice => invoice.total)),
+      cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))),
+    };
+  });
+  const monthYear = Number(todayDate.slice(0, 4));
+  const monthNumber = Number(todayDate.slice(5, 7));
+  const monthDayCount = new Date(Date.UTC(monthYear, monthNumber, 0)).getUTCDate();
+  const monthlyWeekRows = Array.from({ length: Math.ceil(monthDayCount / 7) }, (_, index) => {
+    const firstDay = index * 7 + 1;
+    const lastDay = Math.min(monthDayCount, firstDay + 6);
+    const bucketStart = todayDate.slice(0, 7) + '-' + String(firstDay).padStart(2, '0');
+    const bucketEnd = todayDate.slice(0, 7) + '-' + String(lastDay).padStart(2, '0');
+    const invoices = data.invoices.filter(invoice => invoice.date >= bucketStart && invoice.date <= bucketEnd && invoice.date <= todayDate);
+    return {
+      key: bucketStart,
+      label: firstDay + '–' + lastDay,
+      title: dateLabel(bucketStart) + ' to ' + dateLabel(bucketEnd),
       sales: sum(invoices.map(invoice => invoice.total)),
       cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))),
     };
@@ -1919,7 +1954,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
   const monthlyRows = Array.from({ length: 12 }, (_, index) => {
     const month = String(index + 1).padStart(2, '0');
     const key = todayDate.slice(0, 4) + '-' + month;
-    const invoices = data.invoices.filter(invoice => invoice.date.slice(0, 7) === key);
+    const invoices = data.invoices.filter(invoice => invoice.date.slice(0, 7) === key && invoice.date <= todayDate);
     return {
       key,
       label: formatBusinessDay(key + '-01', { month: 'short' }),
@@ -1928,7 +1963,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
       cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))),
     };
   });
-  const dayRows = period === 'year' ? monthlyRows : dailyRows(period === 'week' ? 7 : 30);
+  const dayRows = period === 'week' ? weeklyRows : period === 'month' ? monthlyWeekRows : monthlyRows;
   const filteredInvoices = data.invoices.filter(invoice => invoice.date >= startDate && invoice.date <= todayDate);
   const sales = sum(filteredInvoices.map(invoice => invoice.total));
   const averageDailySales = sales / elapsedDays;
@@ -1979,13 +2014,13 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
       <MetricCard label="Gross margin" value={(sales > 0 ? (grossProfitInPeriod / sales) * 100 : 0).toFixed(1) + '%'} note="Gross profit as share of sales" icon={TrendingUp} tone="slate" />
       <MetricCard label="Units sold" value={numberText(unitsSoldInPeriod)} note="Across the selected period" icon={Package} tone="amber" />
     </div>
-    <SectionCard title="Trading performance" detail="Sales and cost of goods sold across the selected period." action={<div className="segmented-control">
+    <SectionCard title="Trading performance" detail="Sales and cost of goods sold grouped by day for the last week, week for the current month, or month for the current year." action={<div className="segmented-control">
       <button className={period === 'week' ? 'active' : ''} onClick={() => setPeriod('week')}>Weekly</button>
       <button className={period === 'month' ? 'active' : ''} onClick={() => setPeriod('month')}>Monthly</button>
       <button className={period === 'year' ? 'active' : ''} onClick={() => setPeriod('year')}>Yearly</button>
     </div>}>
       <div className="report-chart-legend"><span><i className="legend-dot legend-green" /> Sales</span><span><i className="legend-dot legend-blue" /> Cost of goods sold</span></div>
-      <div className={'report-bars ' + (period === 'year' ? 'report-bars-year' : '')}>
+      <div className={'report-bars ' + (period === 'year' ? 'report-bars-year' : period === 'month' ? 'report-bars-month' : '')}>
         {dayRows.map(row => <div className="report-bar-column" key={row.key} title={row.title + ': ' + money(row.sales)}>
           <div className="report-bar-space">
             <div className="report-bar report-bar-sales" style={{ height: Math.max(2, row.sales / max * 100) + '%' }} />
