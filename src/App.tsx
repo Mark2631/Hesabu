@@ -659,18 +659,23 @@ function InvoiceDialog({ invoice, onClose, onRequestPayment }: {
 }
 
 function SupplierPaymentDialog({ supplier, onClose, onPay }: {
-  supplier: Supplier; onClose: () => void; onPay: (amount: number) => void;
+  supplier: Supplier; onClose: () => void; onPay: (amount: number, channel: Exclude<PaymentChannel, 'credit'>) => void;
 }) {
   const [amount, setAmount] = useState(String(supplier.balance));
+  const [channel, setChannel] = useState<Exclude<PaymentChannel, 'credit'>>('bank');
   return <Modal title="Record supplier payment" detail={supplier.name} onClose={onClose}>
     <form className="modal-body" onSubmit={event => {
       event.preventDefault();
       const value = Number(amount);
-      if (value > 0 && value <= supplier.balance) onPay(value);
+      if (value > 0 && value <= supplier.balance) onPay(value, channel);
     }}>
       <div className="balance-hint"><span>Outstanding supplier balance</span><strong>{money(supplier.balance)}</strong></div>
       <Field label="Payment amount (KSh)" type="number" min={1} value={amount} onChange={setAmount} />
-      <div className="field-hint">This records the payment against the supplier’s outstanding balance.</div>
+      <SelectField label="Paid from" value={channel} onChange={value => setChannel(value as Exclude<PaymentChannel, 'credit'>)} options={[
+        { value: 'bank', label: 'Bank account' }, { value: 'mpesa', label: 'M-Pesa' },
+        { value: 'cash', label: 'Cash on hand' },
+      ]} />
+      <div className="field-hint">Choose the account the money was actually paid from.</div>
       <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={Number(amount) <= 0 || Number(amount) > supplier.balance}>Record payment</Button></div>
     </form>
   </Modal>;
