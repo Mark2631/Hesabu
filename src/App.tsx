@@ -1248,7 +1248,7 @@ function FloatingAssistant({
   </>;
 }
 
-function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice, onRecordExpense, onRecordPayment, onCreatePurchase, onQuickStock }: {
+function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice, onRecordExpense, onRecordPayment, onQuickStock }: {
   data: AppData; metrics: ReturnType<typeof getMetrics>; onCreateSale: () => void;
   onNavigate: (section: ModuleKey) => void; onSelectInvoice: (id: string) => void; onRecordExpense: () => void;
   onRecordPayment: () => void; onCreatePurchase: () => void; onQuickStock: () => void;
