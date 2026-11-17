@@ -1271,7 +1271,7 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
     </div>
     <section className="finance-balance-hero" aria-label="Business balance">
       <div className="finance-balance-top">
-        <div><span>Total business balance</span><small>Cash, M-Pesa, bank and card records</small></div>
+        <div><span>Business cash position</span><small>Recorded cash, M-Pesa, bank and card balances</small></div>
         <span className="finance-balance-mark"><Wallet size={20} /></span>
       </div>
       <strong className="finance-balance-value">{money(metrics.cashPosition)}</strong>
@@ -1715,7 +1715,7 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
         </DataTable>
       </>}
     </SectionCard>
-    <div className="accounting-note"><ShieldCheck size={16} /><span>Journal entries in this preview demonstrate the accounting model. Before relying on these records, account mappings, tax treatment, inventory costing and period-close controls need formal validation by an accountant.</span></div>
+    <div className="accounting-note"><ShieldCheck size={16} /><span>The register reflects records saved in this business workspace. Before using it for statutory reporting, validate tax treatment, inventory costing and period-close controls with your accountant.</span></div>
   </div>;
 }
 
@@ -2156,9 +2156,6 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
             <Button variant="outline" onClick={onOpenReports}>Open daily digest</Button>
           </div>
         </section>
-        {cloudMode && <section className="preference-block">
-          <div><strong>AI business assistant</strong><p>Planned, not connected in this release. Current business insights use fixed calculations from your saved records; they do not use generative AI.</p></div>
-        </section>}
       </div>}
     </SectionCard>
     {cloudMode
