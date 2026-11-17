@@ -3193,7 +3193,7 @@ function App() {
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} />}
         {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} />}
-        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} />}
+        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={() => {}} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
       </div>
       <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Secure cloud workspace · Synced with Hesabu</span></footer>
