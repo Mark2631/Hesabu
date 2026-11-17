@@ -12,7 +12,7 @@ import {
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import {
-  adjustCloudStock, createBusiness, createCloudProduct, createCloudSupplier,
+  adjustCloudStock, completeAuthCallback, createBusiness, createCloudProduct, createCloudSupplier,
   createCloudPurchaseOrder, getBusinessSettings, getCloudWorkspace,
   listMyBusinesses, postCloudExpense, postCloudPayment, postCloudSale,
   postCloudSupplierPayment, receiveCloudPurchaseOrder, restoreCloudSession,
@@ -2281,6 +2281,7 @@ function App() {
   useEffect(() => {
     let active = true;
     const restore = async () => {
+      await completeAuthCallback();
       const result = await restoreCloudSession();
       if (!active || !result) return;
       let membership = result.memberships.find(item => item.businesses?.id);
