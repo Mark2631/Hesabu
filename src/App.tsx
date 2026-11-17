@@ -1292,10 +1292,26 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
     <section className="daily-summary-section" aria-label="Daily business figures">
       <div className="daily-summary-heading"><h3>Business at a glance</h3><span>Today's figures</span></div>
       <div className="daily-summary-grid">
-        <div className="daily-summary-item"><span>Sales today</span><strong>{money(metrics.salesToday)}</strong></div>
-        <div className="daily-summary-item"><span>Expenses today</span><strong>{money(sum(data.expenses.filter(expense => expense.date === today()).map(expense => expense.amount)))}</strong></div>
-        <div className="daily-summary-item"><span>Items in stock</span><strong>{data.products.reduce((total, product) => total + product.quantity, 0).toLocaleString('en-KE')}</strong><small>Across {data.products.length} products</small></div>
-        <div className="daily-summary-item"><span>Bills to pay</span><strong>{money(metrics.payables)}</strong><small>Unpaid supplier bills</small></div>
+        <div className="daily-summary-item daily-summary-sales">
+          <div className="daily-summary-top"><span>Sales today</span><span className="daily-summary-icon"><TrendingUp size={16} /></span></div>
+          <strong>{money(metrics.salesToday)}</strong>
+          <small>Recorded customer sales</small>
+        </div>
+        <div className="daily-summary-item daily-summary-expenses">
+          <div className="daily-summary-top"><span>Expenses today</span><span className="daily-summary-icon"><TrendingDown size={16} /></span></div>
+          <strong>{money(sum(data.expenses.filter(expense => expense.date === today()).map(expense => expense.amount)))}</strong>
+          <small>Business costs recorded</small>
+        </div>
+        <div className="daily-summary-item daily-summary-stock">
+          <div className="daily-summary-top"><span>Items in stock</span><span className="daily-summary-icon"><Package size={16} /></span></div>
+          <strong>{data.products.reduce((total, product) => total + product.quantity, 0).toLocaleString('en-KE')}</strong>
+          <small>Across {data.products.length} products</small>
+        </div>
+        <div className="daily-summary-item daily-summary-payables">
+          <div className="daily-summary-top"><span>Bills to pay</span><span className="daily-summary-icon"><Wallet size={16} /></span></div>
+          <strong>{money(metrics.payables)}</strong>
+          <small>Unpaid supplier bills</small>
+        </div>
       </div>
     </section>
     <div className="content-grid content-grid-main">
@@ -3179,6 +3195,17 @@ function App() {
           <div className={'global-search ' + (searchOpen ? 'global-search-open' : '')}><Search size={15} /><input value={search} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)} onChange={event => setSearch(event.target.value)} placeholder="Search this register…" /></div>
           <span className="topbar-divider" />
           <button className="topbar-date" onClick={() => notify('Workspace date', dateLabel(today()))}><CalendarDays size={15} /> <span>{dateLabel(today())}</span></button>
+          <button
+            type="button"
+            className="appearance-toggle"
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-pressed={theme === 'dark'}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
+          >
+            {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+            <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
+          </button>
           <button className="notification-button" onClick={() => notify('Operational attention', data.products.filter(product => product.quantity <= product.reorderLevel).length + ' stock items are at or below reorder level.')}><Bell size={17} /><i /></button>
           <span className="topbar-avatar" aria-label="Signed-in user"><Initials name={activeMember?.name || data.profile.name} /></span>
         </div>
