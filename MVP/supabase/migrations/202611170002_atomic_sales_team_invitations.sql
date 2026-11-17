@@ -373,5 +373,10 @@ grant execute on function public.revoke_business_invitation(uuid,uuid) to authen
 grant execute on function public.get_business_team(uuid) to authenticated;
 grant execute on function public.list_business_invitations(uuid) to authenticated;
 
+-- Membership writes must go through the invitation and member-management RPCs.
+-- Direct PostgREST writes would otherwise bypass verified-email acceptance.
+revoke insert, update, delete on public.business_members from public, anon, authenticated;
+grant select on public.business_members to authenticated;
+
 notify pgrst, 'reload schema';
 commit;

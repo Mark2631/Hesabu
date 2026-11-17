@@ -114,3 +114,10 @@ test('team invitations are email-bound, single-use, expiring and protected by RL
   assert.ok(!/create or replace function public\.[\s\S]*?security definer/i.test(team));
   assert.ok(team.includes('revoke all on function public.accept_business_invitation(uuid) from public, anon'));
 });
+
+test('membership rows cannot be written directly from PostgREST', () => {
+  assert.ok(team.includes('revoke insert, update, delete on public.business_members from public, anon, authenticated'));
+  assert.ok(team.includes('grant select on public.business_members to authenticated'));
+  assert.ok(team.includes('create or replace function app_private.update_business_member('));
+  assert.ok(team.includes('create or replace function app_private.accept_business_invitation('));
+});

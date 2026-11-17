@@ -246,22 +246,36 @@ begin
 end;
 $$;
 
--- Owners cannot change their own role or bypass the append-only journal.
-do $$
-declare
+-- Clients cannot write membership rows directly; all changes go through RPCs.
+DO $membership_access$
+DECLARE
   v_business_id uuid;
   v_rows bigint;
-begin
-  select id into v_business_id from public.businesses where name = 'Alpha Test Shop';
-  update public.business_members
-  set role = 'manager'
-  where business_id = v_business_id and user_id = auth.uid();
-  get diagnostics v_rows = row_count;
-  if v_rows <> 0 then
-    raise exception 'Owner changed their own membership role';
-  end if;
-end;
-$$;
+BEGIN
+  SELECT id INTO v_business_id FROM public.businesses WHERE name = 'Alpha Test Shop';
+  BEGIN
+    UPDATE public.business_members
+    SET role = 'manager'
+    WHERE business_id = v_business_id AND user_id = auth.uid();
+    RAISE EXCEPTION 'A client unexpectedly changed membership directly';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+  BEGIN
+    INSERT INTO public.business_members (business_id, user_id, role, status)
+    VALUES (v_business_id, '22222222-2222-4222-8222-222222222222', 'sales', 'active');
+    RAISE EXCEPTION 'A client unexpectedly inserted membership directly';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+  SELECT count(*) INTO v_rows
+  FROM public.business_members
+  WHERE business_id = v_business_id AND user_id = auth.uid() AND role = 'owner';
+  IF v_rows <> 1 THEN
+    RAISE EXCEPTION 'Business owner membership was modified';
+  END IF;
+END;
+$membership_access$;
 
 select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', false);
 
