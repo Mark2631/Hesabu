@@ -86,7 +86,7 @@ export interface NewInvoiceInput {
   items: Array<{ productId: string; quantity: number }>; source: Invoice['source'];
 }
 export interface NewPaymentInput {
-  invoiceId: string; phone: string; amount: number; channel: PaymentChannel; origin: Payment['origin']; reference?: string;
+  invoiceId: string; phone: string; amount: number; channel: PaymentChannel; origin: Payment['origin']; reference?: string; idempotencyKey?: string;
 }
 export interface NewPurchaseInput {
   supplierId: string; expectedAt: string;
