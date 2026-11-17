@@ -67,3 +67,12 @@ The application must not label these as active until their server-side integrati
 - Receipt allocation uses an idempotent database posting function; duplicate retries cannot create a second payment.
 - Provider statement import, verified M-Pesa callbacks and automatic receipt ingestion remain separate provider integrations.
 - Preview branch: `preview`; production `main` remains unchanged by this release.
+
+
+## Exhibition hardening additions
+
+- Business-date calculations use the Africa/Nairobi timezone, independent of the phone's timezone.
+- Inventory displays auditable movement history for opening stock, sales, deliveries and adjustments.
+- Inventory sales velocity is calculated from stock movement entries, so Inventory staff do not need access to customer invoices.
+- Staff email rosters are restricted to Owners and Managers.
+- Analytics uses daily bars for the last week, weekly buckets for the current month, and monthly bars for the year.

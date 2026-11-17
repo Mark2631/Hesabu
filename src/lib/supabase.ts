@@ -1,6 +1,6 @@
 import type {
   AppData, BusinessProfile, CashMovement, Expense, IntegrationEvent, Invoice, JournalLine,
-  Payment, PaymentChannel, PurchaseOrder, ReceiptRail, Supplier, TeamInvitation, TeamMember, TeamRole, UnmatchedReceipt,
+  InventoryMovement, Payment, PaymentChannel, PurchaseOrder, ReceiptRail, Supplier, TeamInvitation, TeamMember, TeamRole, UnmatchedReceipt,
 } from '../types';
 import { getWorkspaceReadPlan } from '../workspace-access';
 
@@ -691,19 +691,19 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
   // Resolve the caller's role before reading operational tables. The RLS policies
   // intentionally hide other teams' records; querying every table and hoping RLS
   // returns [] would make valid Sales/Inventory/Finance accounts fail Promise.all.
-  const [businesses, teamRows, profileRows] = await Promise.all([
+  const [businesses, selfRows, profileRows] = await Promise.all([
     request<DbRow[]>('rest/v1/businesses?select=id,name,legal_name,industry,phone,email,county,currency,next_invoice_number,next_purchase_order_number&id=eq.' + businessId, {
       accessToken: current.access_token,
     }),
-    request<DbRow[]>('rest/v1/rpc/get_business_team', {
-      method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
+    request<DbRow[]>('rest/v1/business_members?select=user_id,role,status,created_at&business_id=eq.' + businessId + '&user_id=eq.' + user.id, {
+      accessToken: current.access_token,
     }),
     request<DbRow[]>('rest/v1/profiles?select=id,display_name&id=eq.' + user.id, {
       accessToken: current.access_token,
     }),
   ]);
 
-  const self = teamRows.find(row => asText(row.user_id) === user.id && asText(row.status) === 'active');
+  const self = selfRows.find(row => asText(row.user_id) === user.id && asText(row.status) === 'active');
   if (!self) {
     throw new SupabaseRequestError('This account is not an active member of the selected business.', 403);
   }
@@ -712,7 +712,7 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
   const [
     productsRows, suppliersRows, invoiceRows, invoiceItemRows, paymentRows,
     receiptRows, expenseRows, purchaseRows, purchaseItemRows, movementRows,
-    journalEntryRows, journalLineRows, eventRows, invitationRows,
+    inventoryMovementRows, journalEntryRows, journalLineRows, eventRows, teamRows, invitationRows,
   ] = await Promise.all([
     businessRows('products', businessId, 'id,sku,name,category,unit,quantity_on_hand,reorder_level,cost_price,selling_price,supplier_id,updated_at,created_at', 'name.asc'),
     readPlan.purchasing
@@ -742,6 +742,9 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
     readPlan.finance
       ? businessRows('cash_movements', businessId, 'id,movement_date,channel,direction,amount,description,reference,source_type', 'movement_date.desc')
       : Promise.resolve([] as DbRow[]),
+    (readPlan.inventory || readPlan.management)
+      ? businessRows('inventory_movements', businessId, 'id,product_id,movement_type,quantity_delta,unit_cost,total_cost,source_type,reference,note,movement_at', 'movement_at.desc')
+      : Promise.resolve([] as DbRow[]),
     readPlan.finance
       ? businessRows('journal_entries', businessId, 'id,journal_number,entry_date,description,reference,status', 'entry_date.desc')
       : Promise.resolve([] as DbRow[]),
@@ -750,6 +753,11 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
       : Promise.resolve([] as DbRow[]),
     readPlan.management
       ? businessRows('integration_events', businessId, 'id,event_type,source,status,reference,detail,occurred_at', 'occurred_at.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.management
+      ? request<DbRow[]>('rest/v1/rpc/get_business_team', {
+          method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
+        })
       : Promise.resolve([] as DbRow[]),
     readPlan.management
       ? request<DbRow[]>('rest/v1/rpc/list_business_invitations', {
@@ -780,6 +788,15 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
     costPrice: asNumber(row.cost_price), sellingPrice: asNumber(row.selling_price),
     supplierId: asText(row.supplier_id) || undefined,
     updatedAt: asText(row.updated_at, asText(row.created_at)).slice(0, 10),
+  }));
+  const productNames = new Map(products.map(product => [product.id, product.name]));
+  const inventoryMovements: InventoryMovement[] = inventoryMovementRows.map(row => ({
+    id: asText(row.id), productId: asText(row.product_id),
+    productName: productNames.get(asText(row.product_id)) ?? 'Product',
+    type: asText(row.movement_type, 'adjustment') as InventoryMovement['type'],
+    quantityDelta: asNumber(row.quantity_delta), unitCost: asNumber(row.unit_cost),
+    totalCost: asNumber(row.total_cost), source: asText(row.source_type),
+    reference: asText(row.reference), note: asText(row.note), occurredAt: asText(row.movement_at),
   }));
 
   const suppliers: Supplier[] = suppliersRows.filter(row => row.is_active !== false).map(row => ({
@@ -887,11 +904,19 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
   const memberRoles: Record<string, TeamRole> = {
     owner: 'Owner', manager: 'Manager', sales: 'Sales', inventory: 'Inventory', finance: 'Finance',
   };
-  const teamMembers: TeamMember[] = teamRows.map(row => ({
-    id: asText(row.user_id), name: asText(row.display_name, 'Team member'),
-    email: asText(row.email), role: memberRoles[asText(row.role)] ?? 'Sales',
-    status: asText(row.status) === 'active' ? 'active' : 'suspended',
-  }));
+  const teamMembers: TeamMember[] = readPlan.management
+    ? teamRows.map(row => ({
+        id: asText(row.user_id), name: asText(row.display_name, 'Team member'),
+        email: asText(row.email), role: memberRoles[asText(row.role)] ?? 'Sales',
+        status: asText(row.status) === 'active' ? 'active' : 'suspended',
+      }))
+    : [{
+        id: user.id,
+        name: asText(profileRow?.display_name, asText(user.user_metadata?.display_name, 'Team member')),
+        email: user.email ?? '',
+        role: memberRoles[asText(self.role)] ?? 'Sales',
+        status: 'active',
+      }];
   const teamInvitations: TeamInvitation[] = invitationRows.map(row => ({
     id: asText(row.id), name: asText(row.invitee_name, 'Team member'),
     email: asText(row.invitee_email),
@@ -912,7 +937,7 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
 
   return {
     profile, products, invoices, payments, unmatchedReceipts, expenses, suppliers,
-    purchaseOrders, teamMembers, teamInvitations, journal, events, cashMovements,
+    purchaseOrders, teamMembers, teamInvitations, journal, events, cashMovements, inventoryMovements,
     openingBalances: { cash: 0, mpesa: 0, bank: 0, inventory: 0 },
     nextInvoice: asNumber(business.next_invoice_number) || 1001,
     nextPurchaseOrder: asNumber(business.next_purchase_order_number) || 1,

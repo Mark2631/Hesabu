@@ -13,6 +13,12 @@ export interface Product {
   quantity: number; reorderLevel: number; costPrice: number; sellingPrice: number;
   supplierId?: string; updatedAt: string;
 }
+export type InventoryMovementType = 'opening' | 'sale' | 'purchase' | 'adjustment' | 'return' | 'production';
+export interface InventoryMovement {
+  id: string; productId: string; productName: string; type: InventoryMovementType;
+  quantityDelta: number; unitCost: number; totalCost: number;
+  source: string; reference: string; note: string; occurredAt: string;
+}
 export interface InvoiceLine {
   productId: string; name: string; sku: string; quantity: number;
   unitPrice: number; unitCost: number; lineTotal: number;
@@ -81,7 +87,7 @@ export interface CashMovement {
 }
 export interface AppData {
   profile: BusinessProfile; products: Product[]; invoices: Invoice[]; payments: Payment[];
-  unmatchedReceipts: UnmatchedReceipt[]; expenses: Expense[]; cashMovements: CashMovement[]; suppliers: Supplier[]; purchaseOrders: PurchaseOrder[]; teamMembers: TeamMember[]; teamInvitations?: TeamInvitation[];
+  unmatchedReceipts: UnmatchedReceipt[]; expenses: Expense[]; cashMovements: CashMovement[]; inventoryMovements: InventoryMovement[]; suppliers: Supplier[]; purchaseOrders: PurchaseOrder[]; teamMembers: TeamMember[]; teamInvitations?: TeamInvitation[];
   journal: JournalLine[]; events: IntegrationEvent[];
   openingBalances: { cash: number; mpesa: number; bank: number; inventory: number };
   nextInvoice: number; nextPurchaseOrder: number;
