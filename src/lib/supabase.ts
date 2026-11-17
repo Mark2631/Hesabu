@@ -1,7 +1,6 @@
 import type {
-  AppData, BusinessProfile, Expense, IntegrationEvent, Invoice, JournalLine,
-  Payment, PaymentChannel, PurchaseOrder, PurchaseLine, Supplier, TeamMember, TeamRole,
-  UnmatchedReceipt,
+  AppData, BusinessProfile, CashMovement, Expense, IntegrationEvent, Invoice, JournalLine,
+  Payment, PaymentChannel, PurchaseOrder, Supplier, TeamMember, TeamRole, UnmatchedReceipt,
 } from '../types';
 
 export interface SupabaseUser {
