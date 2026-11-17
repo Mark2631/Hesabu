@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
+import { addBusinessDays, businessDate, formatBusinessDate, formatBusinessDateTime, formatBusinessDay } from './business-time';
 const EMPTY_WORKSPACE_DATA: AppData = {
   profile: {
     name: 'Your business', legalName: '', owner: '', email: '', phone: '',
@@ -90,22 +91,11 @@ const money = (value: number) => new Intl.NumberFormat('en-KE', {
 }).format(Math.round(value || 0)).replace('KES', 'KSh');
 
 const numberText = (value: number) => new Intl.NumberFormat('en-KE', { maximumFractionDigits: 0 }).format(value || 0);
-const dateKey = (date: Date) => {
-  const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return shifted.toISOString().slice(0, 10);
-};
-const today = () => dateKey(new Date());
-const addDays = (source: string, amount: number) => {
-  const date = new Date(source + 'T12:00:00');
-  date.setDate(date.getDate() + amount);
-  return dateKey(date);
-};
-const dateLabel = (value: string) => new Date(value + 'T12:00:00').toLocaleDateString('en-KE', {
-  day: 'numeric', month: 'short', year: 'numeric',
-});
-const dateTimeLabel = (value: string) => new Date(value).toLocaleString('en-KE', {
-  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-});
+const dateKey = businessDate;
+const today = () => businessDate(new Date());
+const addDays = addBusinessDays;
+const dateLabel = (value: string) => formatBusinessDate(value);
+const dateTimeLabel = (value: string) => formatBusinessDateTime(value);
 const makeId = (prefix: string) => prefix + '-' + Math.random().toString(36).slice(2, 9).toUpperCase();
 const channelLabel = (channel: PaymentChannel) => ({
   mpesa: 'M-Pesa', cash: 'Cash', bank: 'Bank transfer', card: 'Card', credit: 'On credit',
@@ -1258,10 +1248,13 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
   onCreatePurchase: () => void; onQuickStock: () => void;
 }) {
   const chartDays = Array.from({ length: 7 }, (_, index) => addDays(today(), index - 6));
-  const chartValues = chartDays.map(day => role === 'Inventory'
-    ? sum(data.purchaseOrders.filter(order => order.createdAt === day).map(order => order.total))
-    : sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
-  const chartLabels = chartDays.map(day => new Date(day + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }));
+  const stockProducts = [...data.products].sort((a, b) => b.quantity - a.quantity).slice(0, 7);
+  const chartValues = role === 'Inventory'
+    ? stockProducts.map(product => product.quantity)
+    : chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
+  const chartLabels = role === 'Inventory'
+    ? stockProducts.map(product => product.name.length > 9 ? product.name.slice(0, 8) + '…' : product.name)
+    : chartDays.map(day => formatBusinessDay(day, { weekday: 'short' }));
   const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
   const zeroStock = data.products.filter(product => product.quantity === 0);
   const slowStock = data.products.filter(product => product.quantity > 0 && !data.invoices.some(invoice =>
@@ -1368,9 +1361,9 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
         </>}
       </div>
     </section>
-    <SectionCard title={role === 'Inventory' ? 'Purchasing trend' : 'Sales trend'} detail={role === 'Inventory' ? 'Purchase order value recorded over the last seven days.' : 'Recorded sales over the last seven days.'}>
-      <div className="chart-summary"><strong>{money(sum(chartValues))}</strong><span>Last 7 days</span></div>
-      <MiniBars values={chartValues} labels={chartLabels} />
+    <SectionCard title={role === 'Inventory' ? 'Stock by item' : 'Sales trend'} detail={role === 'Inventory' ? 'Current units on hand across the largest stock lines.' : 'Recorded sales over the last seven days.'}>
+      <div className="chart-summary"><strong>{role === 'Inventory' ? numberText(sum(chartValues)) + ' units' : money(sum(chartValues))}</strong><span>{role === 'Inventory' ? 'Top stock lines' : 'Last 7 days'}</span></div>
+      {chartValues.length ? <MiniBars values={chartValues} labels={chartLabels} /> : <EmptyState title="No stock items yet" body="Products will appear here after the first inventory item is added." />}
     </SectionCard>
     <div className="content-grid content-grid-main">
       {role === 'Sales' ? <SectionCard title="Customer follow-up" detail="Customer balances requiring attention.">
@@ -1909,7 +1902,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
   const todayDate = today();
   const yearStart = todayDate.slice(0, 4) + '-01-01';
   const startDate = period === 'week' ? addDays(todayDate, -6) : period === 'month' ? addDays(todayDate, -29) : yearStart;
-  const elapsedDays = Math.max(1, Math.floor((Date.parse(todayDate + 'T12:00:00') - Date.parse(startDate + 'T12:00:00')) / 86400000) + 1);
+  const elapsedDays = Math.max(1, Math.floor((Date.parse(todayDate + 'T12:00:00Z') - Date.parse(startDate + 'T12:00:00Z')) / 86400000) + 1);
   const periodLabel = period === 'week' ? 'Weekly' : period === 'month' ? 'Monthly' : 'Yearly';
 
   const dailyRows = (count: number) => Array.from({ length: count }, (_, index) => {
@@ -1917,7 +1910,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
     const invoices = data.invoices.filter(invoice => invoice.date === date);
     return {
       key: date,
-      label: period === 'week' ? new Date(date + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }) : String(new Date(date + 'T12:00:00').getDate()),
+      label: period === 'week' ? formatBusinessDay(date, { weekday: 'short' }) : formatBusinessDay(date, { day: 'numeric' }),
       title: dateLabel(date),
       sales: sum(invoices.map(invoice => invoice.total)),
       cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))),
@@ -1929,8 +1922,8 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
     const invoices = data.invoices.filter(invoice => invoice.date.slice(0, 7) === key);
     return {
       key,
-      label: new Date(key + '-01T12:00:00').toLocaleDateString('en-KE', { month: 'short' }),
-      title: new Date(key + '-01T12:00:00').toLocaleDateString('en-KE', { month: 'long', year: 'numeric' }),
+      label: formatBusinessDay(key + '-01', { month: 'short' }),
+      title: formatBusinessDay(key + '-01', { month: 'long', year: 'numeric' }),
       sales: sum(invoices.map(invoice => invoice.total)),
       cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))),
     };
@@ -3408,13 +3401,18 @@ function App() {
     </main>
 
     <nav className="mobile-bottom-nav" aria-label="Primary navigation">
-      {[
+      {(activeMember?.role === 'Inventory' ? [
+        { id: 'overview' as ModuleKey, label: 'Home', icon: 'home' },
+        { id: 'inventory' as ModuleKey, label: 'Stock', icon: 'inventory_2' },
+        { id: 'procurement' as ModuleKey, label: 'Orders', icon: 'shopping_cart' },
+        { id: 'more' as ModuleKey, label: 'More', icon: 'grid_view' },
+      ] : [
         { id: 'overview' as ModuleKey, label: 'Home', icon: 'home' },
         { id: 'sales' as ModuleKey, label: 'Sales', icon: 'receipt_long' },
         { id: 'reports' as ModuleKey, label: 'Analytics', icon: 'monitoring' },
         { id: 'payments' as ModuleKey, label: 'Payments', icon: 'account_balance_wallet' },
         { id: 'more' as ModuleKey, label: 'More', icon: 'grid_view' },
-      ].filter(item => allowedModules.includes(item.id)).map(item =>
+      ]).filter(item => allowedModules.includes(item.id)).map(item =>
         <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)} aria-current={active === item.id ? 'page' : undefined}>
           <span className="material-symbols-rounded" aria-hidden="true">{item.icon}</span><span>{item.label}</span>
         </button>
