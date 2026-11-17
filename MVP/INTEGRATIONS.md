@@ -1,41 +1,49 @@
-# Integration status and completion criteria
+# Integration status and completion requirements
 
-## Supabase Auth and database
+Last reviewed: 17 November 2026
 
-**Current status:** the target project is identified as `waadpyucxpgvbkpzbnju`; Vercel Preview environment values have been configured for the MVP branch. A small browser-side Auth/PostgREST client exists at `src/lib/supabase.ts`. The connected Supabase API still cannot inspect this project, and no migration has been applied. The current browser client uses `fetch` against Auth/PostgREST; it does not yet use the official `@supabase/supabase-js` SDK.
+## Supabase Auth and business data
 
-**MVP implementation:** Supabase Auth sign-up/sign-in, a public publishable key in the frontend, and RLS-protected tenant tables are wired in the branch. Business creation and preference persistence call restricted database functions/tables. The current client stores its session in browser storage and refreshes expiring tokens; replace it with the official SDK and its maintained session handling before production. Cloud ledger reads/writes still require the migrations to be reviewed/applied and the operational UI to be connected.
+**Connected:** email/password sign-up, sign-in, session restore and sign-out use the live Supabase project. Business workspace creation, membership checks and the operational read/write flows use authenticated PostgREST requests and database RPCs. Public RPC wrappers are SECURITY INVOKER; privileged implementations are isolated in the `app_private` schema and check the caller's business role.
 
-Before implementation, connect the Spike Digital Supabase account/organisation so the project can be identified and inspected. Do not paste a secret or service-role key into source code or chat.
+**Client limitation:** `src/lib/supabase.ts` is a small direct-fetch Auth/PostgREST client. It is not the official `@supabase/supabase-js` SDK. Migrate to the supported SDK before expanding auth providers, realtime subscriptions, storage or offline handling.
+
+**Release work:** the new atomic sale and team invitation functions are validated in the PostgreSQL CI job before their migration is applied to production. A complete real-user onboarding test still needs a verified email inbox and a second test user.
+
+## Team invitations
+
+**Current design:** an owner or manager creates a seven-day invitation link and shares it with the recipient. The token is stored as a single-use UUID. The recipient must sign in or create an account using the invited email address, verify that email through Supabase Auth, then redeem the token. The database checks role permissions, expiry, revocation, email match and previous acceptance.
+
+**Access boundaries:** only owners/managers can create or revoke invitations or change staff roles. Managers may manage Sales, Inventory and Finance staff; only owners may assign the Manager role. All active business members can view the team roster, but only owners/managers receive invitation tokens.
+
+**Not included:** Hesabu does not send team invitation emails. The application copies a shareable link; email delivery can be added later through a verified email provider and server-side function.
+
+## Sales, payments and accounting
+
+**Connected:** the database posting functions validate stock, create invoice lines, update inventory, record payments, allocate invoice balances and post journal entries. The new `post_sale_with_payment` RPC groups a completed cash/card/bank/M-Pesa-recorded sale into a single database transaction. Credit sales remain unpaid invoices.
+
+**Important distinction:** selecting M-Pesa as a manual payment channel records a payment in Hesabu. It does not contact Safaricom or prove that funds arrived.
+
+**Not connected:** Daraja STK Push initiation, signed callback verification, callback idempotency, reconciliation and automatic receipt matching. Before activation, add secure server-side credentials, persist requests before sending, verify callback signatures/metadata, and reconcile unmatched receipts without double-posting.
 
 ## WhatsApp daily digest
 
-**Current status:** click-to-chat preparation works in the local preview. It derives a digest from local browser data, fills a WhatsApp message and opens the destination chat. The user still has to press Send.
+**Current behaviour:** Hesabu prepares a digest from saved business records and opens a WhatsApp chat for the operator to review and send. This is click-to-chat only.
 
-**MVP first release:** retain click-to-chat. Generate the digest from cloud-backed records, show a preview, validate the recipient and open the prepared message. This gives the business owner control and does not require an always-on WhatsApp sender.
+**Not connected:** WhatsApp Business Platform Cloud API delivery, automatic scheduled sending, media attachments, template approval, delivery callbacks and retries. Automatic sending must run from a trusted server or Edge Function with secrets stored server-side and explicit recipient opt-in.
 
-**Later scheduled delivery:** integrate the official WhatsApp Business Platform Cloud API from a Supabase Edge Function or another trusted server. Store access tokens as server-side secrets. Record recipient opt-in, approved template requirements, message IDs, delivery status and retry outcomes. Add disable/unsubscribe controls. Do not send from client JavaScript.
+## Generative AI and voice
 
-## AI assistant
+**Current status:** no generative AI model or voice capture service is connected. Rule-based financial summaries are calculated from persisted business records. They must not be presented as AI-generated answers.
 
-**Current status:** deterministic record-based responses only. No generative AI model is connected.
+**Completion requirements:** use a server-side function, validate the caller's JWT and business membership, restrict data scope, remove unnecessary personal data, rate-limit usage, set spend limits and make clear which period and records support each response. Voice capture requires a separate permission, transcription and review flow; recognised text must never post a financial transaction without the normal validation step.
 
-**MVP implementation:** create a server-side Edge Function. It should validate the caller's JWT, resolve the active business membership, fetch only permitted business data, redact unnecessary personal data, enforce rate/cost limits and call the selected model using a server-side secret. Return a response with date range and data scope so the user can tell what the answer is based on.
+## Website checkout and merchant API
 
-Manual records and the AI assistant should coexist. A business can enable the assistant and WhatsApp digest together. The assistant must not post a sale, payment or stock change without an explicit user confirmation and a normal validated posting flow.
+**Current status:** the embedded checkout is illustrative, not a production storefront or live order webhook.
 
-## M-Pesa / Daraja
+**Completion requirements:** signed checkout sessions or merchant API credentials, per-business authorisation, replay protection, webhook signing, idempotency, order lifecycle states, stock reservation and server-side sale posting.
 
-**Current status:** the payment UI is a simulation. It does not send a real STK request or receive a real Safaricom callback.
+## Google sign-in
 
-**Completion requirements:** confirm the business's merchant shortcode and supported product, implement server-side request signing, persist the request before sending, verify callbacks, add idempotency and a transaction-status reconciliation path, map accepted payments to invoices, and log unmatched receipts. Do not use Hesabu as a funds custodian in the initial release.
-
-## Website checkout and API
-
-**Current status:** the embedded checkout is a local demonstration.
-
-**Completion requirements:** authenticated merchant API or signed checkout session, per-business API credentials, replay protection, webhook signing, idempotency, order state transitions, inventory reservation rules and server-side posting. Document the contract for external storefronts before exposing a production integration.
-
-## Email and reporting
-
-Exporting a workbook/PDF and opening a prepared WhatsApp message are useful first-release functions. Scheduled email or WhatsApp summaries require a server-side scheduler, delivery log, timezone handling, opt-in and retry controls. The report must be derived from persisted records, not only the current browser session.
+**Current status:** email/password only. Google OAuth is not configured. Add it only after the Supabase provider, redirect URLs, allowed origins and account-linking behaviour are configured and tested.

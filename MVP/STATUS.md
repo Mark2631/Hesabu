@@ -1,72 +1,59 @@
-# Hesabu MVP branch status
+# Hesabu release status
 
-Last updated: 16 November 2026
+Last updated: 17 November 2026
 
-## Working branch
+## Release target
 
 - Repository: `Mark2631/Hesabu`
-- Branch: `build/hesabu-mvp-cloud-foundation`
-- Production `main` has not been changed.
-- No production deployment has been requested or triggered.
+- Active release branch: `feature/atomic-ledger-team-access`
+- Production application: [https://hesabu-seven.vercel.app](https://hesabu-seven.vercel.app)
+- Production frontend baseline on `main`: `3e0c13ee99b6bd10366189a0427ad0de0f9a8a3b`
+- Supabase project: `waadpyucxpgvbkpzbnju` (Mark Sanchez Supabase account)
+- Currency and timezone defaults: KES and `Africa/Nairobi`
 
-## Implemented on this branch
+The production `main` release already contains the finance-first mobile UI, responsive auth page, light/dark appearance, and Google Material Symbols bottom navigation. The current release branch adds atomic point-of-sale posting and database-backed team invitations. It must pass both the Vite production build and PostgreSQL integration job before promotion.
 
-- Public Hesabu product page with responsive navigation, service explanation, business workflow, audience section, trust information and structured footer.
-- Separate sign-in and create-account screen.
-- Browser-side Supabase Auth/PostgREST integration for sign-up, sign-in, token refresh, session restore and sign-out.
-- Atomic business creation call, owner membership setup and business onboarding-preference persistence.
-- Email-confirmation recovery using non-secret onboarding information; passwords are not stored in the pending onboarding draft.
-- Signup choices for manual entry, optional AI assistant and optional WhatsApp digest. Manual entry is always available; AI and WhatsApp can both be enabled.
-- Cloud account screen that reads business settings and the daily-digest RPC and prepares a WhatsApp share from cloud figures. The user reviews the message and presses Send.
-- Floating Daily digest / Ask Hesabu dock in the local preview workspace; only one panel is open at a time.
-- Compact dashboard quick actions and revised responsive typography/spacing. Inter is retained.
-- Foundation and operational migrations with business tenancy, RLS, role permissions, private SECURITY DEFINER implementations and public SECURITY INVOKER RPC wrappers.
-- Atomic product creation/opening stock, sale posting, payment allocation, expense posting, purchase-order creation, partial goods receipt, supplier settlement, stock adjustment and daily-digest functions.
-- SQL contract checks and PostgreSQL 17 CI validation with end-to-end tenant and ledger tests.
-- Supabase URL and publishable key configured in the Vercel Preview environment for this branch only. Production environment was not changed.
+## Verified live backend
 
-The current frontend client in `src/lib/supabase.ts` uses direct `fetch` calls to Supabase Auth/PostgREST. It is not yet the official `@supabase/supabase-js` SDK and should be migrated before production.
+The live Supabase project is active. The following migrations were confirmed as applied before this release branch:
 
-## Verification
+1. `202611160001_mvp_foundation`
+2. `202611160002_operational_ledger`
+3. `performance_indexes_and_policy_initplan`
 
-<badge>CI passed</badge> Latest verified branch commit: `a3fd78b258507e42dc5e73ca0ee9c89541c94e84`.
+The public schema includes the business, team membership, settings, products, suppliers, invoices, invoice lines, payments, receipts, expenses, purchasing, inventory movements, cash movements, journals, integration events and digest delivery logs. RLS is enabled on the business tables. The security advisor returned no lints at the last check.
 
-GitHub Actions passed:
-- Existing ledger tests and migration-contract tests.
-- TypeScript check and Vite production build.
-- Both migrations applied to a temporary PostgreSQL 17 database using a minimal Supabase Auth test schema.
-- Sale, payment idempotency, expense, purchase-order receipt, supplier settlement, stock-adjustment and daily-digest runtime checks.
-- Two-business tenant isolation tests.
-- RLS-enabled table and public/private function privilege checks.
+The application reads and writes persisted cloud records for the core operational workflows: sales, payments, products, suppliers, expenses, purchase orders, receipts, supplier settlement and stock adjustments. The database posting functions enforce business membership and role checks. The release migration adds:
 
-This is CI verification in a disposable PostgreSQL database. It is not a live migration or live Auth test against the user's Supabase project.
+- One transaction for invoice, stock, point-of-sale payment and journal posting.
+- Seven-day, single-use invitation links.
+- Verified-email matching before a team invitation can be redeemed.
+- Database-enforced role changes and invitation revocation.
+- Roster visibility for business members while invitation tokens remain restricted to owners and managers.
 
-## Live Supabase project status
+The new migration has not yet been applied to the live Supabase project in this documentation snapshot. The CI PostgreSQL job validates it before live application.
 
-Target project: `waadpyucxpgvbkpzbnju` at `https://waadpyucxpgvbkpzbnju.supabase.co`, under the Mark Sanchez account.
+## Current product behaviour
 
-The supplied Supabase dashboard screenshot showed Healthy, no migrations, no branches and no backups. However, the Supabase connector available in this workspace does not list this project and returns a permission error when its project/tables are requested.
+- New business owners can register and create an isolated business workspace.
+- Team members use their own Hesabu account and are attached to a business through an invitation.
+- Sales, payments, inventory, supplier purchasing, expenses and finance views use cloud-backed business records.
+- The interface starts from an empty workspace for a new business; it does not preload fabricated sales.
+- A team invitation is shared as a secure link. The current release does not send invitation emails itself.
+- The browser client uses direct authenticated Auth/PostgREST requests in `src/lib/supabase.ts`. It is not yet the official `@supabase/supabase-js` SDK.
 
-Therefore:
-- Neither migration has been applied to the live project.
-- Existing live tables, RLS policies, Auth settings, extensions and advisor reports have not been inspected.
-- The branch's Auth and cloud digest flows have not been verified against the live project.
-- No live business data has been written.
+## Verification boundaries
 
-## Remaining before the cloud workspace is production-usable
+The preview build has passed its TypeScript and Vite build in the current release branch. The standard JavaScript tests have passed. The PostgreSQL job must also complete the migration, tenant isolation, invitation and ledger tests before the branch is promoted.
 
-1. Restore connector access to project `waadpyucxpgvbkpzbnju`.
-2. Inspect its current schema, Auth settings, migrations, RLS and security/performance advisors.
-3. Reconcile and apply the migrations to a non-production branch/project, preserving any existing objects and data.
-4. Verify Auth and cloud digest flows against the real project.
-5. Replace the custom browser REST/Auth client with the official Supabase JS SDK.
-6. Connect the operational React screens to persisted products, sales, payments, expenses, suppliers, purchasing, inventory and reports. The main ledger screens still use local preview data.
-7. Inspect the Vercel Preview deployment after the team access approval. Production remains untouched.
+A successful migration test in disposable PostgreSQL is not the same as an end-to-end test with a real email account, real business staff or a live merchant payment. No business data was present in the live project during the last schema inspection.
 
-## Integrations not live yet
+## Integrations not connected
 
-- Generative AI: signup preference is stored, but no model or server-side Edge Function is connected.
-- WhatsApp scheduled delivery: not connected to WhatsApp Business Platform. Click-to-chat preparation requires the user to press Send.
-- M-Pesa/Daraja: existing payment request UI is a simulation, not a real STK push/callback.
-- Website checkout/webhooks: demonstration-only.
+- Safaricom Daraja STK Push and callback processing.
+- Automatic WhatsApp Business Platform delivery or scheduled messaging.
+- Generative AI and voice capture.
+- Production website checkout, merchant API keys and webhooks.
+- Google OAuth or other social sign-in providers.
 
+The application must not label these as active until their server-side integrations, secrets, provider configuration and end-to-end tests exist.
