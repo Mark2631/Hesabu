@@ -2532,7 +2532,7 @@ function App() {
                 idempotencyKey: 'sale-payment:' + invoiceId,
                 note: 'Collected at point of sale',
               });
-            } catch (paymentError) {
+            } catch {
               await reloadCloudWorkspace();
               setDialog(null);
               notify('Sale saved; payment needs checking',
