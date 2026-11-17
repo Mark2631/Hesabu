@@ -218,6 +218,7 @@ export function makeDemoData(): AppData {
     ],
     expenses,
     cashMovements: [],
+  inventoryMovements: [],
     suppliers,
     purchaseOrders: [
       {
