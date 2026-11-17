@@ -79,7 +79,7 @@ const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
 
 const roleAccess: Record<TeamRole, ModuleKey[]> = {
   Owner: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'settings', 'more'],
-  Manager: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'more'],
+  Manager: ['overview', 'sales', 'payments', 'inventory', 'procurement', 'accounts', 'reports', 'integrations', 'settings', 'more'],
   Sales: ['overview', 'sales', 'payments', 'reports', 'more'],
   Inventory: ['overview', 'inventory', 'procurement', 'more'],
   Finance: ['overview', 'sales', 'payments', 'accounts', 'reports', 'more'],
@@ -975,13 +975,13 @@ function PublicLandingPage({
 }
 
 function AuthPage({
-  onSignIn, onSignUp, initialMessage, initialMode, onBack,
+  onSignIn, onSignUp, initialMessage, initialMode, onBack, inviteMode = false,
 }: {
   onSignIn: (email: string, password: string) => Promise<void>;
   onSignUp: (input: SignUpInput) => Promise<'confirm_email' | void>;
   initialMessage?: string;
   initialMode: 'signin' | 'signup';
-  onBack: () => void;
+  onBack: () => void; inviteMode?: boolean;
 }) {
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [fullName, setFullName] = useState('');
@@ -1012,7 +1012,7 @@ function AuthPage({
       if (mode === 'signin') {
         await onSignIn(email, password);
       } else {
-        if (!fullName.trim() || !businessName.trim()) {
+        if (!fullName.trim() || (!inviteMode && !businessName.trim())) {
           setMessage('Enter your name and business name to continue.');
           return;
         }
@@ -1021,8 +1021,8 @@ function AuthPage({
           return;
         }
         const result = await onSignUp({
-          fullName, businessName, industry, phone, email, password,
-          aiAssistantEnabled: false, whatsappDigestEnabled, whatsappRecipientPhone,
+          fullName, businessName: inviteMode ? '' : businessName, industry: inviteMode ? '' : industry, phone: inviteMode ? '' : phone, email, password,
+          aiAssistantEnabled: false, whatsappDigestEnabled: inviteMode ? false : whatsappDigestEnabled, whatsappRecipientPhone: inviteMode ? '' : whatsappRecipientPhone,
         });
         if (result === 'confirm_email') {
           setMessage('Your account has been created. Check your email for the confirmation link, then return here to sign in.');
@@ -1045,8 +1045,8 @@ function AuthPage({
         <button type="button" className="auth-back-button" onClick={onBack}><ChevronRight size={13} /> Back to Hesabu</button>
         <div className="auth-copy">
           <span className="auth-kicker">BUSINESS, IN BALANCE</span>
-          <h1>{mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.'}</h1>
-          <p>Sales, payments, stock and business performance in one calm workspace.</p>
+          <h1>{inviteMode ? (mode === 'signin' ? 'Sign in to join your team.' : 'Create your team account.') : (mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.')}</h1>
+          <p>{inviteMode ? 'Use the email address this invitation was sent to. Your access activates after email verification.' : 'Sales, payments, stock and business performance in one calm workspace.'}</p>
         </div>
         <div className="auth-tabs" role="tablist" aria-label="Account access">
           <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setMessage(''); }}>Sign in</button>
@@ -1055,6 +1055,7 @@ function AuthPage({
         <form className="auth-form" onSubmit={submit}>
           {mode === 'signup' && <>
             <label className="auth-field"><span>Your full name</span><input autoComplete="name" value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Name of the business owner" required /></label>
+            {!inviteMode && <>
             <label className="auth-field"><span>Business name</span><input value={businessName} onChange={event => setBusinessName(event.target.value)} placeholder="e.g. Muriuki Stores" required /></label>
             <label className="auth-field"><span>Business type</span>
               <select value={industry} onChange={event => setIndustry(event.target.value)}>
@@ -1063,10 +1064,11 @@ function AuthPage({
               </select>
             </label>
             <label className="auth-field"><span>Business phone <small>(optional)</small></span><input type="tel" autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="07XX XXX XXX" /></label>
+            </>}
           </>}
           <label className="auth-field"><span>Business email</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
           <label className="auth-field"><span>Password</span><input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /></label>
-          {mode === 'signup' && <section className="auth-preferences" aria-label="Optional business preferences">
+          {mode === 'signup' && !inviteMode && <section className="auth-preferences" aria-label="Optional business preferences">
             <div className="auth-preferences-heading"><strong>How should Hesabu support your daily work?</strong><small>These options work together. Manual entry is always available.</small></div>
             <div className="auth-preference-manual"><span><strong>Manual records</strong><small>Record sales, payments, expenses and stock yourself.</small></span><span>Always on</span></div>
             <label className="auth-preference-option">
@@ -1078,7 +1080,7 @@ function AuthPage({
           <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
         </form>
         {message && <p className="auth-message" role="status">{message}</p>}
-        <p className="auth-footnote">Your business records are stored in your secure Hesabu account and are separate from every other business.</p>
+        <p className="auth-footnote">{inviteMode ? "The invitation is single-use and tied to the invited, verified email address." : "Your business records are stored in your secure Hesabu account and are separate from every other business."}</p>
       </div>
       <aside className="auth-aside">
         <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">BUSINESS OPERATIONS</span></div>
@@ -2049,11 +2051,13 @@ function MorePage({ allowedModules, onNavigate }: {
   </div>;
 }
 
-function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMember, onReset, theme, onThemeChange, onOpenReports, whatsappNumber, onWhatsAppNumberChange, onSaveWhatsApp, cloudMode, onSignOut }: {
-  profile: BusinessProfile; teamMembers: TeamMember[];
+function SettingsPage({ profile, teamMembers, teamInvitations, onSave, onAddMember, onUpdateMember, onRevokeInvitation, onCopyInvitation, canManageTeam, canAssignManager, onReset, theme, onThemeChange, onOpenReports, whatsappNumber, onWhatsAppNumberChange, onSaveWhatsApp, cloudMode, onSignOut }: {
+  profile: BusinessProfile; teamMembers: TeamMember[]; teamInvitations: TeamInvitation[];
   onSave: (profile: BusinessProfile) => void;
-  onAddMember: (input: { name: string; email: string; role: TeamRole }) => void;
+  onAddMember: (input: { name: string; email: string; role: TeamRole }) => Promise<boolean>;
   onUpdateMember: (id: string, patch: Partial<TeamMember>) => void;
+  onRevokeInvitation: (id: string) => void; onCopyInvitation: (token: string) => void;
+  canManageTeam: boolean; canAssignManager: boolean;
   onReset: () => void; theme: 'dark' | 'light'; onThemeChange: (theme: 'dark' | 'light') => void; onOpenReports: () => void;
   whatsappNumber: string; onWhatsAppNumberChange: (value: string) => void;
   onSaveWhatsApp: () => void; cloudMode: boolean; onSignOut: () => void;
@@ -2075,10 +2079,11 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
     Inventory: 'Product catalogue, stock counts and deliveries',
     Finance: 'Payments, account balances and financial reports',
   };
-  const submitMember = (event: FormEvent) => {
+  const submitMember = async (event: FormEvent) => {
     event.preventDefault();
     if (!memberName.trim() || !memberEmail.trim()) return;
-    onAddMember({ name: memberName.trim(), email: memberEmail.trim(), role: memberRole });
+    const created = await onAddMember({ name: memberName.trim(), email: memberEmail.trim(), role: memberRole });
+    if (!created) return;
     setMemberName(''); setMemberEmail(''); setMemberRole('Sales'); setShowAdd(false);
   };
   return <div className="page-stack">
@@ -2088,7 +2093,7 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
     <SectionCard title="Business administration" detail="Business identity and team responsibilities.">
       <div className="section-tabs">
         <button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}>Business profile</button>
-        {!cloudMode && <button className={tab === 'team' ? 'active' : ''} onClick={() => setTab('team')}>Team <span>{teamMembers.length}</span></button>}
+        <button className={tab === 'team' ? 'active' : ''} onClick={() => setTab('team')}>Team <span>{teamMembers.length}</span></button>
         <button className={tab === 'preferences' ? 'active' : ''} onClick={() => setTab('preferences')}>Preferences</button>
       </div>
       {tab === 'profile' ? <form className="settings-form" onSubmit={event => {
@@ -2109,8 +2114,8 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
         <div className="settings-form-footer">{saved && <span className="saved-inline"><CheckCircle2 size={14} /> Saved</span>}<Button type="submit">Save changes</Button></div>
       </form> : tab === 'team' ? <>
         <div className="team-header-row">
-          <div><strong>{teamMembers.filter(member => member.status === 'active').length} people in this workspace</strong><p>Assign each team member only the responsibility they need.</p></div>
-          <Button onClick={() => setShowAdd(value => !value)}><Plus size={15} /> Add member</Button>
+          <div><strong>{teamMembers.filter(member => member.status === 'active').length} active team members</strong><p>Each person signs in with their own account. Permissions are enforced by the database.</p></div>
+          {canManageTeam && <Button onClick={() => setShowAdd(value => !value)}><Plus size={15} /> Invite member</Button>}
         </div>
         {showAdd && <form className="team-invite-form" onSubmit={submitMember}>
           <div className="form-grid form-grid-two">
@@ -2119,24 +2124,43 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
           </div>
           <div className="form-grid form-grid-two">
             <SelectField label="Responsibility" value={memberRole} onChange={value => setMemberRole(value as TeamRole)} options={[
-              { value: 'Manager', label: 'Manager' }, { value: 'Sales', label: 'Sales' },
-              { value: 'Inventory', label: 'Inventory' }, { value: 'Finance', label: 'Finance' },
+              ...(canAssignManager ? [{ value: 'Manager', label: 'Manager' }] : []),
+              { value: 'Sales', label: 'Sales' }, { value: 'Inventory', label: 'Inventory' }, { value: 'Finance', label: 'Finance' },
             ]} />
             <div className="team-role-description"><strong>{memberRole}</strong><span>{roleDescriptions[memberRole]}</span></div>
           </div>
-          <div className="inline-form-actions"><Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button><Button type="submit" disabled={!memberName.trim() || !memberEmail.trim()}>Add to team</Button></div>
+          <p className="team-invite-explainer">A single-use invitation link will be copied for sharing. The recipient must use this email address and verify it before gaining access. Links expire after seven days.</p>
+          <div className="inline-form-actions"><Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button><Button type="submit" disabled={!memberName.trim() || !memberEmail.trim()}>Create invitation</Button></div>
         </form>}
         <div className="team-role-grid">
           {(Object.keys(roleDescriptions) as TeamRole[]).filter(role => role !== 'Owner').map(role => <div key={role}><strong>{role}</strong><span>{roleDescriptions[role]}</span></div>)}
         </div>
         <DataTable headers={['Team member', 'Responsibility', 'Status', '']}>
-          {teamMembers.map(member => <tr key={member.id}>
-            <td><strong>{member.name}</strong><small className="cell-sub">{member.email}</small></td>
-            <td>{member.role}</td>
-            <td><StatusPill status={member.status === 'active' ? 'delivered' : 'draft'}>{member.status === 'active' ? 'Active' : 'Suspended'}</StatusPill></td>
-            <td>{member.role === 'Owner' ? <span className="muted-copy">Owner</span> : <button className="table-action" onClick={() => onUpdateMember(member.id, { status: member.status === 'active' ? 'suspended' : 'active' })}>{member.status === 'active' ? 'Suspend' : 'Activate'}</button>}</td>
-          </tr>)}
+          {teamMembers.map(member => {
+            const canManageMember = canManageTeam && member.role !== 'Owner' && (canAssignManager || member.role !== 'Manager');
+            return <tr key={member.id}>
+              <td><strong>{member.name}</strong><small className="cell-sub">{member.email}</small></td>
+              <td>{member.role === 'Owner' ? 'Owner' : <select className="team-role-select" value={member.role} disabled={!canManageMember} onChange={event => onUpdateMember(member.id, { role: event.target.value as TeamRole })}>
+                {canAssignManager && <option value="Manager">Manager</option>}
+                <option value="Sales">Sales</option><option value="Inventory">Inventory</option><option value="Finance">Finance</option>
+              </select>}</td>
+              <td><StatusPill status={member.status === 'active' ? 'delivered' : 'draft'}>{member.status === 'active' ? 'Active' : 'Suspended'}</StatusPill></td>
+              <td>{member.role === 'Owner' ? <span className="muted-copy">Owner</span> : <button className="table-action" disabled={!canManageMember} onClick={() => onUpdateMember(member.id, { status: member.status === 'active' ? 'suspended' : 'active' })}>{member.status === 'active' ? 'Suspend' : 'Activate'}</button>}</td>
+            </tr>;
+          })}
         </DataTable>
+        {canManageTeam && <div className="team-invitations-section">
+          <div className="team-invitations-heading"><strong>Invitations</strong><span>{teamInvitations.filter(item => item.status === 'pending').length} awaiting acceptance</span></div>
+          {teamInvitations.length ? <DataTable headers={['Invited person', 'Role', 'Status', 'Expires', '']}>
+            {teamInvitations.map(invitation => <tr key={invitation.id}>
+              <td><strong>{invitation.name}</strong><small className="cell-sub">{invitation.email}</small></td>
+              <td>{invitation.role}</td>
+              <td><StatusPill status={invitation.status === 'accepted' ? 'delivered' : invitation.status === 'pending' ? 'pending' : 'failed'}>{invitation.status.charAt(0).toUpperCase() + invitation.status.slice(1)}</StatusPill></td>
+              <td>{dateLabel(invitation.expiresAt.slice(0,10))}</td>
+              <td>{invitation.status === 'pending' ? <><button className="table-action" onClick={() => onCopyInvitation(invitation.token)}>Copy link</button><button className="table-action" onClick={() => onRevokeInvitation(invitation.id)}>Revoke</button></> : <span className="muted-copy">—</span>}</td>
+            </tr>)}
+          </DataTable> : <EmptyState title="No invitations yet" body="New invitations appear here until accepted or expired." />}
+        </div>}
       </> : <div className="settings-preferences">
         <section className="preference-block">
           <div><strong>Appearance</strong><p>White is the default. Choose dark mode if you prefer a darker workspace.</p></div>
@@ -2262,6 +2286,29 @@ function clearPendingOnboarding() {
   try { localStorage.removeItem(PENDING_ONBOARDING_KEY); } catch { /* No-op when storage is disabled. */ }
 }
 
+const PENDING_TEAM_INVITATION_KEY = 'hesabu:pending-team-invitation:v1';
+function readPendingTeamInvitation() {
+  try {
+    const token = localStorage.getItem(PENDING_TEAM_INVITATION_KEY);
+    return token && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(token) ? token : null;
+  } catch { return null; }
+}
+function capturePendingTeamInvitation() {
+  try {
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get('invite');
+    if (token && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(token)) {
+      localStorage.setItem(PENDING_TEAM_INVITATION_KEY, token);
+      url.searchParams.delete('invite');
+      window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+    }
+  } catch { /* Sign-in remains usable when storage is blocked. */ }
+  return readPendingTeamInvitation();
+}
+function clearPendingTeamInvitation() {
+  try { localStorage.removeItem(PENDING_TEAM_INVITATION_KEY); } catch { /* No-op. */ }
+}
+
 function App() {
   const [data, setData] = useState<AppData>(() => EMPTY_WORKSPACE_DATA);
   const [cloudAccount, setCloudAccount] = useState<{
@@ -2275,6 +2322,7 @@ function App() {
   const [authNotice, setAuthNotice] = useState('');
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
+  const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => capturePendingTeamInvitation());
   const [whatsappNumber, setWhatsAppNumber] = useState('');
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try { return localStorage.getItem('hesabu:theme:v2') === 'dark' ? 'dark' : 'light'; }
@@ -2295,41 +2343,48 @@ function App() {
     const restore = async () => {
       await completeAuthCallback();
       const result = await restoreCloudSession();
-      if (!active || !result) return;
-      let membership = result.memberships.find(item => item.businesses?.id);
+      if (!active) return;
+      const token = readPendingTeamInvitation();
+      if (!result) {
+        if (token) {
+          setPendingInviteToken(token);
+          setAuthInitialMode('signup');
+          setShowAuthScreen(true);
+          setAuthNotice('You have been invited to a Hesabu business. Use the invited email address to continue.');
+        }
+        return;
+      }
+      if (token) {
+        const businessId = await acceptCloudBusinessInvitation(token);
+        clearPendingTeamInvitation();
+        setPendingInviteToken(null);
+        const memberships = await listMyBusinesses();
+        const invited = memberships.find(item => item.business_id === businessId && item.businesses?.id);
+        if (!invited?.businesses) throw new Error('The invitation was accepted but the business could not be loaded.');
+        setCloudAccount({ user: result.user, business: { id: invited.businesses.id, name: invited.businesses.name, industry: invited.businesses.industry } });
+        setAuthNotice('');
+        setShowAuthScreen(false);
+        return;
+      }
+      const membership = result.memberships.find(item => item.businesses?.id);
       if (!membership?.businesses) {
         const pending = readPendingOnboarding(result.user.email, result.user.user_metadata);
         if (pending) {
           const businessId = await createBusiness(pending);
-          await saveBusinessPreferences({
-            businessId,
-            aiAssistantEnabled: pending.aiAssistantEnabled,
-            whatsappDigestEnabled: pending.whatsappDigestEnabled,
-            whatsappRecipientPhone: pending.whatsappRecipientPhone,
-          });
+          await saveBusinessPreferences({ businessId, aiAssistantEnabled: false, whatsappDigestEnabled: pending.whatsappDigestEnabled, whatsappRecipientPhone: pending.whatsappRecipientPhone });
           clearPendingOnboarding();
           setWhatsAppNumber(pending.whatsappRecipientPhone);
-          setCloudAccount({
-            user: result.user,
-            business: { id: businessId, name: pending.businessName, industry: pending.industry || null },
-          });
+          setCloudAccount({ user: result.user, business: { id: businessId, name: pending.businessName, industry: pending.industry || null } });
           return;
         }
         setAuthNotice('Your account is signed in, but no business workspace has been set up for it yet. Complete the business setup on this device or contact the workspace owner.');
         return;
       }
-      setCloudAccount({
-        user: result.user,
-        business: {
-          id: membership.businesses.id,
-          name: membership.businesses.name,
-          industry: membership.businesses.industry,
-        },
-      });
+      setCloudAccount({ user: result.user, business: { id: membership.businesses.id, name: membership.businesses.name, industry: membership.businesses.industry } });
     };
     restore()
       .catch(error => {
-        if (active) setAuthNotice(error instanceof Error ? error.message : 'The saved cloud session could not be restored.');
+        if (active) { setAuthNotice(error instanceof Error ? error.message : 'The saved cloud session could not be restored.'); if (readPendingTeamInvitation()) { setShowAuthScreen(true); setAuthInitialMode('signin'); } }
       })
       .finally(() => { if (active) setCloudRestoring(false); });
     return () => { active = false; };
@@ -2368,56 +2423,60 @@ function App() {
 
   const handleCloudSignIn = async (email: string, password: string) => {
     const session = await signInWithPassword(email, password);
-    let memberships = await listMyBusinesses();
-    let membership = memberships.find(item => item.businesses?.id);
+    const token = readPendingTeamInvitation();
+    if (token) {
+      const businessId = await acceptCloudBusinessInvitation(token);
+      clearPendingTeamInvitation();
+      setPendingInviteToken(null);
+      const memberships = await listMyBusinesses();
+      const invited = memberships.find(item => item.business_id === businessId && item.businesses?.id);
+      if (!invited?.businesses) throw new Error('The invitation was accepted but the business could not be loaded.');
+      setCloudAccount({ user: session.user, business: { id: invited.businesses.id, name: invited.businesses.name, industry: invited.businesses.industry } });
+      setAuthNotice('');
+      setShowAuthScreen(false);
+      return;
+    }
+    const memberships = await listMyBusinesses();
+    const membership = memberships.find(item => item.businesses?.id);
     if (!membership?.businesses) {
       const pending = readPendingOnboarding(session.user.email || email, session.user.user_metadata);
-      if (!pending) {
-        throw new Error('Your sign-in was accepted, but this account has no business workspace yet. Complete business setup on the device where you created the account.');
-      }
+      if (!pending) throw new Error('Your sign-in was accepted, but this account has no business workspace yet. Complete the business setup on the device where you created the account.');
       const businessId = await createBusiness(pending);
-      await saveBusinessPreferences({
-        businessId,
-        aiAssistantEnabled: pending.aiAssistantEnabled,
-        whatsappDigestEnabled: pending.whatsappDigestEnabled,
-        whatsappRecipientPhone: pending.whatsappRecipientPhone,
-      });
+      await saveBusinessPreferences({ businessId, aiAssistantEnabled: false, whatsappDigestEnabled: pending.whatsappDigestEnabled, whatsappRecipientPhone: pending.whatsappRecipientPhone });
       clearPendingOnboarding();
       setWhatsAppNumber(pending.whatsappRecipientPhone);
-      setCloudAccount({
-        user: session.user,
-        business: { id: businessId, name: pending.businessName, industry: pending.industry || null },
-      });
+      setCloudAccount({ user: session.user, business: { id: businessId, name: pending.businessName, industry: pending.industry || null } });
     } else {
-      setCloudAccount({
-        user: session.user,
-        business: {
-          id: membership.businesses.id,
-          name: membership.businesses.name,
-          industry: membership.businesses.industry,
-        },
-      });
+      setCloudAccount({ user: session.user, business: { id: membership.businesses.id, name: membership.businesses.name, industry: membership.businesses.industry } });
     }
     setAuthNotice('');
     setShowAuthScreen(false);
   };
 
   const handleCloudSignUp = async (input: SignUpInput): Promise<'confirm_email' | void> => {
+    const token = readPendingTeamInvitation();
+    if (token) {
+      const result = await signUpWithPassword(input);
+      if (!result.session) return 'confirm_email';
+      const businessId = await acceptCloudBusinessInvitation(token);
+      clearPendingTeamInvitation();
+      setPendingInviteToken(null);
+      const memberships = await listMyBusinesses();
+      const invited = memberships.find(item => item.business_id === businessId && item.businesses?.id);
+      if (!invited?.businesses) throw new Error('The invitation was accepted but the business could not be loaded.');
+      setCloudAccount({ user: result.session.user, business: { id: invited.businesses.id, name: invited.businesses.name, industry: invited.businesses.industry } });
+      setWhatsAppNumber('');
+      setAuthNotice('');
+      setShowAuthScreen(false);
+      return;
+    }
     savePendingOnboarding(input);
     const result = await signUpWithPassword(input);
     if (!result.session) return 'confirm_email';
     const businessId = await createBusiness(input);
-    await saveBusinessPreferences({
-      businessId,
-      aiAssistantEnabled: input.aiAssistantEnabled,
-      whatsappDigestEnabled: input.whatsappDigestEnabled,
-      whatsappRecipientPhone: input.whatsappRecipientPhone,
-    });
+    await saveBusinessPreferences({ businessId, aiAssistantEnabled: false, whatsappDigestEnabled: input.whatsappDigestEnabled, whatsappRecipientPhone: input.whatsappRecipientPhone });
     clearPendingOnboarding();
-    setCloudAccount({
-      user: result.session.user,
-      business: { id: businessId, name: input.businessName.trim(), industry: input.industry || null },
-    });
+    setCloudAccount({ user: result.session.user, business: { id: businessId, name: input.businessName.trim(), industry: input.industry || null } });
     setWhatsAppNumber(input.whatsappRecipientPhone);
     setAuthNotice('');
     setShowAuthScreen(false);
@@ -2509,7 +2568,7 @@ function App() {
       cloudMutationLock.current = true;
       void (async () => {
         try {
-          const invoiceId = await postCloudSale(cloudAccount.business.id, {
+          await postCloudSale(cloudAccount.business.id, {
             customer: input.customer,
             phone: input.phone,
             dueDate: input.dueDate,
@@ -2518,25 +2577,6 @@ function App() {
             source: input.source,
             items: input.items,
           });
-          if (input.channel !== 'credit') {
-            try {
-              await postCloudPayment(cloudAccount.business.id, {
-                invoiceId,
-                amount: saleTotal,
-                channel: input.channel,
-                phone: input.phone,
-                reference: '',
-                idempotencyKey: 'sale-payment:' + invoiceId,
-                note: 'Collected at point of sale',
-              });
-            } catch {
-              await reloadCloudWorkspace();
-              setDialog(null);
-              notify('Sale saved; payment needs checking',
-                'The invoice and stock movement were saved. The payment response was not confirmed. Check the invoice and payment register before trying to record that payment again.');
-              return;
-            }
-          }
           const refreshed = await reloadCloudWorkspace();
           setDialog(null);
           notify('Sale recorded', refreshed
@@ -3094,23 +3134,68 @@ function App() {
   };
 
 
-  const addTeamMember = (input: { name: string; email: string; role: TeamRole }) => {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) {
-      notify('Enter a valid email address'); return;
+  const addTeamMember = async (input: { name: string; email: string; role: TeamRole }): Promise<boolean> => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) { notify('Enter a valid email address'); return false; }
+    if (cloudAccount) {
+      try {
+        const token = await createCloudBusinessInvitation(cloudAccount.business.id, {
+          name: input.name, email: input.email, role: input.role as Exclude<TeamRole, 'Owner'>,
+        });
+        const url = new URL(window.location.origin);
+        url.searchParams.set('invite', token);
+        let copied = false;
+        try { await navigator.clipboard.writeText(url.toString()); copied = true; }
+        catch { window.prompt('Copy this secure invitation link', url.toString()); }
+        await reloadCloudWorkspace();
+        notify('Team invitation created', copied ? 'The seven-day invitation link has been copied. Send it to ' + input.email + '.' : 'Share the invitation link shown above with ' + input.email + '.');
+        return true;
+      } catch (error) {
+        notify('Could not create invitation', error instanceof Error ? error.message : 'The invitation could not be saved.');
+        return false;
+      }
     }
-    if (data.teamMembers.some(member => member.email.toLowerCase() === input.email.toLowerCase())) {
-      notify('This email is already on the team'); return;
-    }
+    if (data.teamMembers.some(member => member.email.toLowerCase() === input.email.toLowerCase())) { notify('This email is already on the team'); return false; }
     const member: TeamMember = { id: makeId('TEAM'), ...input, status: 'active' };
     setData(current => ({ ...current, teamMembers: [...current.teamMembers, member] }));
-    notify('Team member added', input.name + ' has been added to this workspace.');
+    notify('Team member added', input.name + ' has been added to this local workspace.');
+    return true;
   };
 
-  const updateTeamMember = (id: string, patch: Partial<TeamMember>) => {
-    setData(current => ({
-      ...current,
-      teamMembers: current.teamMembers.map(member => member.id === id && member.role !== 'Owner' ? { ...member, ...patch } : member),
-    }));
+  const updateTeamMember = async (id: string, patch: Partial<TeamMember>) => {
+    if (cloudAccount) {
+      const member = data.teamMembers.find(item => item.id === id);
+      if (!member || member.role === 'Owner') return;
+      try {
+        await updateCloudBusinessMember(cloudAccount.business.id, id, {
+          role: (patch.role ?? member.role) as Exclude<TeamRole, 'Owner'>,
+          status: patch.status ?? member.status,
+        });
+        const refreshed = await reloadCloudWorkspace();
+        notify(refreshed ? 'Team access updated' : 'Team change saved', refreshed ? 'The member permissions are saved to this business.' : 'Refresh to verify the latest team list.');
+      } catch (error) {
+        notify('Could not update team access', error instanceof Error ? error.message : 'The team change failed.');
+      }
+      return;
+    }
+    setData(current => ({ ...current, teamMembers: current.teamMembers.map(member => member.id === id && member.role !== 'Owner' ? { ...member, ...patch } : member) }));
+  };
+
+  const revokeTeamInvitation = async (id: string) => {
+    if (!cloudAccount) return;
+    try {
+      await revokeCloudBusinessInvitation(cloudAccount.business.id, id);
+      await reloadCloudWorkspace();
+      notify('Invitation revoked', 'The invitation link can no longer be used.');
+    } catch (error) {
+      notify('Could not revoke invitation', error instanceof Error ? error.message : 'The invitation could not be revoked.');
+    }
+  };
+
+  const copyTeamInvitation = async (token: string) => {
+    const url = new URL(window.location.origin);
+    url.searchParams.set('invite', token);
+    try { await navigator.clipboard.writeText(url.toString()); notify('Invitation link copied', 'Share the link with the invited email address.'); }
+    catch { window.prompt('Copy this secure invitation link', url.toString()); }
   };
 
   const activeMeta = moduleMeta[active];
@@ -3139,7 +3224,8 @@ function App() {
     onSignUp={handleCloudSignUp}
     initialMessage={authNotice}
     initialMode={authInitialMode}
-    onBack={() => setShowAuthScreen(false)}
+    onBack={() => { if (pendingInviteToken) { clearPendingTeamInvitation(); setPendingInviteToken(null); } setShowAuthScreen(false); }}
+    inviteMode={Boolean(pendingInviteToken)}
   />;
   return <div className={'app-shell theme-' + theme + ' ' + (sidebarCollapsed ? 'sidebar-is-collapsed' : '')}>
     <aside className={'sidebar ' + (mobileMenuOpen ? 'sidebar-mobile-open' : '')}>
@@ -3210,7 +3296,7 @@ function App() {
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} />}
         {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} />}
-        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={() => {}} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} />}
+        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} teamInvitations={data.teamInvitations ?? []} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onRevokeInvitation={revokeTeamInvitation} onCopyInvitation={copyTeamInvitation} canManageTeam={activeMember?.role === 'Owner' || activeMember?.role === 'Manager'} canAssignManager={activeMember?.role === 'Owner'} onReset={() => {}} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
       </div>
       <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Secure cloud workspace · Synced with Hesabu</span></footer>
