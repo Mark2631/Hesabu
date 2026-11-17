@@ -24,7 +24,7 @@ import {
   acceptCloudBusinessInvitation, adjustCloudStock, completeAuthCallback, createBusiness, createCloudProduct, createCloudSupplier, createCloudBusinessInvitation,
   createCloudPurchaseOrder, getBusinessSettings, getCloudWorkspace,
   listMyBusinesses, postCloudExpense, postCloudPayment, postCloudSale,
-  postCloudSupplierPayment, receiveCloudPurchaseOrder, restoreCloudSession,
+  postCloudSupplierPayment, postCloudUnmatchedReceipt, matchCloudUnmatchedReceipt, receiveCloudPurchaseOrder, restoreCloudSession,
   saveBusinessPreferences, saveCloudBusinessProfile, saveCloudWhatsAppDestination, updateCloudBusinessMember, revokeCloudBusinessInvitation,
   signInWithPassword, signOut, signUpWithPassword,
   type SignUpInput, type SupabaseUser,
@@ -701,7 +701,7 @@ function ReceiptDialog({ onClose, onCreate }: {
   const [phone, setPhone] = useState('');
   const [reference, setReference] = useState('');
   const [amount, setAmount] = useState('');
-  return <Modal title="Record a payment received" detail="Record a customer payment and link it to the correct sale." onClose={onClose}>
+  return <Modal title="Record a payment received" detail="Capture a receipt that arrived without a clear invoice allocation. Match it after saving." onClose={onClose}>
     <form className="modal-body" onSubmit={event => {
       event.preventDefault();
       const value = Number(amount);
@@ -725,7 +725,7 @@ function ReceiptDialog({ onClose, onCreate }: {
         <Field label="Payer name" value={payer} onChange={setPayer} placeholder="Name shown on the receipt" />
         <Field label="Payer phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
       </div>
-      <div className="demo-notice"><ShieldCheck size={16} /><span><strong>Receipt capture only</strong><small>This records the receipt so it can be matched to the correct customer sale.</small></span></div>
+      <div className="demo-notice"><ShieldCheck size={16} /><span><strong>Manual receipt record</strong><small>This does not verify the payment with Safaricom or the bank. It records the reference you checked.</small></span></div>
       <div className="modal-footer">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button type="submit" disabled={!reference.trim() || Number(amount) <= 0}><Plus size={15} /> Save receipt</Button>
@@ -1400,7 +1400,7 @@ function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onRes
   const unmatchedValue = sum(unmatched.map(receipt => receipt.amount));
   return <div className="page-stack">
     <PageHeader title="Payments" description="See what customers have paid and what still needs your attention." actions={<>
-      {!cloudMode && <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Record receipt</Button>}
+      <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Record receipt</Button>
       <Button onClick={onRequestPayment}><Plus size={15} /> {cloudMode ? 'Record payment' : 'Request payment'}</Button>
     </>} />
     <div className="metric-grid metric-grid-four compact-metrics">
@@ -1420,14 +1420,12 @@ function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onRes
         <div className="channel-total"><span>Total recorded funds</span><strong>{money(metrics.cashPosition)}</strong></div>
       </SectionCard>
       <SectionCard title="Receipts to match" detail="Payments received that still need to be linked to a customer sale.">
-        {cloudMode
-          ? <EmptyState title="Receipt matching is not connected" body="Hesabu can record payments against invoices. M-Pesa statement imports and automatic receipt matching are not enabled yet." />
-          : unmatched.length ? <div className="attention-list">
-            {unmatched.slice(0, 4).map(receipt => <button key={receipt.id} onClick={() => onMatchReceipt(receipt.id)}>
-              <span><strong>{receipt.payer || 'Unidentified payer'}</strong><small>{receipt.rail} · {shortRef(receipt.reference)}</small></span>
-              <strong>{money(receipt.amount)}</strong><span className="table-action">Match</span>
-            </button>)}
-          </div> : <EmptyState title="All receipts matched" body="New receipts that need a customer match will appear here." />}
+        {unmatched.length ? <div className="attention-list">
+          {unmatched.slice(0, 6).map(receipt => <button key={receipt.id} onClick={() => onMatchReceipt(receipt.id)}>
+            <span><strong>{receipt.payer || 'Unidentified payer'}</strong><small>{receipt.rail} · {shortRef(receipt.reference)}</small></span>
+            <strong>{money(receipt.amount)}</strong><span className="table-action">Match</span>
+          </button>)}
+        </div> : <EmptyState title="All receipts matched" body="Record a receipt when money arrives without a clear invoice allocation. It will appear here until it is allocated." />}
       </SectionCard>
     </div>
     <SectionCard title="Payment activity" detail="Collections recorded against customer sales.">
@@ -2731,8 +2729,11 @@ function App() {
 
   const addUnmatchedReceipt = (input: NewUnmatchedReceiptInput) => {
     if (cloudAccount) {
-      notify('Receipt import is not connected', 'Record a payment directly against its customer invoice. M-Pesa statement imports and matching are not enabled yet.');
-      setDialog(null);
+      void runCloudMutation(
+        () => postCloudUnmatchedReceipt(cloudAccount.business.id, input),
+        'Receipt recorded',
+        'The receipt is saved in the cloud queue. It has not changed an invoice balance until you allocate it.',
+      );
       return;
     }
     const reference = input.reference.trim().toUpperCase();
@@ -2761,8 +2762,11 @@ function App() {
 
   const matchUnmatchedReceipt = (receiptId: string, invoiceId: string) => {
     if (cloudAccount) {
-      notify('Receipt matching is not connected', 'Record payments against their invoice until statement imports and reconciliation are enabled.');
-      setDialog(null);
+      void runCloudMutation(
+        () => matchCloudUnmatchedReceipt(cloudAccount.business.id, receiptId, invoiceId),
+        'Receipt allocated',
+        'The customer payment, invoice balance and accounting entries were updated together. Any excess remains as customer credit.',
+      );
       return;
     }
     const receipt = data.unmatchedReceipts.find(item => item.id === receiptId);

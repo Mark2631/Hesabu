@@ -1,6 +1,6 @@
 import type {
   AppData, BusinessProfile, CashMovement, Expense, IntegrationEvent, Invoice, JournalLine,
-  Payment, PaymentChannel, PurchaseOrder, Supplier, TeamInvitation, TeamMember, TeamRole, UnmatchedReceipt,
+  Payment, PaymentChannel, PurchaseOrder, ReceiptRail, Supplier, TeamInvitation, TeamMember, TeamRole, UnmatchedReceipt,
 } from '../types';
 
 export interface SupabaseUser {
@@ -529,6 +529,34 @@ export async function postCloudPayment(businessId: string, input: {
   });
 }
 
+const receiptRailToDatabase: Record<ReceiptRail, string> = {
+  'Till / PayBill': 'till_paybill',
+  'Pochi la Biashara': 'pochi',
+  'Send Money to business': 'send_money',
+  'Bank transfer': 'bank_transfer',
+  'Manual M-Pesa receipt': 'manual_mpesa',
+};
+
+export async function postCloudUnmatchedReceipt(businessId: string, input: {
+  reference: string; payer: string; phone: string; amount: number; rail: ReceiptRail;
+}): Promise<string> {
+  return rpc<string>('post_unmatched_receipt', {
+    p_business_id: businessId,
+    p_reference: input.reference.trim().toUpperCase(),
+    p_payer_name: input.payer.trim() || null,
+    p_payer_phone: input.phone.trim() || null,
+    p_amount: input.amount,
+    p_rail: receiptRailToDatabase[input.rail],
+  });
+}
+
+export async function matchCloudUnmatchedReceipt(businessId: string, receiptId: string, invoiceId: string): Promise<string> {
+  return rpc<string>('match_unmatched_receipt', {
+    p_business_id: businessId,
+    p_receipt_id: receiptId,
+    p_invoice_id: invoiceId,
+  });
+}
 export async function postCloudExpense(businessId: string, input: {
   category: string; description: string; amount: number; channel: Exclude<PaymentChannel, 'credit'>;
   date?: string;
