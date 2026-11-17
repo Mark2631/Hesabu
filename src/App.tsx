@@ -2069,7 +2069,9 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
     setMemberName(''); setMemberEmail(''); setMemberRole('Sales'); setShowAdd(false);
   };
   return <div className="page-stack">
-    <PageHeader title="Team & settings" description="Manage your business details and the people responsible for daily operations." />
+    <PageHeader title={cloudMode ? 'Business settings' : 'Team & settings'} description={cloudMode
+      ? 'Manage your business details and account preferences.'
+      : 'Manage your business details and the people responsible for daily operations.'} />
     <SectionCard title="Business administration" detail="Business identity and team responsibilities.">
       <div className="section-tabs">
         <button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}>Business profile</button>
@@ -2141,6 +2143,9 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
             <Button variant="outline" onClick={onOpenReports}>Open daily digest</Button>
           </div>
         </section>
+        {cloudMode && <section className="preference-block">
+          <div><strong>AI business assistant</strong><p>Planned, not connected in this release. Current business insights use fixed calculations from your saved records; they do not use generative AI.</p></div>
+        </section>}
       </div>}
     </SectionCard>
     {cloudMode
@@ -3272,7 +3277,7 @@ function App() {
     {selectedInvoice && <InvoiceDialog invoice={selectedInvoice} onClose={() => setSelectedInvoiceId(null)} onRequestPayment={() => {
       setSelectedInvoiceId(null);
       setDialog({ kind: 'stk', invoiceId: selectedInvoice.id });
-    }} />}
+    }} cloudMode={Boolean(cloudAccount)} />}
     {notice && <div className="toast" role="status"><CheckCircle2 size={17} /><span><strong>{notice.title}</strong>{notice.detail && <small>{notice.detail}</small>}</span><button onClick={closeNotice} aria-label="Dismiss notification"><X size={15} /></button></div>}
   </div>;
 }
