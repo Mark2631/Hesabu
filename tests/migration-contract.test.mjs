@@ -111,6 +111,6 @@ test('team invitations are email-bound, single-use, expiring and protected by RL
   assert.ok(team.includes('create or replace function app_private.update_business_member('));
   assert.ok(team.includes('create or replace function app_private.get_business_team('));
   assert.ok(team.includes('create or replace function app_private.list_business_invitations('));
-  assert.ok(!/create or replace function public\\.[\\s\\S]*?security definer/i.test(team));
+  assert.ok(!/create or replace function public\.[\s\S]*?security definer/i.test(team));
   assert.ok(team.includes('revoke all on function public.accept_business_invitation(uuid) from public, anon'));
 });
