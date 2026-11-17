@@ -1250,15 +1250,16 @@ function FloatingAssistant({
   </>;
 }
 
-function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice, onRecordExpense, onRecordPayment, onQuickStock }: {
-  data: AppData; metrics: ReturnType<typeof getMetrics>; onCreateSale: () => void;
-  onNavigate: (section: ModuleKey) => void; onSelectInvoice: (id: string) => void; onRecordExpense: () => void;
-  onRecordPayment: () => void; onCreatePurchase: () => void; onQuickStock: () => void;
+function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNavigate, onSelectInvoice, onRecordExpense, onRecordPayment, onRecordReceipt, onCreatePurchase, onQuickStock }: {
+  data: AppData; metrics: ReturnType<typeof getMetrics>; role: TeamRole;
+  onCreateSale: () => void; onCreateProduct: () => void;
+  onNavigate: (section: ModuleKey) => void; onSelectInvoice: (id: string) => void;
+  onRecordExpense: () => void; onRecordPayment: () => void; onRecordReceipt: () => void;
+  onCreatePurchase: () => void; onQuickStock: () => void;
 }) {
   const chartDays = Array.from({ length: 7 }, (_, index) => addDays(today(), index - 6));
   const chartValues = chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
   const chartLabels = chartDays.map(day => new Date(day + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }));
-  const recentInvoices = [...data.invoices].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
   const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
   const zeroStock = data.products.filter(product => product.quantity === 0);
   const slowStock = data.products.filter(product => product.quantity > 0 && !data.invoices.some(invoice =>
@@ -1266,47 +1267,103 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
   ));
   const unsettled = data.invoices.filter(invoice => invoiceBalance(invoice) > 0)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
+
+  type RecentActivity = {
+    id: string; title: string; detail: string; time: string;
+    amount: number | null; direction: 'in' | 'out' | 'neutral';
+    invoiceId?: string; label?: string;
+  };
+  const activity: RecentActivity[] = [
+    ...data.payments.filter(payment => payment.status === 'succeeded').map(payment => ({
+      id: 'payment-' + payment.id,
+      title: payment.customer || 'Customer payment',
+      detail: (payment.invoiceNumber ? payment.invoiceNumber + ' · ' : '') + channelLabel(payment.channel) +
+        (payment.reference && payment.reference !== '—' ? ' · ' + shortRef(payment.reference) : ''),
+      time: payment.createdAt, amount: payment.amount, direction: 'in' as const, invoiceId: payment.invoiceId,
+    })),
+    ...data.expenses.map(expense => ({
+      id: 'expense-' + expense.id, title: expense.description || 'Business expense',
+      detail: expense.category + ' · ' + channelLabel(expense.channel),
+      time: expense.date + 'T12:00:00', amount: expense.amount, direction: 'out' as const,
+    })),
+    ...(data.cashMovements ?? []).filter(movement => movement.direction === 'out').map(movement => ({
+      id: 'movement-' + movement.id, title: movement.description || 'Business payment',
+      detail: movement.source === 'supplier_payment' ? 'Supplier payment · ' + (movement.reference || channelLabel(movement.channel)) : channelLabel(movement.channel),
+      time: movement.date + 'T12:00:00', amount: movement.amount, direction: 'out' as const,
+    })),
+    ...data.invoices.filter(invoice => invoice.total > 0 && invoice.paid === 0).map(invoice => ({
+      id: 'credit-' + invoice.id, title: invoice.customer || 'Credit sale',
+      detail: invoice.number + ' · Sale on credit', time: invoice.date + 'T12:00:00',
+      amount: invoice.total, direction: 'neutral' as const, invoiceId: invoice.id, label: 'On credit',
+    })),
+    ...(role === 'Inventory' ? data.purchaseOrders.map(order => ({
+      id: 'order-' + order.id, title: order.supplierName || 'Supplier order',
+      detail: order.number + ' · ' + order.status.replaceAll('_', ' '),
+      time: order.createdAt + 'T12:00:00', amount: order.total,
+      direction: 'neutral' as const, label: 'Purchase order',
+    })) : []),
+  ].sort((a, b) => b.time.localeCompare(a.time)).slice(0, 7);
+
+  const quickActions: Array<{ label: string; icon: LucideIcon; run: () => void }> =
+    role === 'Owner' || role === 'Manager' ? [
+      { label: 'Sale', icon: ArrowUpRight, run: onCreateSale },
+      { label: 'Expense', icon: ArrowDownLeft, run: onRecordExpense },
+      { label: 'Payment', icon: Wallet, run: onRecordPayment },
+      { label: 'Stock', icon: Package, run: onQuickStock },
+    ] : role === 'Sales' ? [
+      { label: 'Sale', icon: ArrowUpRight, run: onCreateSale },
+      { label: 'Payment', icon: Wallet, run: onRecordPayment },
+      { label: 'Receipt', icon: ArrowDownLeft, run: onRecordReceipt },
+      { label: 'Follow up', icon: Receipt, run: () => onNavigate('sales') },
+    ] : role === 'Inventory' ? [
+      { label: 'Add item', icon: Package, run: onCreateProduct },
+      { label: 'Count stock', icon: Boxes, run: onQuickStock },
+      { label: 'Purchase', icon: ShoppingCart, run: onCreatePurchase },
+      { label: 'Suppliers', icon: Truck, run: () => onNavigate('procurement') },
+    ] : [
+      { label: 'Expense', icon: ArrowDownLeft, run: onRecordExpense },
+      { label: 'Payment', icon: Wallet, run: onRecordPayment },
+      { label: 'Receipt', icon: ArrowDownLeft, run: onRecordReceipt },
+      { label: 'Reports', icon: BarChart3, run: () => onNavigate('reports') },
+    ];
+
+  const heroTitle = role === 'Sales' ? 'Sales recorded today' : role === 'Inventory' ? 'Stock at cost' : 'Business cash position';
+  const heroValue = role === 'Sales' ? metrics.salesToday : role === 'Inventory' ? metrics.inventoryValue : metrics.cashPosition;
+  const heroDetail = role === 'Sales' ? 'Customer sales entered today'
+    : role === 'Inventory' ? 'Recorded value of stock on hand'
+    : 'Recorded cash, M-Pesa, bank and card balances';
+
   return <div className="page-stack">
     <div className="overview-welcome">
       <div><div className="eyebrow">BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Your business, at a glance.</p></div>
       <div className="overview-welcome-actions"><span className="date-chip"><CalendarDays size={14} /> {dateLabel(today())}</span></div>
     </div>
-    <section className="finance-balance-hero" aria-label="Business balance">
+    <section className="finance-balance-hero" aria-label={heroTitle}>
       <div className="finance-balance-top">
-        <div><span>Business cash position</span><small>Recorded cash, M-Pesa, bank and card balances</small></div>
+        <div><span>{heroTitle}</span><small>{heroDetail}</small></div>
         <span className="finance-balance-mark"><Wallet size={20} /></span>
       </div>
-      <strong className="finance-balance-value">{money(metrics.cashPosition)}</strong>
+      <strong className="finance-balance-value">{money(heroValue)}</strong>
       <div className="finance-balance-actions" aria-label="Quick business actions">
-        <button type="button" onClick={onCreateSale}><span><ArrowUpRight size={19} /></span><strong>Sale</strong></button>
-        <button type="button" onClick={onRecordExpense}><span><ArrowDownLeft size={19} /></span><strong>Expense</strong></button>
-        <button type="button" onClick={onRecordPayment}><span><Wallet size={19} /></span><strong>Payment</strong></button>
-        <button type="button" onClick={onQuickStock}><span><Package size={19} /></span><strong>Stock</strong></button>
+        {quickActions.map(({ label, icon: Icon, run }) => <button type="button" key={label} onClick={run}>
+          <span><Icon size={19} /></span><strong>{label}</strong>
+        </button>)}
       </div>
     </section>
     <section className="daily-summary-section" aria-label="Daily business figures">
-      <div className="daily-summary-heading"><h3>Business at a glance</h3><span>Today's figures</span></div>
+      <div className="daily-summary-heading"><h3>{role === 'Inventory' ? 'Inventory at a glance' : role === 'Sales' ? 'Sales at a glance' : 'Business at a glance'}</h3><span>Today's figures</span></div>
       <div className="daily-summary-grid">
-        <div className="daily-summary-item daily-summary-sales">
-          <div className="daily-summary-top"><span>Sales today</span><span className="daily-summary-icon"><TrendingUp size={16} /></span></div>
-          <strong>{money(metrics.salesToday)}</strong>
-          <small>Recorded customer sales</small>
-        </div>
-        <div className="daily-summary-item daily-summary-expenses">
-          <div className="daily-summary-top"><span>Payments received</span><span className="daily-summary-icon"><ArrowDownLeft size={16} /></span></div>
-          <strong>{money(metrics.collectedToday)}</strong>
-          <small>Customer payments recorded</small>
-        </div>
-        <div className="daily-summary-item daily-summary-stock">
-          <div className="daily-summary-top"><span>Expenses today</span><span className="daily-summary-icon"><TrendingDown size={16} /></span></div>
-          <strong>{money(sum(data.expenses.filter(expense => expense.date === today()).map(expense => expense.amount)))}</strong>
-          <small>Business costs recorded</small>
-        </div>
-        <div className="daily-summary-item daily-summary-payables">
-          <div className="daily-summary-top"><span>Stock alerts</span><span className="daily-summary-icon"><Package size={16} /></span></div>
-          <strong>{numberText(lowStock.length)}</strong>
-          <small>Products at reorder level</small>
-        </div>
+        {role === 'Inventory' ? <>
+          <div className="daily-summary-item daily-summary-sales"><div className="daily-summary-top"><span>Products</span><span className="daily-summary-icon"><Package size={16} /></span></div><strong>{numberText(data.products.length)}</strong><small>Active inventory items</small></div>
+          <div className="daily-summary-item daily-summary-stock"><div className="daily-summary-top"><span>Stock alerts</span><span className="daily-summary-icon"><AlertTriangle size={16} /></span></div><strong>{numberText(lowStock.length)}</strong><small>At or below reorder level</small></div>
+          <div className="daily-summary-item daily-summary-expenses"><div className="daily-summary-top"><span>Out of stock</span><span className="daily-summary-icon"><Package size={16} /></span></div><strong>{numberText(zeroStock.length)}</strong><small>Unavailable to sell</small></div>
+          <div className="daily-summary-item daily-summary-payables"><div className="daily-summary-top"><span>Stock at cost</span><span className="daily-summary-icon"><Wallet size={16} /></span></div><strong>{money(metrics.inventoryValue)}</strong><small>Current stock valuation</small></div>
+        </> : <>
+          <div className="daily-summary-item daily-summary-sales"><div className="daily-summary-top"><span>Sales today</span><span className="daily-summary-icon"><TrendingUp size={16} /></span></div><strong>{money(metrics.salesToday)}</strong><small>Recorded customer sales</small></div>
+          <div className="daily-summary-item daily-summary-expenses"><div className="daily-summary-top"><span>Payments received</span><span className="daily-summary-icon"><ArrowDownLeft size={16} /></span></div><strong>{money(metrics.collectedToday)}</strong><small>Customer payments recorded</small></div>
+          {role !== 'Sales' && <div className="daily-summary-item daily-summary-stock"><div className="daily-summary-top"><span>Expenses today</span><span className="daily-summary-icon"><TrendingDown size={16} /></span></div><strong>{money(sum(data.expenses.filter(expense => expense.date === today()).map(expense => expense.amount)))}</strong><small>Business costs recorded</small></div>}
+          <div className="daily-summary-item daily-summary-payables"><div className="daily-summary-top"><span>{role === 'Sales' ? 'Open invoices' : 'Stock alerts'}</span><span className="daily-summary-icon"><Package size={16} /></span></div><strong>{numberText(role === 'Sales' ? metrics.unpaidInvoices : lowStock.length)}</strong><small>{role === 'Sales' ? money(metrics.receivables) + ' awaiting collection' : 'Products at reorder level'}</small></div>
+        </>}
       </div>
     </section>
     <div className="content-grid content-grid-main">
@@ -1314,38 +1371,36 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
         <div className="chart-summary"><strong>{money(sum(chartValues))}</strong><span>Last 7 days</span></div>
         <MiniBars values={chartValues} labels={chartLabels} />
       </SectionCard>
-      <SectionCard title="Stock watch" detail="Products that could interrupt sales or tie up cash.">
-        <div className="stock-watch-list">
-          <button onClick={() => onNavigate('inventory')}><span><strong>Out of stock</strong><small>Products unavailable to sell</small></span><b>{zeroStock.length}</b></button>
-          <button onClick={() => onNavigate('inventory')}><span><strong>Reorder soon</strong><small>At or below the reorder point</small></span><b>{lowStock.length}</b></button>
-          <button onClick={() => onNavigate('inventory')}><span><strong>Slow stock</strong><small>No recorded sale in 30 days</small></span><b>{slowStock.length}</b></button>
-        </div>
-        <button className="text-link stock-watch-link" onClick={() => onNavigate('inventory')}>Review inventory <ArrowRight size={13} /></button>
-      </SectionCard>
-    </div>
-    <div className="content-grid content-grid-main">
-      <SectionCard title="Recent sales" detail="The latest activity across your sales channels." action={<button className="text-link" onClick={() => onNavigate('sales')}>All sales <ArrowRight size={13} /></button>}>
-        {recentInvoices.length ? <DataTable headers={['Sale', 'Customer', 'Date', 'Status', 'Total']}>
-          {recentInvoices.map(invoice => <tr key={invoice.id} className="clickable-row" onClick={() => onSelectInvoice(invoice.id)}>
-            <td><strong>{invoice.number}</strong><small className="cell-sub">{sourceLabel(invoice.source)}</small></td>
-            <td>{invoice.customer}</td><td>{dateLabel(invoice.date)}</td>
-            <td><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill></td>
-            <td className="amount-cell">{money(invoice.total)}</td>
-          </tr>)}
-        </DataTable> : <EmptyState title="No sales yet" body="Record the first sale to start building your business record." action={<Button onClick={onCreateSale}>Record a sale</Button>} />}
-      </SectionCard>
-      <SectionCard title="Customer follow-up" detail="Sales where payment is still outstanding.">
-        {unsettled.length ? <div className="followup-list">
+      <SectionCard title={role === 'Sales' ? 'Customer follow-up' : 'Stock watch'} detail={role === 'Sales' ? 'Customer balances requiring attention.' : 'Products that could interrupt sales or tie up cash.'}>
+        {role === 'Sales' ? (unsettled.length ? <div className="followup-list">
           {unsettled.map(invoice => <button key={invoice.id} onClick={() => onSelectInvoice(invoice.id)}>
             <span><strong>{invoice.customer}</strong><small>{invoice.number} · Due {dateLabel(invoice.dueDate)}</small></span>
             <strong>{money(invoiceBalance(invoice))}</strong>
           </button>)}
-        </div> : <EmptyState title="No balances to follow up" body="Unpaid and part-paid sales will appear here." />}
+        </div> : <EmptyState title="No balances to follow up" body="Unpaid and part-paid sales will appear here." />) : <div className="stock-watch-list">
+          <button onClick={() => onNavigate('inventory')}><span><strong>Out of stock</strong><small>Products unavailable to sell</small></span><b>{zeroStock.length}</b></button>
+          <button onClick={() => onNavigate('inventory')}><span><strong>Reorder soon</strong><small>At or below the reorder point</small></span><b>{lowStock.length}</b></button>
+          {role !== 'Inventory' && <button onClick={() => onNavigate('inventory')}><span><strong>Slow stock</strong><small>No recorded sale in 30 days</small></span><b>{slowStock.length}</b></button>}
+        </div>}
+        {role !== 'Sales' && <button className="text-link stock-watch-link" onClick={() => onNavigate('inventory')}>Review inventory <ArrowRight size={13} /></button>}
       </SectionCard>
     </div>
+    <SectionCard title="Recent transactions" detail="Money in, money out and the latest business activity." action={<button className="text-link" onClick={() => onNavigate(role === 'Inventory' ? 'procurement' : 'payments')}>See all <ArrowRight size={13} /></button>}>
+      {activity.length ? <div className="recent-activity-list">
+        {activity.map(item => <button type="button" className="recent-activity-row" key={item.id}
+          onClick={() => item.invoiceId ? onSelectInvoice(item.invoiceId) : onNavigate(item.direction === 'out' ? (role === 'Inventory' ? 'procurement' : 'accounts') : 'payments')}>
+          <span className={'recent-activity-icon ' + (item.direction === 'in' ? 'is-in' : item.direction === 'out' ? 'is-out' : 'is-neutral')}>
+            {item.direction === 'in' ? <ArrowDownLeft size={17} /> : item.direction === 'out' ? <ArrowUpRight size={17} /> : <Receipt size={17} />}
+          </span>
+          <span className="recent-activity-copy"><strong>{item.title}</strong><small>{item.detail} · {dateTimeLabel(item.time)}</small></span>
+          <span className={'recent-activity-amount ' + (item.direction === 'in' ? 'positive' : item.direction === 'out' ? 'negative' : '')}>
+            {item.label ?? ((item.direction === 'out' ? '−' : item.direction === 'in' ? '+' : '') + money(item.amount ?? 0))}
+          </span>
+        </button>)}
+      </div> : <EmptyState title="No transactions yet" body="Sales, receipts and operating payments will appear here once your team records them." action={role === 'Sales' || role === 'Owner' || role === 'Manager' ? <Button onClick={onCreateSale}>Record a sale</Button> : undefined} />}
+    </SectionCard>
   </div>;
 }
-
 function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
   data: AppData; search: string; onSearch: (value: string) => void; onCreateSale: () => void; onSelectInvoice: (id: string) => void;
 }) {
@@ -1834,17 +1889,44 @@ function downloadDailyWorkbook(data: AppData) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: { data: AppData; metrics: ReturnType<typeof getMetrics>; whatsappNumber: string; onWhatsAppUnavailable: () => void }) {
-  const [period, setPeriod] = useState<'week' | 'month'>('week');
-  const days = period === 'week' ? 7 : 30;
-  const dayRows = Array.from({ length: days }, (_, index) => {
-    const date = addDays(today(), index - (days - 1));
+function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, role }: {
+  data: AppData; metrics: ReturnType<typeof getMetrics>; whatsappNumber: string;
+  onWhatsAppUnavailable: () => void; role: TeamRole;
+}) {
+  const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
+  const todayDate = today();
+  const yearStart = todayDate.slice(0, 4) + '-01-01';
+  const startDate = period === 'week' ? addDays(todayDate, -6) : period === 'month' ? addDays(todayDate, -29) : yearStart;
+  const elapsedDays = Math.max(1, Math.floor((Date.parse(todayDate + 'T12:00:00') - Date.parse(startDate + 'T12:00:00')) / 86400000) + 1);
+  const periodLabel = period === 'week' ? 'Weekly' : period === 'month' ? 'Monthly' : 'Yearly';
+
+  const dailyRows = (count: number) => Array.from({ length: count }, (_, index) => {
+    const date = addDays(todayDate, index - (count - 1));
     const invoices = data.invoices.filter(invoice => invoice.date === date);
-    return { date, sales: sum(invoices.map(invoice => invoice.total)), cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))) };
+    return {
+      key: date,
+      label: period === 'week' ? new Date(date + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }) : String(new Date(date + 'T12:00:00').getDate()),
+      title: dateLabel(date),
+      sales: sum(invoices.map(invoice => invoice.total)),
+      cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))),
+    };
   });
-  const filteredInvoices = data.invoices.filter(invoice => invoice.date >= addDays(today(), -(days - 1)) && invoice.date <= today());
+  const monthlyRows = Array.from({ length: 12 }, (_, index) => {
+    const month = String(index + 1).padStart(2, '0');
+    const key = todayDate.slice(0, 4) + '-' + month;
+    const invoices = data.invoices.filter(invoice => invoice.date.slice(0, 7) === key);
+    return {
+      key,
+      label: new Date(key + '-01T12:00:00').toLocaleDateString('en-KE', { month: 'short' }),
+      title: new Date(key + '-01T12:00:00').toLocaleDateString('en-KE', { month: 'long', year: 'numeric' }),
+      sales: sum(invoices.map(invoice => invoice.total)),
+      cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))),
+    };
+  });
+  const dayRows = period === 'year' ? monthlyRows : dailyRows(period === 'week' ? 7 : 30);
+  const filteredInvoices = data.invoices.filter(invoice => invoice.date >= startDate && invoice.date <= todayDate);
   const sales = sum(filteredInvoices.map(invoice => invoice.total));
-  const averageDailySales = sales / days;
+  const averageDailySales = sales / elapsedDays;
   const averageOrderValue = filteredInvoices.length ? sales / filteredInvoices.length : 0;
   const unitsSoldInPeriod = sum(filteredInvoices.flatMap(invoice => invoice.lines.map(line => line.quantity)));
   const grossProfitInPeriod = sum(filteredInvoices.map(marginValue));
@@ -1858,47 +1940,53 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: {
     return { product, unitsSold, netSales, itemCost, grossProfit: netSales - itemCost,
       marginRate: netSales > 0 ? ((netSales - itemCost) / netSales) * 100 : 0 };
   }).filter(item => item.unitsSold > 0).sort((a, b) => b.grossProfit - a.grossProfit).slice(0, 10);
-  const max = Math.max(1, ...dayRows.map(row => row.sales));
+  const max = Math.max(1, ...dayRows.flatMap(row => [row.sales, row.cost]));
+  const digest = getDailyDigest(data);
+
   return <div className="page-stack">
-    <PageHeader title="Reports" description="A practical view of sales, margin, cash movement and inventory value." actions={<Button variant="outline" onClick={() => window.print()}><Download size={15} /> Print report</Button>} />
+    <PageHeader title="Analytics" description="Understand sales, margin, customer balances and business performance." actions={<Button variant="outline" onClick={() => window.print()}><Download size={15} /> Print report</Button>} />
     <SectionCard title="Today's business digest" detail="Daily operations, with clear numbers and downloadable records." className="daily-digest-print">
       <div className="daily-digest-metrics">
-        <div><span>Sales today</span><strong>{money(getDailyDigest(data).salesTotal)}</strong><small>{getDailyDigest(data).sales.length} sales recorded</small></div>
-        <div><span>Payments received</span><strong>{money(getDailyDigest(data).receivedTotal)}</strong><small>Matched and unmatched receipts</small></div>
-        <div><span>Expenses</span><strong>{money(getDailyDigest(data).expenseTotal)}</strong><small>Operating expenses recorded</small></div>
-        <div><span>Gross profit</span><strong>{money(getDailyDigest(data).grossProfit)}</strong><small>After recorded product cost</small></div>
+        <div><span>Sales today</span><strong>{money(digest.salesTotal)}</strong><small>{digest.sales.length} sales recorded</small></div>
+        <div><span>Payments received</span><strong>{money(digest.receivedTotal)}</strong><small>Matched and unmatched receipts</small></div>
+        {role !== 'Sales' && <div><span>Expenses</span><strong>{money(digest.expenseTotal)}</strong><small>Operating expenses recorded</small></div>}
+        <div><span>Gross profit</span><strong>{money(digest.grossProfit)}</strong><small>After recorded product cost</small></div>
       </div>
       <div className="daily-digest-lower">
-        <span>{money(getDailyDigest(data).supplierPaymentTotal)} supplier payments</span>
-        <span>{numberText(getDailyDigest(data).unitsSold)} units sold</span>
-        <span>{numberText(getDailyDigest(data).purchaseOrders.length)} supplier orders raised</span>
-        <span>{numberText(getDailyDigest(data).inventoryActivity.length)} stock updates</span>
-        <span>{numberText(getDailyDigest(data).lowStock.length)} products at reorder level</span>
+        {role !== 'Sales' && <span>{money(digest.supplierPaymentTotal)} supplier payments</span>}
+        <span>{numberText(digest.unitsSold)} units sold</span>
+        {role !== 'Sales' && <span>{numberText(digest.purchaseOrders.length)} supplier orders raised</span>}
+        {role !== 'Sales' && <span>{numberText(digest.inventoryActivity.length)} stock updates</span>}
+        <span>{numberText(digest.lowStock.length)} products at reorder level</span>
       </div>
       <div className="daily-digest-actions">
         <Button variant="outline" onClick={() => downloadDailyWorkbook(data)}><FileSpreadsheet size={16} /> Download Excel workbook</Button>
         <Button variant="outline" onClick={() => window.print()}><FileText size={16} /> Save as PDF</Button>
         <Button onClick={() => openDailyDigestWhatsApp(data, whatsappNumber, onWhatsAppUnavailable)}><MessageCircle size={16} /> Prepare WhatsApp summary</Button>
       </div>
-      <p className="daily-digest-note">The workbook is generated from the latest records loaded for this business. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery requires the WhatsApp Business API and a secure server connection.</p>
+      <p className="daily-digest-note">The workbook is generated from the latest records loaded for this business. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery is not enabled.</p>
     </SectionCard>
     <div className="metric-grid metric-grid-six compact-metrics">
-      <MetricCard label="Sales recorded" value={money(sales)} note={filteredInvoices.length + ' invoices · ' + days + ' days'} icon={TrendingUp} tone="green" />
+      <MetricCard label="Sales recorded" value={money(sales)} note={filteredInvoices.length + ' invoices · ' + periodLabel.toLowerCase()} icon={TrendingUp} tone="green" />
       <MetricCard label="Average daily sales" value={money(averageDailySales)} note="Includes days with no sales" icon={BarChart3} tone="green" />
       <MetricCard label="Average sale" value={money(averageOrderValue)} note="Sales value per invoice" icon={Receipt} tone="blue" />
       <MetricCard label="Gross profit" value={money(grossProfitInPeriod)} note="After recorded item cost" icon={Activity} tone="blue" />
       <MetricCard label="Gross margin" value={(sales > 0 ? (grossProfitInPeriod / sales) * 100 : 0).toFixed(1) + '%'} note="Gross profit as share of sales" icon={TrendingUp} tone="slate" />
       <MetricCard label="Units sold" value={numberText(unitsSoldInPeriod)} note="Across the selected period" icon={Package} tone="amber" />
     </div>
-    <SectionCard title="Trading performance" detail="Sales and cost of goods sold by day." action={<div className="segmented-control"><button className={period === 'week' ? 'active' : ''} onClick={() => setPeriod('week')}>7 days</button><button className={period === 'month' ? 'active' : ''} onClick={() => setPeriod('month')}>30 days</button></div>}>
+    <SectionCard title="Trading performance" detail="Sales and cost of goods sold across the selected period." action={<div className="segmented-control">
+      <button className={period === 'week' ? 'active' : ''} onClick={() => setPeriod('week')}>Weekly</button>
+      <button className={period === 'month' ? 'active' : ''} onClick={() => setPeriod('month')}>Monthly</button>
+      <button className={period === 'year' ? 'active' : ''} onClick={() => setPeriod('year')}>Yearly</button>
+    </div>}>
       <div className="report-chart-legend"><span><i className="legend-dot legend-green" /> Sales</span><span><i className="legend-dot legend-blue" /> Cost of goods sold</span></div>
-      <div className="report-bars">
-        {dayRows.map(row => <div className="report-bar-column" key={row.date} title={dateLabel(row.date) + ': ' + money(row.sales)}>
+      <div className={'report-bars ' + (period === 'year' ? 'report-bars-year' : '')}>
+        {dayRows.map(row => <div className="report-bar-column" key={row.key} title={row.title + ': ' + money(row.sales)}>
           <div className="report-bar-space">
             <div className="report-bar report-bar-sales" style={{ height: Math.max(2, row.sales / max * 100) + '%' }} />
             <div className="report-bar report-bar-cost" style={{ height: Math.max(2, row.cost / max * 100) + '%' }} />
           </div>
-          <span>{period === 'week' ? new Date(row.date + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }) : String(new Date(row.date + 'T12:00:00').getDate())}</span>
+          <span>{row.label}</span>
         </div>)}
       </div>
     </SectionCard>
@@ -1907,15 +1995,17 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: {
         {productPerformance.length ? <DataTable headers={['Product', 'Units', 'Net sales', 'Item cost', 'Gross profit', 'Margin']}>
           {productPerformance.map(item => <tr key={item.product.id}>
             <td><strong>{item.product.name}</strong><small className="cell-sub">{item.product.sku}</small></td>
-            <td>{numberText(item.unitsSold)}</td>
-            <td className="amount-cell">{money(item.netSales)}</td>
-            <td className="amount-cell">{money(item.itemCost)}</td>
-            <td className="amount-cell">{money(item.grossProfit)}</td>
-            <td>{item.marginRate.toFixed(1)}%</td>
+            <td>{numberText(item.unitsSold)}</td><td className="amount-cell">{money(item.netSales)}</td><td className="amount-cell">{money(item.itemCost)}</td>
+            <td className="amount-cell">{money(item.grossProfit)}</td><td>{item.marginRate.toFixed(1)}%</td>
           </tr>)}
         </DataTable> : <EmptyState title="No product sales in this period" body="Recorded sales will show which products contribute most to gross profit." />}
       </SectionCard>
-      <SectionCard title="Working capital" detail="Short-term funds tied up in operations">
+      {role === 'Sales' ? <SectionCard title="Customer balances" detail="Invoices that still need payment.">
+        <div className="working-capital-list">
+          <div><span>Customer receivables</span><strong>{money(metrics.receivables)}</strong></div>
+          <div><span>Open invoices</span><strong>{numberText(metrics.unpaidInvoices)}</strong></div>
+        </div>
+      </SectionCard> : <SectionCard title="Working capital" detail="Short-term funds tied up in operations">
         <div className="working-capital-list">
           <div><span>Cash and bank balances</span><strong>{money(metrics.cashPosition)}</strong></div>
           <div><span>Customer receivables</span><strong>{money(metrics.receivables)}</strong></div>
@@ -1923,12 +2013,11 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: {
           <div><span>Supplier payables</span><strong className="negative-text">{money(metrics.payables)}</strong></div>
           <div className="working-capital-total"><span>Net operating working capital</span><strong>{money(metrics.cashPosition + metrics.receivables + metrics.inventoryValue - metrics.payables - metrics.customerAdvances)}</strong></div>
         </div>
-      </SectionCard>
+      </SectionCard>}
     </div>
     <div className="report-footnote">Reports use the dates and costs recorded in this workspace. They are not audited financial statements or tax returns.</div>
   </div>;
 }
-
 
 function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
   profile: BusinessProfile;
@@ -3292,13 +3381,13 @@ function App() {
       </header>
 
       <div className="page-container">
-        {active === 'overview' && <OverviewPage data={data} metrics={metrics} onCreateSale={() => setDialog({ kind: 'sale' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
+        {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} cloudMode={Boolean(cloudAccount)} />}
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} onAddSupplier={() => setDialog({ kind: 'supplier' })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
-        {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} />}
+        {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} role={activeMember?.role ?? 'Owner'} />}
         {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} />}
         {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} teamInvitations={data.teamInvitations ?? []} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onRevokeInvitation={revokeTeamInvitation} onCopyInvitation={copyTeamInvitation} canManageTeam={activeMember?.role === 'Owner' || activeMember?.role === 'Manager'} canAssignManager={activeMember?.role === 'Owner'} onReset={() => {}} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
