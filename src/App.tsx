@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   Activity, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, BookOpen,
   Bell, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown,
@@ -10,11 +10,24 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
-import { makeDemoData, readWorkspace, saveWorkspace } from './data';
+const EMPTY_WORKSPACE_DATA: AppData = {
+  profile: {
+    name: 'Your business', legalName: '', owner: '', email: '', phone: '',
+    location: '', currency: 'KES', taxPin: '', industry: 'Other',
+  },
+  products: [], invoices: [], payments: [], unmatchedReceipts: [], expenses: [],
+  cashMovements: [], suppliers: [], purchaseOrders: [], teamMembers: [], journal: [],
+  events: [], openingBalances: { cash: 0, mpesa: 0, bank: 0, inventory: 0 },
+  nextInvoice: 1001, nextPurchaseOrder: 1,
+};
 import {
-  createBusiness, getBusinessSettings, getCloudDailyDigest, listMyBusinesses, restoreCloudSession,
-  saveBusinessPreferences, signInWithPassword, signOut, signUpWithPassword,
-  type CloudBusinessSettings, type CloudDailyDigest, type SignUpInput, type SupabaseUser,
+  adjustCloudStock, completeAuthCallback, createBusiness, createCloudProduct, createCloudSupplier,
+  createCloudPurchaseOrder, getBusinessSettings, getCloudWorkspace,
+  listMyBusinesses, postCloudExpense, postCloudPayment, postCloudSale,
+  postCloudSupplierPayment, receiveCloudPurchaseOrder, restoreCloudSession,
+  saveBusinessPreferences, saveCloudBusinessProfile, saveCloudWhatsAppDestination,
+  signInWithPassword, signOut, signUpWithPassword,
+  type SignUpInput, type SupabaseUser,
 } from './lib/supabase';
 import type {
   AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
@@ -30,6 +43,7 @@ type DialogState =
   | { kind: 'match-receipt'; receiptId: string }
   | { kind: 'expense' }
   | { kind: 'product' }
+  | { kind: 'supplier' }
   | { kind: 'purchase'; productId?: string; quantity?: number }
   | { kind: 'receive-purchase'; purchaseOrderId: string }
   | { kind: 'invoice'; invoiceId: string }
@@ -263,8 +277,8 @@ function Initials({ name }: { name: string }) {
   return <span className="avatar">{letters || 'H'}</span>;
 }
 
-function SaleDialog({ products, onClose, onCreate }: {
-  products: Product[]; onClose: () => void; onCreate: (input: NewInvoiceInput) => void;
+function SaleDialog({ products, onClose, onCreate, cloudMode }: {
+  products: Product[]; onClose: () => void; onCreate: (input: NewInvoiceInput) => void; cloudMode: boolean;
 }) {
   const [customer, setCustomer] = useState('Walk-in customer');
   const [phone, setPhone] = useState('');
@@ -330,10 +344,12 @@ function SaleDialog({ products, onClose, onCreate }: {
           { value: 'bank', label: 'Bank transfer' }, { value: 'card', label: 'Card payment' },
           { value: 'credit', label: 'On credit' },
         ]} />
-        <SelectField label="Sales source" value={source} onChange={value => setSource(value as Invoice['source'])} options={[
-          { value: 'pos', label: 'Point of sale' }, { value: 'website', label: 'Website' },
-          { value: 'hesabu', label: 'Hesabu checkout' }, { value: 'manual', label: 'Manual entry' },
-        ]} />
+        <SelectField label="Sales source" value={source} onChange={value => setSource(value as Invoice['source'])} options={cloudMode
+          ? [{ value: 'pos', label: 'Point of sale' }, { value: 'manual', label: 'Manual entry' }]
+          : [
+            { value: 'pos', label: 'Point of sale' }, { value: 'website', label: 'Website' },
+            { value: 'hesabu', label: 'Hesabu checkout' }, { value: 'manual', label: 'Manual entry' },
+          ]} />
       </div>
       {channel === 'credit' && <Field label="Payment due date" type="date" value={dueDate} onChange={setDueDate} />}
       <div className="dialog-total">
@@ -349,47 +365,74 @@ function SaleDialog({ products, onClose, onCreate }: {
   </Modal>;
 }
 
-function StkDialog({ invoices, initialInvoiceId, onClose, onCreate }: {
-  invoices: Invoice[]; initialInvoiceId?: string; onClose: () => void; onCreate: (input: NewPaymentInput) => void;
+function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }: {
+  invoices: Invoice[]; initialInvoiceId?: string; onClose: () => void;
+  onCreate: (input: NewPaymentInput) => void; cloudMode: boolean;
 }) {
   const outstandingInvoices = invoices.filter(invoice => invoiceBalance(invoice) > 0);
   const [invoiceId, setInvoiceId] = useState(initialInvoiceId || outstandingInvoices[0]?.id || '');
   const invoice = outstandingInvoices.find(item => item.id === invoiceId);
   const [phone, setPhone] = useState(invoice?.phone || '');
   const [amount, setAmount] = useState(String(invoice ? invoiceBalance(invoice) : 0));
-  const channel: PaymentChannel = 'mpesa';
+  const [channel, setChannel] = useState<Exclude<PaymentChannel, 'credit'>>('mpesa');
+  const [reference, setReference] = useState('');
+  const [idempotencyKey] = useState(() => 'manual-payment:' + makeId('IDEM'));
   useEffect(() => {
     const selected = outstandingInvoices.find(item => item.id === invoiceId);
-    if (selected) setAmount(String(invoiceBalance(selected)));
+    if (selected) {
+      setAmount(String(invoiceBalance(selected)));
+      setPhone(selected.phone || '');
+    }
   }, [invoiceId]);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const value = Number(amount);
     if (!invoice || value <= 0 || value > invoiceBalance(invoice)) return;
-    onCreate({ invoiceId, phone, amount: value, channel, origin: 'daraja_demo' });
+    onCreate({
+      invoiceId, phone, amount: value, channel,
+      origin: cloudMode ? 'manual' : 'daraja_demo',
+      reference: reference.trim(),
+      idempotencyKey,
+    });
   };
-  return <Modal title="Request a payment" detail="Create a payment request linked to an outstanding customer sale." onClose={onClose}>
+  return <Modal
+    title={cloudMode ? 'Record a payment' : 'Request a payment'}
+    detail={cloudMode
+      ? 'Record money already received against an outstanding customer sale. This does not initiate an M-Pesa STK prompt.'
+      : 'Preview the sample payment request and follow-up flow.'}
+    onClose={onClose}
+  >
     <form className="modal-body" onSubmit={submit}>
-      {outstandingInvoices.length === 0 ? <EmptyState title="No unpaid invoices" body="Create an invoice with a balance before requesting payment." /> : <>
-        <div className="demo-notice"><Smartphone size={17} /><span><strong>Sample payment request</strong><small>Preview the request and payment follow-up flow.</small></span></div>
+      {outstandingInvoices.length === 0 ? <EmptyState title="No unpaid invoices" body="Create a sale with an outstanding balance before recording a payment." /> : <>
+        {!cloudMode && <div className="demo-notice"><Smartphone size={17} /><span><strong>Sample payment request</strong><small>No real Safaricom request will be sent in this preview.</small></span></div>}
         <SelectField label="Invoice" value={invoiceId} onChange={setInvoiceId} options={outstandingInvoices.map(item => ({
           value: item.id, label: item.number + ' · ' + item.customer + ' · ' + money(invoiceBalance(item)),
         }))} />
-        <Field label="Customer M-Pesa number" value={phone} onChange={setPhone} placeholder="2547XXXXXXXX" required />
-        <Field label="Amount (KSh)" type="number" min={1} value={amount} onChange={setAmount} required />
-        {invoice && <div className="balance-hint"><span>Unpaid invoice balance</span><strong>{money(invoiceBalance(invoice))}</strong></div>}
-        <div className="payment-flow-note">
-          <span className="flow-step flow-step-active">1 <small>Request</small></span>
-          <span className="flow-line" />
-          <span className="flow-step">2 <small>Customer PIN</small></span>
-          <span className="flow-line" />
-          <span className="flow-step">3 <small>Callback</small></span>
-          <span className="flow-line" />
-          <span className="flow-step">4 <small>Reconcile</small></span>
+        <div className="form-grid form-grid-two">
+          <Field label="Customer phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
+          <Field label="Amount (KSh)" type="number" min={1} value={amount} onChange={setAmount} required />
         </div>
+        {cloudMode && <>
+          <SelectField label="Received through" value={channel} onChange={value => setChannel(value as Exclude<PaymentChannel, 'credit'>)} options={[
+            { value: 'mpesa', label: 'M-Pesa already received' },
+            { value: 'cash', label: 'Cash received' },
+            { value: 'bank', label: 'Bank transfer received' },
+            { value: 'card', label: 'Card payment received' },
+          ]} />
+          <Field label="Transaction / receipt reference (optional)" value={reference} onChange={setReference} placeholder="e.g. QTX8AB12CD" />
+        </>}
+        {invoice && <div className="balance-hint"><span>Unpaid invoice balance</span><strong>{money(invoiceBalance(invoice))}</strong></div>}
+        {!cloudMode && <div className="payment-flow-note">
+          <span className="flow-step flow-step-active">1 <small>Request</small></span><span className="flow-line" />
+          <span className="flow-step">2 <small>Customer PIN</small></span><span className="flow-line" />
+          <span className="flow-step">3 <small>Callback</small></span><span className="flow-line" />
+          <span className="flow-step">4 <small>Reconcile</small></span>
+        </div>}
         <div className="modal-footer">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={!invoice || Number(amount) <= 0 || Number(amount) > invoiceBalance(invoice)}><Send size={15} /> Create payment request</Button>
+          <Button type="submit" disabled={!invoice || Number(amount) <= 0 || Number(amount) > invoiceBalance(invoice)}>
+            {cloudMode ? 'Save payment' : 'Create sample request'}
+          </Button>
         </div>
       </>}
     </form>
@@ -591,8 +634,8 @@ function ReceivePurchaseDialog({ order, onClose, onReceive }: {
   </Modal>;
 }
 
-function InvoiceDialog({ invoice, onClose, onRequestPayment }: {
-  invoice: Invoice; onClose: () => void; onRequestPayment: () => void;
+function InvoiceDialog({ invoice, onClose, onRequestPayment, cloudMode }: {
+  invoice: Invoice; onClose: () => void; onRequestPayment: () => void; cloudMode: boolean;
 }) {
   return <Modal title={invoice.number} detail="Invoice record and settlement history." onClose={onClose} size="lg">
     <div className="modal-body">
@@ -620,25 +663,30 @@ function InvoiceDialog({ invoice, onClose, onRequestPayment }: {
       </div>
       <div className="modal-footer">
         <Button variant="ghost" onClick={onClose}>Close</Button>
-        {invoiceBalance(invoice) > 0 && <Button onClick={onRequestPayment}><Send size={15} /> Request balance</Button>}
+        {invoiceBalance(invoice) > 0 && <Button onClick={onRequestPayment}><Send size={15} /> {cloudMode ? 'Record payment' : 'Request balance'}</Button>}
       </div>
     </div>
   </Modal>;
 }
 
 function SupplierPaymentDialog({ supplier, onClose, onPay }: {
-  supplier: Supplier; onClose: () => void; onPay: (amount: number) => void;
+  supplier: Supplier; onClose: () => void; onPay: (amount: number, channel: Exclude<PaymentChannel, 'credit'>) => void;
 }) {
   const [amount, setAmount] = useState(String(supplier.balance));
+  const [channel, setChannel] = useState<Exclude<PaymentChannel, 'credit'>>('bank');
   return <Modal title="Record supplier payment" detail={supplier.name} onClose={onClose}>
     <form className="modal-body" onSubmit={event => {
       event.preventDefault();
       const value = Number(amount);
-      if (value > 0 && value <= supplier.balance) onPay(value);
+      if (value > 0 && value <= supplier.balance) onPay(value, channel);
     }}>
       <div className="balance-hint"><span>Outstanding supplier balance</span><strong>{money(supplier.balance)}</strong></div>
       <Field label="Payment amount (KSh)" type="number" min={1} value={amount} onChange={setAmount} />
-      <div className="field-hint">This records the payment against the supplier’s outstanding balance.</div>
+      <SelectField label="Paid from" value={channel} onChange={value => setChannel(value as Exclude<PaymentChannel, 'credit'>)} options={[
+        { value: 'bank', label: 'Bank account' }, { value: 'mpesa', label: 'M-Pesa' },
+        { value: 'cash', label: 'Cash on hand' },
+      ]} />
+      <div className="field-hint">Choose the account the money was actually paid from.</div>
       <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={Number(amount) <= 0 || Number(amount) > supplier.balance}>Record payment</Button></div>
     </form>
   </Modal>;
@@ -809,11 +857,10 @@ function HesabuMark({ className = '' }: { className?: string }) {
 }
 
 function PublicLandingPage({
-  onSignIn, onCreateAccount, onPreview,
+  onSignIn, onCreateAccount,
 }: {
   onSignIn: () => void;
   onCreateAccount: () => void;
-  onPreview: () => void;
 }) {
   return <div className="public-site">
     <header className="public-header">
@@ -843,7 +890,6 @@ function PublicLandingPage({
           <p>Hesabu brings daily sales, payments, stock, expenses and customer balances into one clear business record. Spend less time chasing scattered notes and more time making informed decisions.</p>
           <div className="public-hero-actions">
             <button type="button" className="public-primary-action" onClick={onCreateAccount}>Create your business account <ArrowRight size={16} /></button>
-            <button type="button" className="public-secondary-action" onClick={onPreview}>Explore the sample workspace</button>
           </div>
           <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
         </div>
@@ -921,7 +967,7 @@ function PublicLandingPage({
         </div>
         <div className="public-footer-group"><strong>Product</strong><a href="#product">Sales and payments</a><a href="#product">Stock and purchasing</a><a href="#product">Reports and digest</a></div>
         <div className="public-footer-group"><strong>Learn</strong><a href="#how-it-works">How it works</a><a href="#businesses">Who Hesabu serves</a><a href="#trust">Your records</a></div>
-        <div className="public-footer-group"><strong>Your account</strong><button type="button" onClick={onSignIn}>Sign in</button><button type="button" onClick={onCreateAccount}>Create a business account</button><button type="button" onClick={onPreview}>Explore sample data</button></div>
+        <div className="public-footer-group"><strong>Your account</strong><button type="button" onClick={onSignIn}>Sign in</button><button type="button" onClick={onCreateAccount}>Create a business account</button></div>
       </div>
       <div className="public-footer-bottom"><span>© 2026 Hesabu. Built for business operations in Kenya.</span><span>Product information is subject to change as integrations are completed.</span></div>
     </footer>
@@ -929,9 +975,8 @@ function PublicLandingPage({
 }
 
 function AuthPage({
-  onPreview, onSignIn, onSignUp, initialMessage, initialMode, onBack,
+  onSignIn, onSignUp, initialMessage, initialMode, onBack,
 }: {
-  onPreview: () => void;
   onSignIn: (email: string, password: string) => Promise<void>;
   onSignUp: (input: SignUpInput) => Promise<'confirm_email' | void>;
   initialMessage?: string;
@@ -1027,7 +1072,7 @@ function AuthPage({
             <div className="auth-preference-manual"><span><strong>Manual records</strong><small>Record sales, payments, expenses and stock yourself.</small></span><span>Always on</span></div>
             <label className="auth-preference-option">
               <input type="checkbox" checked={aiAssistantEnabled} onChange={event => setAiAssistantEnabled(event.target.checked)} />
-              <span><strong>AI assistant</strong><small>Optional. Ask questions about sales, stock, expenses and balances when the AI service is connected.</small></span>
+              <span><strong>AI assistant · planned</strong><small>Register your interest. This release provides rules-based business summaries; AI chat is not connected yet.</small></span>
             </label>
             <label className="auth-preference-option">
               <input type="checkbox" checked={whatsappDigestEnabled} onChange={event => setWhatsappDigestEnabled(event.target.checked)} />
@@ -1038,9 +1083,7 @@ function AuthPage({
           <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
         </form>
         {message && <p className="auth-message" role="status">{message}</p>}
-        <div className="auth-divider"><span>OR</span></div>
-        <Button variant="outline" block onClick={onPreview}>Explore the sample workspace <ArrowRight size={15} /></Button>
-        <p className="auth-footnote">The sample workspace is stored only in this browser. Sign-in creates a separate cloud account.</p>
+        <p className="auth-footnote">Your business records are stored in your secure Hesabu account and are separate from every other business.</p>
       </div>
       <aside className="auth-aside">
         <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">BUSINESS OPERATIONS</span></div>
@@ -1060,157 +1103,6 @@ function AuthPage({
   </main>;
 }
 
-function CloudAccountScreen({
-  user, business, onSignOut, onPreview,
-}: {
-  user: SupabaseUser;
-  business: { id: string; name: string; industry?: string | null };
-  onSignOut: () => void;
-  onPreview: () => void;
-}) {
-  const [settings, setSettings] = useState<CloudBusinessSettings | null>(null);
-  const [digest, setDigest] = useState<CloudDailyDigest | null>(null);
-  const [destination, setDestination] = useState('');
-  const [loadingDigest, setLoadingDigest] = useState(true);
-  const [digestError, setDigestError] = useState('');
-  const [savingDestination, setSavingDestination] = useState(false);
-  const [digestNotice, setDigestNotice] = useState('');
-
-  useEffect(() => {
-    let active = true;
-    setLoadingDigest(true);
-    setDigestError('');
-    Promise.all([
-      getBusinessSettings(business.id),
-      getCloudDailyDigest(business.id),
-    ]).then(([nextSettings, nextDigest]) => {
-      if (!active) return;
-      setSettings(nextSettings);
-      setDigest(nextDigest);
-      setDestination(nextSettings.whatsapp_recipient_phone ?? '');
-    }).catch(() => {
-      if (!active) return;
-      setDigestError('The cloud daily digest is not ready yet. The business account is connected, but the operational database migration still needs to be applied to the Hesabu project.');
-    }).finally(() => {
-      if (active) setLoadingDigest(false);
-    });
-    return () => { active = false; };
-  }, [business.id]);
-
-  const saveDestination = async () => {
-    if (!settings) return;
-    if (settings.whatsapp_digest_enabled && !normaliseWhatsAppNumber(destination)) {
-      setDigestError('Enter a valid WhatsApp number before saving the digest destination.');
-      return;
-    }
-    setSavingDestination(true);
-    setDigestError('');
-    setDigestNotice('');
-    try {
-      await saveBusinessPreferences({
-        businessId: business.id,
-        aiAssistantEnabled: settings.ai_assistant_enabled,
-        whatsappDigestEnabled: settings.whatsapp_digest_enabled,
-        whatsappRecipientPhone: destination,
-      });
-      setDigestNotice('WhatsApp preferences saved to this business.');
-    } catch {
-      setDigestError('Hesabu could not save the WhatsApp preference. Check the connection and try again.');
-    } finally {
-      setSavingDestination(false);
-    }
-  };
-
-  const shareDigest = () => {
-    if (!digest) return;
-    const number = normaliseWhatsAppNumber(destination);
-    if (!number) {
-      setDigestError('Enter a valid WhatsApp number first. Use 2547XXXXXXXX or a Kenyan mobile number beginning with 07 or 01.');
-      return;
-    }
-    const message = [
-      business.name + ' — Daily business digest',
-      dateLabel(digest.date),
-      '',
-      'Sales recorded: ' + money(digest.sales_total),
-      'Payments received: ' + money(digest.payments_received),
-      'Expenses: ' + money(digest.expenses_total),
-      'Gross profit: ' + money(digest.gross_profit),
-      'Invoices: ' + numberText(digest.invoice_count),
-      'Units sold: ' + numberText(digest.units_sold),
-      'Low-stock items: ' + numberText(digest.low_stock_count),
-      '',
-      'Prepared with Hesabu',
-    ].join('\n');
-    window.open('https://wa.me/' + number + '?text=' + encodeURIComponent(message), '_blank', 'noopener,noreferrer');
-    setDigestError('');
-    setDigestNotice('The digest is ready in WhatsApp. Review it and press Send.');
-  };
-
-  return <main className="auth-page cloud-account-page">
-    <section className="cloud-account-card">
-      <div className="auth-brand">
-        <span className="brand-mark"><HesabuMark /></span>
-        <span className="brand-text"><strong>hesabu<span>.</span></strong><small>CLOUD ACCOUNT</small></span>
-      </div>
-      <span className="cloud-account-status"><CheckCircle2 size={15} /> Account connected</span>
-      <h1>{business.name}</h1>
-      <p className="cloud-account-intro">Your business identity and account are connected to Hesabu cloud services.</p>
-      <div className="cloud-account-details">
-        <span>Account email</span><strong>{user.email || 'Verified account'}</strong>
-        <span>Business type</span><strong>{business.industry || 'Not specified'}</strong>
-        <span>Business workspace</span><strong>Private business account</strong>
-      </div>
-
-      <section className="cloud-digest-section" aria-label="Cloud daily digest">
-        <div className="cloud-digest-heading">
-          <div><span className="public-eyebrow">BUSINESS SUMMARY</span><h2>Daily digest</h2></div>
-          <span className="cloud-data-label">CLOUD RECORDS</span>
-        </div>
-        {loadingDigest ? (
-          <div className="cloud-digest-skeleton" aria-label="Loading daily digest">
-            <span></span><span></span><span></span><span></span>
-          </div>
-        ) : digest ? (
-          <>
-            <div className="cloud-digest-date">{dateLabel(digest.date)}</div>
-            <div className="cloud-digest-metrics">
-              <div><span>Sales</span><strong>{money(digest.sales_total)}</strong></div>
-              <div><span>Received</span><strong>{money(digest.payments_received)}</strong></div>
-              <div><span>Expenses</span><strong>{money(digest.expenses_total)}</strong></div>
-              <div><span>Gross profit</span><strong>{money(digest.gross_profit)}</strong></div>
-            </div>
-            <div className="cloud-digest-foot">
-              <span>{numberText(digest.invoice_count)} invoices · {numberText(digest.units_sold)} units sold</span>
-              <span>{numberText(digest.low_stock_count)} low-stock items</span>
-            </div>
-            <label className="cloud-digest-recipient">
-              <span>WhatsApp destination</span>
-              <input type="tel" inputMode="tel" value={destination} onChange={event => { setDestination(event.target.value); setDigestError(''); setDigestNotice(''); }} placeholder="2547XXXXXXXX" />
-            </label>
-            <div className="cloud-digest-actions">
-              <Button variant="outline" onClick={() => { void saveDestination(); }} disabled={savingDestination || !settings}>
-                {savingDestination ? 'Saving…' : 'Save destination'}
-              </Button>
-              <Button onClick={shareDigest}><MessageCircle size={15} /> Open WhatsApp</Button>
-            </div>
-            <p className="cloud-digest-note">Hesabu prepares the message from saved business records. Review it in WhatsApp and press Send; automatic delivery is not enabled.</p>
-          </>
-        ) : (
-          <p className="cloud-digest-unavailable">{digestError || 'The cloud summary is not available yet.'}</p>
-        )}
-        {digestError && digest && <p className="cloud-digest-error" role="alert">{digestError}</p>}
-        {digestNotice && <p className="cloud-digest-success" role="status">{digestNotice}</p>}
-      </section>
-
-      <p className="cloud-account-note">Manual record entry remains the foundation. AI preferences are stored independently, but the generative AI service has not been connected yet. The sample workspace remains separate from your cloud business.</p>
-      <div className="cloud-account-actions">
-        <Button variant="outline" onClick={onSignOut}>Sign out</Button>
-        <Button onClick={onPreview}>Open sample workspace</Button>
-      </div>
-    </section>
-  </main>;
-}
 function getWorkspaceAnswer(data: AppData, question: string) {
   const query = question.toLowerCase();
   const todayDigest = getDailyDigest(data);
@@ -1252,9 +1144,10 @@ function getWorkspaceAnswer(data: AppData, question: string) {
 }
 
 function FloatingAssistant({
-  data, whatsappNumber, onWhatsAppNumberChange, onRecordSale, onRecordExpense, onUpdateStock,
+  data, whatsappNumber, onWhatsAppNumberChange, onRecordSale, onRecordExpense, onUpdateStock, cloudMode,
 }: {
   data: AppData;
+  cloudMode: boolean;
   whatsappNumber: string;
   onWhatsAppNumberChange: (value: string) => void;
   onRecordSale: () => void;
@@ -1287,11 +1180,13 @@ function FloatingAssistant({
     {panel === 'assistant' && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu assistant">
       <header className="assistant-drawer-header">
         <span className="assistant-drawer-mark"><HesabuMark /></span>
-        <span><strong>Hesabu assistant</strong><small>Answers from this workspace · Preview</small></span>
+        <span><strong>{cloudMode ? 'Business insights' : 'Hesabu assistant'}</strong><small>{cloudMode ? 'Saved business records · Rules-based' : 'Answers from this workspace · Preview'}</small></span>
         <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setPanel(null)}><X size={18} /></button>
       </header>
       <div className="assistant-drawer-body">
-        <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>I can summarise the sales, balances and stock records currently saved in this browser.</p></div>
+        <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>{cloudMode
+          ? 'I can answer a small set of business questions using calculations from the records saved for this business.'
+          : 'I can summarise the sales, balances and stock records currently saved in this browser.'}</p></div>
         <div className="assistant-suggestions">{suggestions.map(item => <button key={item} type="button" onClick={() => ask(item)}>{item}<ArrowRight size={13} /></button>)}</div>
         <div className="assistant-quick-actions">
           <span>Record something</span>
@@ -1307,7 +1202,9 @@ function FloatingAssistant({
         <input aria-label="Ask Hesabu" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask about sales, stock or balances…" />
         <button type="submit" aria-label="Send question" disabled={!question.trim()}><ArrowUpRight size={18} /></button>
       </form>
-      <p className="assistant-drawer-note">This preview uses saved records and fixed queries. Generative AI is not connected yet.</p>
+      <p className="assistant-drawer-note">{cloudMode
+        ? 'These are fixed calculations against your saved records. Generative AI is not connected in this release.'
+        : 'This preview uses saved records and fixed queries. Generative AI is not connected yet.'}</p>
     </section>}
     {panel === 'digest' && <section className="assistant-drawer digest-drawer" role="dialog" aria-modal="false" aria-label="Daily WhatsApp digest">
       <header className="assistant-drawer-header">
@@ -1478,10 +1375,10 @@ function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
   </div>;
 }
 
-function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onResolvePayment, onAddReceipt, onMatchReceipt }: {
+function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onResolvePayment, onAddReceipt, onMatchReceipt, cloudMode }: {
   data: AppData; metrics: ReturnType<typeof getMetrics>; search: string; onSearch: (value: string) => void;
   onRequestPayment: () => void; onResolvePayment: (id: string, success: boolean) => void;
-  onAddReceipt: () => void; onMatchReceipt: (receiptId: string) => void;
+  onAddReceipt: () => void; onMatchReceipt: (receiptId: string) => void; cloudMode: boolean;
 }) {
   const list = [...data.payments].filter(payment =>
     (payment.invoiceNumber + ' ' + payment.customer + ' ' + payment.reference + ' ' + (payment.rail || '')).toLowerCase().includes(search.toLowerCase()),
@@ -1492,8 +1389,8 @@ function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onRes
   const unmatchedValue = sum(unmatched.map(receipt => receipt.amount));
   return <div className="page-stack">
     <PageHeader title="Payments" description="See what customers have paid and what still needs your attention." actions={<>
-      <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Record receipt</Button>
-      <Button onClick={onRequestPayment}><Send size={15} /> Request payment</Button>
+      {!cloudMode && <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Record receipt</Button>}
+      <Button onClick={onRequestPayment}><Plus size={15} /> {cloudMode ? 'Record payment' : 'Request payment'}</Button>
     </>} />
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Received today" value={money(metrics.collectedToday)} note="Payments recorded today" icon={CircleDollarSign} tone="green" />
@@ -1512,12 +1409,14 @@ function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onRes
         <div className="channel-total"><span>Total recorded funds</span><strong>{money(metrics.cashPosition)}</strong></div>
       </SectionCard>
       <SectionCard title="Receipts to match" detail="Payments received that still need to be linked to a customer sale.">
-        {unmatched.length ? <div className="attention-list">
-          {unmatched.slice(0, 4).map(receipt => <button key={receipt.id} onClick={() => onMatchReceipt(receipt.id)}>
-            <span><strong>{receipt.payer || 'Unidentified payer'}</strong><small>{receipt.rail} · {shortRef(receipt.reference)}</small></span>
-            <strong>{money(receipt.amount)}</strong><span className="table-action">Match</span>
-          </button>)}
-        </div> : <EmptyState title="All receipts matched" body="New receipts that need a customer match will appear here." />}
+        {cloudMode
+          ? <EmptyState title="Receipt matching is not connected" body="Hesabu can record payments against invoices. M-Pesa statement imports and automatic receipt matching are not enabled yet." />
+          : unmatched.length ? <div className="attention-list">
+            {unmatched.slice(0, 4).map(receipt => <button key={receipt.id} onClick={() => onMatchReceipt(receipt.id)}>
+              <span><strong>{receipt.payer || 'Unidentified payer'}</strong><small>{receipt.rail} · {shortRef(receipt.reference)}</small></span>
+              <strong>{money(receipt.amount)}</strong><span className="table-action">Match</span>
+            </button>)}
+          </div> : <EmptyState title="All receipts matched" body="New receipts that need a customer match will appear here." />}
       </SectionCard>
     </div>
     <SectionCard title="Payment activity" detail="Collections recorded against customer sales.">
@@ -1642,13 +1541,20 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
   </div>;
 }
 
-function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier }: {
-  data: AppData; onCreatePurchase: () => void; onReceiveOrder: (id: string) => void; onPaySupplier: (id: string) => void;
+function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier, onAddSupplier }: {
+  data: AppData;
+  onCreatePurchase: () => void;
+  onReceiveOrder: (id: string) => void;
+  onPaySupplier: (id: string) => void;
+  onAddSupplier: () => void;
 }) {
   const openOrders = data.purchaseOrders.filter(order => order.status === 'sent' || order.status === 'partially_received');
   const payables = sum(data.suppliers.map(supplier => supplier.balance));
   return <div className="page-stack">
-    <PageHeader title="Purchasing" description="Replenish stock, follow supplier deliveries and keep incoming goods on track." actions={<Button onClick={onCreatePurchase}><Plus size={16} /> New purchase order</Button>} />
+    <PageHeader title="Purchasing" description="Replenish stock, follow supplier deliveries and keep incoming goods on track." actions={<div className="page-header-actions">
+      <Button variant="outline" onClick={onAddSupplier}><Plus size={15} /> Add supplier</Button>
+      <Button onClick={onCreatePurchase}><Plus size={16} /> New purchase order</Button>
+    </div>} />
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Supplier balances" value={money(payables)} note="Recorded accounts payable" icon={Truck} tone="amber" />
       <MetricCard label="Open purchase orders" value={numberText(openOrders.length)} note="Sent or part received" icon={ShoppingCart} tone="blue" />
@@ -1663,19 +1569,47 @@ function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier
           <td><StatusPill status={order.status}>{order.status === 'partially_received' ? 'Part received' : order.status === 'received' ? 'Received' : order.status === 'sent' ? 'Sent to supplier' : order.status}</StatusPill></td>
           <td>{order.status === 'sent' || order.status === 'partially_received' ? <Button size="sm" variant="secondary" onClick={() => onReceiveOrder(order.id)}>Receive goods</Button> : <span className="muted-copy">Complete</span>}</td>
         </tr>)}
-      </DataTable> : <EmptyState title="No purchase orders" body="Create a purchase order when your business is ready to replenish stock." />}
+      </DataTable> : <EmptyState title="No purchase orders" body="Create a supplier record, then create an order when your business is ready to replenish stock." />}
     </SectionCard>
     <SectionCard title="Supplier accounts" detail="Open balances are tracked separately from customer receivables.">
-      <DataTable headers={['Supplier', 'Contact', 'Payment terms', 'Outstanding', '']}>
+      {data.suppliers.length ? <DataTable headers={['Supplier', 'Contact', 'Payment terms', 'Outstanding', '']}>
         {data.suppliers.map(supplier => <tr key={supplier.id}>
           <td><strong>{supplier.name}</strong><small className="cell-sub">{supplier.email}</small></td>
           <td>{supplier.phone}</td><td>{supplier.terms}</td>
           <td className="amount-cell">{money(supplier.balance)}</td>
           <td>{supplier.balance > 0 ? <button className="table-action" onClick={() => onPaySupplier(supplier.id)}>Record payment</button> : <span className="muted-copy">Up to date</span>}</td>
         </tr>)}
-      </DataTable>
+      </DataTable> : <EmptyState title="No suppliers yet" body="Add the suppliers your business buys stock or services from." />}
     </SectionCard>
   </div>;
+}
+
+function SupplierDialog({ onClose, onCreate }: {
+  onClose: () => void;
+  onCreate: (input: { name: string; phone: string; email: string; terms: string }) => void;
+}) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [terms, setTerms] = useState('Cash on delivery');
+  return <Modal title="Add supplier" detail="Create a supplier record for purchasing and payable tracking." onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      if (name.trim()) onCreate({ name: name.trim(), phone: phone.trim(), email: email.trim(), terms });
+    }}>
+      <Field label="Supplier or business name" value={name} onChange={setName} required />
+      <div className="form-grid form-grid-two">
+        <Field label="Phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
+        <Field label="Email (optional)" type="email" value={email} onChange={setEmail} />
+      </div>
+      <SelectField label="Payment terms" value={terms} onChange={setTerms} options={[
+        { value: 'Cash on delivery', label: 'Cash on delivery' },
+        { value: '7 days', label: '7 days' }, { value: '14 days', label: '14 days' },
+        { value: '30 days', label: '30 days' }, { value: 'Custom', label: 'Custom agreement' },
+      ]} />
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim()}>Save supplier</Button></div>
+    </form>
+  </Modal>;
 }
 
 function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typeof getMetrics> }) {
@@ -1937,7 +1871,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: {
         <Button variant="outline" onClick={() => window.print()}><FileText size={16} /> Save as PDF</Button>
         <Button onClick={() => openDailyDigestWhatsApp(data, whatsappNumber, onWhatsAppUnavailable)}><MessageCircle size={16} /> Prepare WhatsApp summary</Button>
       </div>
-      <p className="daily-digest-note">The workbook is generated from the latest records in this browser. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery requires the WhatsApp Business API and a secure server connection.</p>
+      <p className="daily-digest-note">The workbook is generated from the latest records loaded for this business. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery requires the WhatsApp Business API and a secure server connection.</p>
     </SectionCard>
     <div className="metric-grid metric-grid-six compact-metrics">
       <MetricCard label="Sales recorded" value={money(sales)} note={filteredInvoices.length + ' invoices · ' + days + ' days'} icon={TrendingUp} tone="green" />
@@ -2050,9 +1984,10 @@ function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
   </div>;
 }
 
-function SalesChannelsPage({ data, onCreateDemoOrder }: {
+function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode }: {
   data: AppData;
   onCreateDemoOrder: (input: { productId: string; quantity: number; customer: string; phone: string }) => void;
+  cloudMode: boolean;
 }) {
   return <div className="page-stack">
     <PageHeader title="Sales channels" description="Bring counter, online and wholesale orders into one business view." />
@@ -2070,9 +2005,13 @@ function SalesChannelsPage({ data, onCreateDemoOrder }: {
         <p>Record phone, repeat and bulk orders against the same inventory and customer balances.</p><span>Available in Sales</span>
       </div>
     </div>
-    <SectionCard title="Sample online order" detail="Place an order and see it appear with the rest of your sales.">
-      <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
-    </SectionCard>
+    {cloudMode
+      ? <SectionCard title="Website order connection" detail="Online checkout is not accepting customer orders yet.">
+          <EmptyState title="No website is connected" body="The sample checkout is not connected to a real storefront. Connect a secure order webhook before accepting online orders here." />
+        </SectionCard>
+      : <SectionCard title="Sample online order" detail="Place an order and see it appear with the rest of your sales.">
+          <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
+        </SectionCard>}
     <div className="sales-channel-note">One product catalogue. One view of sales. One view of available stock.</div>
   </div>;
 }
@@ -2101,13 +2040,14 @@ function MorePage({ allowedModules, onNavigate }: {
   </div>;
 }
 
-function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMember, onReset, theme, onThemeChange, onOpenReports, whatsappNumber, onWhatsAppNumberChange }: {
+function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMember, onReset, theme, onThemeChange, onOpenReports, whatsappNumber, onWhatsAppNumberChange, onSaveWhatsApp, cloudMode, onSignOut }: {
   profile: BusinessProfile; teamMembers: TeamMember[];
   onSave: (profile: BusinessProfile) => void;
   onAddMember: (input: { name: string; email: string; role: TeamRole }) => void;
   onUpdateMember: (id: string, patch: Partial<TeamMember>) => void;
   onReset: () => void; theme: 'dark' | 'light'; onThemeChange: (theme: 'dark' | 'light') => void; onOpenReports: () => void;
   whatsappNumber: string; onWhatsAppNumberChange: (value: string) => void;
+  onSaveWhatsApp: () => void; cloudMode: boolean; onSignOut: () => void;
 }) {
   const [tab, setTab] = useState<'profile' | 'team' | 'preferences'>('profile');
   const [form, setForm] = useState(profile);
@@ -2133,15 +2073,17 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
     setMemberName(''); setMemberEmail(''); setMemberRole('Sales'); setShowAdd(false);
   };
   return <div className="page-stack">
-    <PageHeader title="Team & settings" description="Manage your business details and the people responsible for daily operations." />
+    <PageHeader title={cloudMode ? 'Business settings' : 'Team & settings'} description={cloudMode
+      ? 'Manage your business details and account preferences.'
+      : 'Manage your business details and the people responsible for daily operations.'} />
     <SectionCard title="Business administration" detail="Business identity and team responsibilities.">
       <div className="section-tabs">
         <button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}>Business profile</button>
-        <button className={tab === 'team' ? 'active' : ''} onClick={() => setTab('team')}>Team <span>{teamMembers.length}</span></button>
+        {!cloudMode && <button className={tab === 'team' ? 'active' : ''} onClick={() => setTab('team')}>Team <span>{teamMembers.length}</span></button>}
         <button className={tab === 'preferences' ? 'active' : ''} onClick={() => setTab('preferences')}>Preferences</button>
       </div>
       {tab === 'profile' ? <form className="settings-form" onSubmit={event => {
-        event.preventDefault(); onSave(form); setSaved(true);
+        event.preventDefault(); onSave(form); if (!cloudMode) setSaved(true);
       }}>
         <div className="form-grid form-grid-two">
           <Field label="Business name" value={form.name} onChange={value => update('name', value)} required />
@@ -2197,15 +2139,28 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
         <section className="preference-block">
           <div><strong>WhatsApp daily digest</strong><p>Choose the number that should receive the prepared daily summary. Hesabu opens the chat for you to review and send.</p></div>
           <Field label="WhatsApp destination" value={whatsappNumber} onChange={onWhatsAppNumberChange} placeholder="2547XXXXXXXX" hint="Use country code, e.g. 254712345678. You can also enter a Kenyan number beginning with 07 or 01." />
-          <div className="whatsapp-connection-note"><MessageCircle size={16} /><span>Click-to-chat is available in this preview. Automatic scheduled messages and attachments need the WhatsApp Business API connected on a secure server.</span></div>
-          <Button variant="outline" onClick={onOpenReports}>Open daily digest</Button>
+          <div className="whatsapp-connection-note"><MessageCircle size={16} /><span>{cloudMode
+            ? 'Hesabu prepares the summary from saved business records and opens WhatsApp for you to review and send. Automatic scheduled delivery is not connected.'
+            : 'Click-to-chat is available in this preview. Automatic scheduled messages and attachments need the WhatsApp Business API connected on a secure server.'}</span></div>
+          <div className="inline-form-actions">
+            {cloudMode && <Button variant="outline" onClick={onSaveWhatsApp}>Save destination</Button>}
+            <Button variant="outline" onClick={onOpenReports}>Open daily digest</Button>
+          </div>
         </section>
+        {cloudMode && <section className="preference-block">
+          <div><strong>AI business assistant</strong><p>Planned, not connected in this release. Current business insights use fixed calculations from your saved records; they do not use generative AI.</p></div>
+        </section>}
       </div>}
     </SectionCard>
-    <div className="settings-reset-row">
-      <div><strong>Reset sample workspace</strong><small>Restore the original example business and sample activity.</small></div>
-      <Button variant="outline" size="sm" onClick={onReset}>Reset workspace</Button>
-    </div>
+    {cloudMode
+      ? <div className="settings-reset-row">
+          <div><strong>Account session</strong><small>Sign out of {profile.email || 'this Hesabu account'} on this device.</small></div>
+          <Button variant="outline" size="sm" onClick={onSignOut}><LogOut size={14} /> Sign out</Button>
+        </div>
+      : <div className="settings-reset-row">
+          <div><strong>Reset sample workspace</strong><small>Restore the original example business and sample activity.</small></div>
+          <Button variant="outline" size="sm" onClick={onReset}>Reset workspace</Button>
+        </div>}
   </div>;
 }
 
@@ -2302,29 +2257,24 @@ function clearPendingOnboarding() {
 }
 
 function App() {
-  const [data, setData] = useState<AppData>(() => readWorkspace());
+  const [data, setData] = useState<AppData>(() => EMPTY_WORKSPACE_DATA);
   const [cloudAccount, setCloudAccount] = useState<{
     user: SupabaseUser;
     business: { id: string; name: string; industry: string | null };
   } | null>(null);
   const [cloudRestoring, setCloudRestoring] = useState(true);
+  const [cloudWorkspaceReady, setCloudWorkspaceReady] = useState(false);
+  const [cloudWorkspaceLoading, setCloudWorkspaceLoading] = useState(false);
+  const [cloudWorkspaceError, setCloudWorkspaceError] = useState('');
   const [authNotice, setAuthNotice] = useState('');
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
-  const [previewAccess, setPreviewAccess] = useState(() => {
-    try { return localStorage.getItem('hesabu:preview-access:v1') === 'true'; }
-    catch { return false; }
-  });
-  const [whatsappNumber, setWhatsAppNumber] = useState(() => {
-    try { return localStorage.getItem('hesabu:whatsapp-number:v1') || ''; }
-    catch { return ''; }
-  });
+  const [whatsappNumber, setWhatsAppNumber] = useState('');
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try { return localStorage.getItem('hesabu:theme:v2') === 'dark' ? 'dark' : 'light'; }
     catch { return 'light'; }
   });
-  const [activeMemberId, setActiveMemberId] = useState('team-001');
-  const [userSwitcherOpen, setUserSwitcherOpen] = useState(false);
+  const [activeMemberId, setActiveMemberId] = useState('');
   const [active, setActive] = useState<ModuleKey>('overview');
   const [dialog, setDialog] = useState<DialogState>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
@@ -2337,6 +2287,7 @@ function App() {
   useEffect(() => {
     let active = true;
     const restore = async () => {
+      await completeAuthCallback();
       const result = await restoreCloudSession();
       if (!active || !result) return;
       let membership = result.memberships.find(item => item.businesses?.id);
@@ -2356,8 +2307,6 @@ function App() {
             user: result.user,
             business: { id: businessId, name: pending.businessName, industry: pending.industry || null },
           });
-          setPreviewAccess(false);
-          try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
           return;
         }
         setAuthNotice('Your account is signed in, but no business workspace has been set up for it yet. Complete the business setup on this device or contact the workspace owner.');
@@ -2371,8 +2320,6 @@ function App() {
           industry: membership.businesses.industry,
         },
       });
-      setPreviewAccess(false);
-      try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
     };
     restore()
       .catch(error => {
@@ -2381,6 +2328,37 @@ function App() {
       .finally(() => { if (active) setCloudRestoring(false); });
     return () => { active = false; };
   }, []);
+
+  const reloadCloudWorkspace = async (): Promise<boolean> => {
+    if (!cloudAccount) return false;
+    setCloudWorkspaceLoading(true);
+    setCloudWorkspaceError('');
+    try {
+      const [workspace, settings] = await Promise.all([
+        getCloudWorkspace(cloudAccount.business.id, cloudAccount.user),
+        getBusinessSettings(cloudAccount.business.id),
+      ]);
+      setData(workspace);
+      setWhatsAppNumber(settings.whatsapp_recipient_phone || '');
+      const currentMember = workspace.teamMembers.find(member => member.id === cloudAccount.user.id);
+      setActiveMemberId(currentMember?.id || cloudAccount.user.id);
+      setCloudWorkspaceReady(true);
+      return true;
+    } catch (error) {
+      setCloudWorkspaceError(error instanceof Error ? error.message : 'The business workspace could not be loaded.');
+      setCloudWorkspaceReady(false);
+      return false;
+    } finally {
+      setCloudWorkspaceLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!cloudAccount) return;
+    setCloudWorkspaceReady(false);
+    void reloadCloudWorkspace();
+    // The business ID changes only when a user enters a different cloud workspace.
+  }, [cloudAccount?.business.id]);
 
   const handleCloudSignIn = async (email: string, password: string) => {
     const session = await signInWithPassword(email, password);
@@ -2416,8 +2394,6 @@ function App() {
     }
     setAuthNotice('');
     setShowAuthScreen(false);
-    setPreviewAccess(false);
-    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
   };
 
   const handleCloudSignUp = async (input: SignUpInput): Promise<'confirm_email' | void> => {
@@ -2439,26 +2415,24 @@ function App() {
     setWhatsAppNumber(input.whatsappRecipientPhone);
     setAuthNotice('');
     setShowAuthScreen(false);
-    setPreviewAccess(false);
-    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
   };
 
   const handleCloudSignOut = async () => {
     await signOut();
     setCloudAccount(null);
+    setCloudWorkspaceReady(false);
+    setCloudWorkspaceError('');
     setAuthNotice('');
     setShowAuthScreen(false);
-    setPreviewAccess(false);
-    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Keep the screen transition available. */ }
   };
 
-  useEffect(() => { saveWorkspace(data); }, [data]);
   useEffect(() => {
+    if (cloudAccount) return;
     try {
       if (whatsappNumber.trim()) localStorage.setItem('hesabu:whatsapp-number:v1', whatsappNumber.trim());
       else localStorage.removeItem('hesabu:whatsapp-number:v1');
     } catch { /* WhatsApp preference remains available for this session. */ }
-  }, [whatsappNumber]);
+  }, [whatsappNumber, cloudAccount]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try { localStorage.setItem('hesabu:theme:v2', theme); } catch { /* Keep this session's theme. */ }
@@ -2480,6 +2454,27 @@ function App() {
 
   const notify = (title: string, detail?: string) => setNotice({ title, detail });
   const closeNotice = () => setNotice(null);
+  const cloudMutationLock = useRef(false);
+  const runCloudMutation = async (
+    operation: () => Promise<unknown>,
+    successTitle: string,
+    successDetail: string,
+  ) => {
+    if (cloudMutationLock.current) return;
+    cloudMutationLock.current = true;
+    try {
+      await operation();
+      const refreshed = await reloadCloudWorkspace();
+      setDialog(null);
+      notify(successTitle, refreshed
+        ? successDetail
+        : 'The record was submitted, but the latest workspace data could not be reloaded. Refresh the page to verify it.');
+    } catch (error) {
+      notify('Could not save this record', error instanceof Error ? error.message : 'The cloud operation failed. No success was reported.');
+    } finally {
+      cloudMutationLock.current = false;
+    }
+  };
   const navigate = (section: ModuleKey) => {
     if (!allowedModules.includes(section)) {
       notify('This area is not included in this role', 'Switch to an authorised business role to continue.');
@@ -2495,6 +2490,62 @@ function App() {
   };
 
   const createInvoice = (input: NewInvoiceInput) => {
+    if (cloudAccount) {
+      const saleTotal = Math.round((sum(input.items.map(item => {
+        const product = data.products.find(candidate => candidate.id === item.productId);
+        return product ? product.sellingPrice * item.quantity : 0;
+      })) - input.discount) * 100) / 100;
+      if (input.channel !== 'credit' && saleTotal <= 0) {
+        notify('Sale total must be greater than zero', 'Choose a positive sale total or record the transaction as a credit sale.');
+        return;
+      }
+      if (cloudMutationLock.current) return;
+      cloudMutationLock.current = true;
+      void (async () => {
+        try {
+          const invoiceId = await postCloudSale(cloudAccount.business.id, {
+            customer: input.customer,
+            phone: input.phone,
+            dueDate: input.dueDate,
+            discount: input.discount,
+            channel: input.channel,
+            source: input.source,
+            items: input.items,
+          });
+          if (input.channel !== 'credit') {
+            try {
+              await postCloudPayment(cloudAccount.business.id, {
+                invoiceId,
+                amount: saleTotal,
+                channel: input.channel,
+                phone: input.phone,
+                reference: '',
+                idempotencyKey: 'sale-payment:' + invoiceId,
+                note: 'Collected at point of sale',
+              });
+            } catch {
+              await reloadCloudWorkspace();
+              setDialog(null);
+              notify('Sale saved; payment needs checking',
+                'The invoice and stock movement were saved. The payment response was not confirmed. Check the invoice and payment register before trying to record that payment again.');
+              return;
+            }
+          }
+          const refreshed = await reloadCloudWorkspace();
+          setDialog(null);
+          notify('Sale recorded', refreshed
+            ? input.channel === 'credit'
+              ? 'The invoice, stock movement and accounting entries are saved to your business.'
+              : 'The sale, payment, stock movement and accounting entries are saved to your business.'
+            : 'The transaction was submitted. Refresh the workspace to verify the latest invoice and stock balances.');
+        } catch (error) {
+          notify('Sale could not be recorded', error instanceof Error ? error.message : 'The cloud operation failed. No sale success was reported.');
+        } finally {
+          cloudMutationLock.current = false;
+        }
+      })();
+      return;
+    }
     const requestedQuantities = new Map<string, number>();
     for (const item of input.items) {
       requestedQuantities.set(item.productId, (requestedQuantities.get(item.productId) ?? 0) + item.quantity);
@@ -2596,6 +2647,18 @@ function App() {
 
 
   const createPaymentRequest = (input: NewPaymentInput) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => postCloudPayment(cloudAccount.business.id, {
+        invoiceId: input.invoiceId,
+        amount: input.amount,
+        channel: input.channel as Exclude<PaymentChannel, 'credit'>,
+        phone: input.phone,
+        reference: input.reference || '',
+        idempotencyKey: input.idempotencyKey || 'manual-payment:' + makeId('IDEM'),
+        note: 'Manually recorded payment received',
+      }), 'Payment recorded', 'The payment, invoice balance and ledger entries are saved to your business.');
+      return;
+    }
     const invoice = data.invoices.find(item => item.id === input.invoiceId);
     if (!invoice) return;
     const payment: Payment = {
@@ -2621,6 +2684,11 @@ function App() {
   };
 
   const addUnmatchedReceipt = (input: NewUnmatchedReceiptInput) => {
+    if (cloudAccount) {
+      notify('Receipt import is not connected', 'Record a payment directly against its customer invoice. M-Pesa statement imports and matching are not enabled yet.');
+      setDialog(null);
+      return;
+    }
     const reference = input.reference.trim().toUpperCase();
     const duplicateReference = data.unmatchedReceipts.some(item => item.reference.trim().toUpperCase() === reference) ||
       data.payments.some(item => item.reference.trim().toUpperCase() === reference);
@@ -2646,6 +2714,11 @@ function App() {
   };
 
   const matchUnmatchedReceipt = (receiptId: string, invoiceId: string) => {
+    if (cloudAccount) {
+      notify('Receipt matching is not connected', 'Record payments against their invoice until statement imports and reconciliation are enabled.');
+      setDialog(null);
+      return;
+    }
     const receipt = data.unmatchedReceipts.find(item => item.id === receiptId);
     const invoice = data.invoices.find(item => item.id === invoiceId);
     if (!receipt || !invoice || receipt.amount <= 0 || invoiceBalance(invoice) <= 0) return;
@@ -2698,6 +2771,10 @@ function App() {
   };
 
   const resolvePayment = (paymentId: string, success: boolean) => {
+    if (cloudAccount) {
+      notify('Payment confirmation is provider-controlled', 'Hesabu does not simulate payment callbacks in a real business. Record an already received payment or connect the Daraja API.');
+      return;
+    }
     const payment = data.payments.find(item => item.id === paymentId);
     if (!payment || payment.status !== 'pending') return;
     const invoice = data.invoices.find(item => item.id === payment.invoiceId);
@@ -2765,6 +2842,11 @@ function App() {
   };
 
   const createExpense = (input: { category: string; description: string; amount: number; channel: 'cash' | 'mpesa' | 'bank' }) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => postCloudExpense(cloudAccount.business.id, input),
+        'Expense recorded', 'The expense, cash movement and accounting entries are saved to your business.');
+      return;
+    }
     const expense = { ...input, id: makeId('EXP'), date: today(), reference: makeId('EXP') };
     const debitAccount = input.category === 'Rent' ? 'Rent expense' : input.category === 'Utilities' ? 'Utilities expense' : input.category === 'Staff costs' ? 'Staff expense' : input.category === 'Transport' ? 'Transport expense' : 'Operating expenses';
     const creditAccount = input.channel === 'cash' ? 'Cash on hand' : input.channel === 'mpesa' ? 'M-Pesa clearing' : 'Bank account';
@@ -2778,6 +2860,16 @@ function App() {
   };
 
   const createProduct = (input: Omit<Product, 'id' | 'updatedAt'>) => {
+    if (cloudAccount) {
+      const sku = input.sku.trim().toUpperCase() || makeId('SKU');
+      void runCloudMutation(() => createCloudProduct(cloudAccount.business.id, {
+        sku, name: input.name, category: input.category, unit: input.unit,
+        quantity: input.quantity, reorderLevel: input.reorderLevel,
+        costPrice: input.costPrice, sellingPrice: input.sellingPrice,
+        supplierId: input.supplierId,
+      }), 'Product added', 'The product and opening stock valuation are saved to your business.');
+      return;
+    }
     const sku = input.sku.trim().toUpperCase() || makeId('SKU');
     if (data.products.some(product => product.sku.toUpperCase() === sku)) {
       notify('SKU already exists', 'Each inventory item needs a unique product code. Choose another SKU before saving.');
@@ -2804,6 +2896,14 @@ function App() {
   };
 
   const createPurchaseOrder = (input: NewPurchaseInput) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => createCloudPurchaseOrder(cloudAccount.business.id, {
+        supplierId: input.supplierId,
+        expectedDate: input.expectedAt,
+        items: input.items,
+      }), 'Purchase order created', 'The order is saved. Stock and supplier balances will change when goods are received.');
+      return;
+    }
     const supplier = data.suppliers.find(item => item.id === input.supplierId);
     if (!supplier) return;
     const lines = input.items.map(item => {
@@ -2834,6 +2934,12 @@ function App() {
   };
 
   const receivePurchaseOrder = (orderId: string, items: Array<{ productId: string; quantity: number }>) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => receiveCloudPurchaseOrder(cloudAccount.business.id, {
+        purchaseOrderId: orderId, items,
+      }), 'Goods received', 'Stock quantities, weighted costs and the supplier payable have been updated in the ledger.');
+      return;
+    }
     const order = data.purchaseOrders.find(item => item.id === orderId);
     if (!order || order.status === 'received') return;
     const receipt = planPurchaseReceipt(order.lines, items);
@@ -2876,7 +2982,13 @@ function App() {
       money(receipt.totalValue) + ' added to inventory and the supplier balance for ' + order.supplierName + '.');
   };
 
-  const paySupplier = (supplierId: string, amount: number) => {
+  const paySupplier = (supplierId: string, amount: number, channel: Exclude<PaymentChannel, 'credit'> = 'bank') => {
+    if (cloudAccount) {
+      void runCloudMutation(() => postCloudSupplierPayment(cloudAccount.business.id, {
+        supplierId, amount, channel, reference: '',
+      }), 'Supplier payment recorded', 'The supplier balance and cash ledger have been updated.');
+      return;
+    }
     const supplier = data.suppliers.find(item => item.id === supplierId);
     if (!supplier || amount <= 0 || amount > supplier.balance) return;
     const reference = makeId('BANK');
@@ -2902,6 +3014,22 @@ function App() {
 
   const adjustStock = (productId: string, quantity: number, reason: string) => {
     const product = data.products.find(item => item.id === productId);
+    if (cloudAccount && !product) {
+      notify('Product not found', 'Refresh the inventory list and try the stock count again.');
+      return;
+    }
+    if (cloudAccount && product) {
+      const delta = quantity - product.quantity;
+      if (delta === 0) {
+        setDialog(null);
+        notify('No stock change', 'The counted quantity matches the current recorded quantity.');
+        return;
+      }
+      void runCloudMutation(() => adjustCloudStock(cloudAccount.business.id, {
+        productId, quantityDelta: delta, reason,
+      }), 'Stock count saved', product.name + ' has been adjusted in the inventory and accounting ledgers.');
+      return;
+    }
     if (!product) return;
     const delta = quantity - product.quantity;
     const value = Math.abs(delta * product.costPrice);
@@ -2925,8 +3053,38 @@ function App() {
   };
 
   const saveProfile = (profile: BusinessProfile) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => saveCloudBusinessProfile(
+        cloudAccount.business.id, profile, cloudAccount.user.id,
+      ), 'Business profile updated', 'Your business details are saved to the cloud workspace.');
+      return;
+    }
     setData(current => ({ ...current, profile }));
     notify('Business profile updated', 'Changes have been saved to this browser.');
+  };
+
+  const addSupplier = (input: { name: string; phone: string; email: string; terms: string }) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => createCloudSupplier(cloudAccount.business.id, input),
+        'Supplier added', 'The supplier has been saved to your business records.');
+      return;
+    }
+    const supplier: Supplier = {
+      id: makeId('SUP'), name: input.name, phone: input.phone,
+      email: input.email, terms: input.terms, balance: 0,
+    };
+    setData(current => ({ ...current, suppliers: [...current.suppliers, supplier] }));
+    setDialog(null);
+    notify('Supplier added', input.name + ' has been added to the supplier register.');
+  };
+
+  const saveWhatsAppDestination = () => {
+    if (cloudAccount) {
+      void runCloudMutation(() => saveCloudWhatsAppDestination(cloudAccount.business.id, whatsappNumber),
+        'WhatsApp destination saved', 'The number is saved. Daily summaries still open in WhatsApp for you to review and send.');
+      return;
+    }
+    notify('WhatsApp destination saved', 'The destination is saved in this preview on this device.');
   };
 
 
@@ -2949,42 +3107,28 @@ function App() {
     }));
   };
 
-  const resetDemo = () => {
-    if (!window.confirm('Reset this browser to the original Hesabu demo workspace? Current local demo changes will be lost.')) return;
-    const fresh = makeDemoData();
-    setData(fresh);
-    setDialog(null);
-    notify('Demo workspace reset', 'The original sample records have been restored.');
-  };
-
   const activeMeta = moduleMeta[active];
-  const enterPreview = () => {
-    try { localStorage.setItem('hesabu:preview-access:v1', 'true'); } catch { /* Session can still continue. */ }
-    setPreviewAccess(true);
-  };
-  const exitPreview = () => {
-    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Keep the screen transition available. */ }
-    setUserSwitcherOpen(false);
-    setPreviewAccess(false);
-  };
   const requestWhatsAppDestination = () => {
     navigate('settings');
     notify('Add a WhatsApp destination', 'Enter your business WhatsApp number in Settings before preparing the daily summary.');
   };
   if (cloudRestoring) return <main className="auth-page"><section className="cloud-account-card cloud-loading-card"><span className="brand-mark"><HesabuMark /></span><h1>Hesabu</h1><p>Checking your secure business session…</p></section></main>;
-  if (cloudAccount) return <CloudAccountScreen
-    user={cloudAccount.user}
-    business={cloudAccount.business}
-    onSignOut={() => { void handleCloudSignOut(); }}
-    onPreview={() => { setCloudAccount(null); enterPreview(); }}
-  />;
-  if (!previewAccess && !showAuthScreen) return <PublicLandingPage
+  if (cloudAccount && !cloudWorkspaceReady) return <main className="auth-page">
+    <section className="cloud-account-card cloud-loading-card">
+      <span className="brand-mark"><HesabuMark /></span><h1>{cloudAccount.business.name}</h1>
+      {cloudWorkspaceError
+        ? <><p>{cloudWorkspaceError}</p><div className="modal-footer">
+            <Button variant="outline" onClick={() => { void handleCloudSignOut(); }}>Sign out</Button>
+            <Button onClick={() => { void reloadCloudWorkspace(); }} disabled={cloudWorkspaceLoading}>{cloudWorkspaceLoading ? 'Loading…' : 'Try again'}</Button>
+          </div></>
+        : <p>Loading your secure business records…</p>}
+    </section>
+  </main>;
+  if (!showAuthScreen && !cloudAccount) return <PublicLandingPage
     onSignIn={() => { setAuthInitialMode('signin'); setShowAuthScreen(true); }}
     onCreateAccount={() => { setAuthInitialMode('signup'); setShowAuthScreen(true); }}
-    onPreview={enterPreview}
   />;
-  if (!previewAccess) return <AuthPage
-    onPreview={enterPreview}
+  if (!cloudAccount) return <AuthPage
     onSignIn={handleCloudSignIn}
     onSignUp={handleCloudSignUp}
     initialMessage={authNotice}
@@ -3018,7 +3162,7 @@ function App() {
       {!sidebarCollapsed && <div className="sidebar-bottom">
         <div className="sidebar-help"><div><span className="sidebar-help-mark">H</span><strong>Built for the whole business</strong></div><p>Keep sales, stock and purchasing in sync.</p><button onClick={() => navigate('reports')}>View performance <ArrowRight size={12} /></button></div>
         <div className="sidebar-profile" onClick={() => navigate('settings')} role="button" tabIndex={0}>
-          <Initials name={activeMember?.name || data.profile.name} /><span><strong>{activeMember?.name || data.profile.name}</strong><small>{activeMember?.role || 'Owner'} · role preview</small></span><MoreHorizontal size={17} />
+          <Initials name={activeMember?.name || data.profile.name} /><span><strong>{activeMember?.name || data.profile.name}</strong><small>{activeMember?.role || 'Owner'}</small></span><MoreHorizontal size={17} />
         </div>
       </div>}
     </aside>
@@ -3036,24 +3180,23 @@ function App() {
           <span className="topbar-divider" />
           <button className="topbar-date" onClick={() => notify('Workspace date', dateLabel(today()))}><CalendarDays size={15} /> <span>{dateLabel(today())}</span></button>
           <button className="notification-button" onClick={() => notify('Operational attention', data.products.filter(product => product.quantity <= product.reorderLevel).length + ' stock items are at or below reorder level.')}><Bell size={17} /><i /></button>
-          <button className="topbar-avatar" aria-label="Switch role preview" aria-expanded={userSwitcherOpen} onClick={() => setUserSwitcherOpen(value => !value)}><Initials name={activeMember?.name || data.profile.name} /></button>
-          {userSwitcherOpen && <div className="user-switcher-panel"><div className="user-switcher-heading"><strong>Preview workspace as</strong><small>Switch between the owner and staff views.</small></div>{data.teamMembers.filter(member => member.status === 'active').map(member => <button key={member.id} className={member.id === activeMember?.id ? 'user-switcher-active' : ''} onClick={() => { setActiveMemberId(member.id); setUserSwitcherOpen(false); setActive('overview'); setDialog(null); setSelectedInvoiceId(null); setSearch(''); }}><Initials name={member.name} /><span><strong>{member.name}</strong><small>{member.role}</small></span>{member.id === activeMember?.id && <span className="user-switcher-current">Current</span>}</button>)}<button type="button" className="user-switcher-logout" onClick={exitPreview}><LogOut size={15} /> Exit preview workspace</button></div>}
+          <span className="topbar-avatar" aria-label="Signed-in user"><Initials name={activeMember?.name || data.profile.name} /></span>
         </div>
       </header>
 
       <div className="page-container">
-        {active === 'overview' && <OverviewPage data={data} metrics={metrics} onCreateSale={() => setDialog({ kind: 'sale' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
+        {active === 'overview' && <OverviewPage data={data} metrics={metrics} onCreateSale={() => setDialog({ kind: 'sale' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
-        {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} />}
+        {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} cloudMode={Boolean(cloudAccount)} />}
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
-        {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} />}
+        {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} onAddSupplier={() => setDialog({ kind: 'supplier' })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} />}
-        {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} />}
-        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} />}
+        {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} />}
+        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onReset={() => {}} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
       </div>
-      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Preview workspace · Saved in this browser</span></footer>
+      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Secure cloud workspace · Synced with Hesabu</span></footer>
     </main>
 
     <nav className="mobile-bottom-nav">
@@ -3071,6 +3214,7 @@ function App() {
 
     <FloatingAssistant
       data={data}
+      cloudMode={Boolean(cloudAccount)}
       whatsappNumber={whatsappNumber}
       onWhatsAppNumberChange={setWhatsAppNumber}
       onRecordSale={() => setDialog({ kind: 'sale' })}
@@ -3078,21 +3222,22 @@ function App() {
       onUpdateStock={() => setDialog({ kind: 'stock-picker' })}
     />
 
-    {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} />}
-    {dialog?.kind === 'stk' && <StkDialog invoices={data.invoices} initialInvoiceId={dialog.invoiceId} onClose={() => setDialog(null)} onCreate={createPaymentRequest} />}
+    {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} cloudMode={Boolean(cloudAccount)} />}
+    {dialog?.kind === 'stk' && <StkDialog invoices={data.invoices} initialInvoiceId={dialog.invoiceId} onClose={() => setDialog(null)} onCreate={createPaymentRequest} cloudMode={Boolean(cloudAccount)} />}
     {dialog?.kind === 'receipt' && <ReceiptDialog onClose={() => setDialog(null)} onCreate={addUnmatchedReceipt} />}
     {dialog?.kind === 'match-receipt' && selectedReceipt && <MatchReceiptDialog receipt={selectedReceipt} invoices={data.invoices} onClose={() => setDialog(null)} onMatch={invoiceId => matchUnmatchedReceipt(selectedReceipt.id, invoiceId)} />}
     {dialog?.kind === 'expense' && <ExpenseDialog onClose={() => setDialog(null)} onCreate={createExpense} />}
     {dialog?.kind === 'product' && <ProductDialog onClose={() => setDialog(null)} onCreate={createProduct} />}
+    {dialog?.kind === 'supplier' && <SupplierDialog onClose={() => setDialog(null)} onCreate={addSupplier} />}
     {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} initialProductId={dialog.productId} initialQuantity={dialog.quantity} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
     {dialog?.kind === 'receive-purchase' && selectedPurchaseOrder && <ReceivePurchaseDialog order={selectedPurchaseOrder} onClose={() => setDialog(null)} onReceive={items => receivePurchaseOrder(selectedPurchaseOrder.id, items)} />}
-    {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={amount => paySupplier(selectedSupplier.id, amount)} />}
+    {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={(amount, channel) => paySupplier(selectedSupplier.id, amount, channel)} />}
     {dialog?.kind === 'stock-picker' && <StockPickerDialog products={data.products} onClose={() => setDialog(null)} onAdjust={adjustStock} />}
     {dialog?.kind === 'adjust' && selectedProduct && <AdjustStockDialog product={selectedProduct} onClose={() => setDialog(null)} onAdjust={(quantity, reason) => adjustStock(selectedProduct.id, quantity, reason)} />}
     {selectedInvoice && <InvoiceDialog invoice={selectedInvoice} onClose={() => setSelectedInvoiceId(null)} onRequestPayment={() => {
       setSelectedInvoiceId(null);
       setDialog({ kind: 'stk', invoiceId: selectedInvoice.id });
-    }} />}
+    }} cloudMode={Boolean(cloudAccount)} />}
     {notice && <div className="toast" role="status"><CheckCircle2 size={17} /><span><strong>{notice.title}</strong>{notice.detail && <small>{notice.detail}</small>}</span><button onClick={closeNotice} aria-label="Dismiss notification"><X size={15} /></button></div>}
   </div>;
 }
