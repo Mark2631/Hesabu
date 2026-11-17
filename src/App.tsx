@@ -12,8 +12,12 @@ import {
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { makeDemoData, readWorkspace, saveWorkspace } from './data';
 import {
-  createBusiness, getBusinessSettings, getCloudDailyDigest, listMyBusinesses, restoreCloudSession,
-  saveBusinessPreferences, signInWithPassword, signOut, signUpWithPassword,
+  adjustCloudStock, createBusiness, createCloudProduct, createCloudSupplier,
+  createCloudPurchaseOrder, getBusinessSettings, getCloudDailyDigest, getCloudWorkspace,
+  listMyBusinesses, postCloudExpense, postCloudPayment, postCloudSale,
+  postCloudSupplierPayment, receiveCloudPurchaseOrder, restoreCloudSession,
+  saveBusinessPreferences, saveCloudBusinessProfile, saveCloudWhatsAppDestination,
+  signInWithPassword, signOut, signUpWithPassword,
   type CloudBusinessSettings, type CloudDailyDigest, type SignUpInput, type SupabaseUser,
 } from './lib/supabase';
 import type {
@@ -30,6 +34,7 @@ type DialogState =
   | { kind: 'match-receipt'; receiptId: string }
   | { kind: 'expense' }
   | { kind: 'product' }
+  | { kind: 'supplier' }
   | { kind: 'purchase'; productId?: string; quantity?: number }
   | { kind: 'receive-purchase'; purchaseOrderId: string }
   | { kind: 'invoice'; invoiceId: string }
@@ -263,8 +268,8 @@ function Initials({ name }: { name: string }) {
   return <span className="avatar">{letters || 'H'}</span>;
 }
 
-function SaleDialog({ products, onClose, onCreate }: {
-  products: Product[]; onClose: () => void; onCreate: (input: NewInvoiceInput) => void;
+function SaleDialog({ products, onClose, onCreate, cloudMode }: {
+  products: Product[]; onClose: () => void; onCreate: (input: NewInvoiceInput) => void; cloudMode: boolean;
 }) {
   const [customer, setCustomer] = useState('Walk-in customer');
   const [phone, setPhone] = useState('');
@@ -330,10 +335,12 @@ function SaleDialog({ products, onClose, onCreate }: {
           { value: 'bank', label: 'Bank transfer' }, { value: 'card', label: 'Card payment' },
           { value: 'credit', label: 'On credit' },
         ]} />
-        <SelectField label="Sales source" value={source} onChange={value => setSource(value as Invoice['source'])} options={[
-          { value: 'pos', label: 'Point of sale' }, { value: 'website', label: 'Website' },
-          { value: 'hesabu', label: 'Hesabu checkout' }, { value: 'manual', label: 'Manual entry' },
-        ]} />
+        <SelectField label="Sales source" value={source} onChange={value => setSource(value as Invoice['source'])} options={cloudMode
+          ? [{ value: 'pos', label: 'Point of sale' }, { value: 'manual', label: 'Manual entry' }]
+          : [
+            { value: 'pos', label: 'Point of sale' }, { value: 'website', label: 'Website' },
+            { value: 'hesabu', label: 'Hesabu checkout' }, { value: 'manual', label: 'Manual entry' },
+          ]} />
       </div>
       {channel === 'credit' && <Field label="Payment due date" type="date" value={dueDate} onChange={setDueDate} />}
       <div className="dialog-total">
@@ -349,47 +356,72 @@ function SaleDialog({ products, onClose, onCreate }: {
   </Modal>;
 }
 
-function StkDialog({ invoices, initialInvoiceId, onClose, onCreate }: {
-  invoices: Invoice[]; initialInvoiceId?: string; onClose: () => void; onCreate: (input: NewPaymentInput) => void;
+function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }: {
+  invoices: Invoice[]; initialInvoiceId?: string; onClose: () => void;
+  onCreate: (input: NewPaymentInput) => void; cloudMode: boolean;
 }) {
   const outstandingInvoices = invoices.filter(invoice => invoiceBalance(invoice) > 0);
   const [invoiceId, setInvoiceId] = useState(initialInvoiceId || outstandingInvoices[0]?.id || '');
   const invoice = outstandingInvoices.find(item => item.id === invoiceId);
   const [phone, setPhone] = useState(invoice?.phone || '');
   const [amount, setAmount] = useState(String(invoice ? invoiceBalance(invoice) : 0));
-  const channel: PaymentChannel = 'mpesa';
+  const [channel, setChannel] = useState<Exclude<PaymentChannel, 'credit'>>('mpesa');
+  const [reference, setReference] = useState('');
   useEffect(() => {
     const selected = outstandingInvoices.find(item => item.id === invoiceId);
-    if (selected) setAmount(String(invoiceBalance(selected)));
+    if (selected) {
+      setAmount(String(invoiceBalance(selected)));
+      setPhone(selected.phone || '');
+    }
   }, [invoiceId]);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const value = Number(amount);
     if (!invoice || value <= 0 || value > invoiceBalance(invoice)) return;
-    onCreate({ invoiceId, phone, amount: value, channel, origin: 'daraja_demo' });
+    onCreate({
+      invoiceId, phone, amount: value, channel,
+      origin: cloudMode ? 'manual' : 'daraja_demo',
+      reference: reference.trim(),
+    });
   };
-  return <Modal title="Request a payment" detail="Create a payment request linked to an outstanding customer sale." onClose={onClose}>
+  return <Modal
+    title={cloudMode ? 'Record a payment' : 'Request a payment'}
+    detail={cloudMode
+      ? 'Record money already received against an outstanding customer sale. This does not initiate an M-Pesa STK prompt.'
+      : 'Preview the sample payment request and follow-up flow.'}
+    onClose={onClose}
+  >
     <form className="modal-body" onSubmit={submit}>
-      {outstandingInvoices.length === 0 ? <EmptyState title="No unpaid invoices" body="Create an invoice with a balance before requesting payment." /> : <>
-        <div className="demo-notice"><Smartphone size={17} /><span><strong>Sample payment request</strong><small>Preview the request and payment follow-up flow.</small></span></div>
+      {outstandingInvoices.length === 0 ? <EmptyState title="No unpaid invoices" body="Create a sale with an outstanding balance before recording a payment." /> : <>
+        {!cloudMode && <div className="demo-notice"><Smartphone size={17} /><span><strong>Sample payment request</strong><small>No real Safaricom request will be sent in this preview.</small></span></div>}
         <SelectField label="Invoice" value={invoiceId} onChange={setInvoiceId} options={outstandingInvoices.map(item => ({
           value: item.id, label: item.number + ' · ' + item.customer + ' · ' + money(invoiceBalance(item)),
         }))} />
-        <Field label="Customer M-Pesa number" value={phone} onChange={setPhone} placeholder="2547XXXXXXXX" required />
-        <Field label="Amount (KSh)" type="number" min={1} value={amount} onChange={setAmount} required />
-        {invoice && <div className="balance-hint"><span>Unpaid invoice balance</span><strong>{money(invoiceBalance(invoice))}</strong></div>}
-        <div className="payment-flow-note">
-          <span className="flow-step flow-step-active">1 <small>Request</small></span>
-          <span className="flow-line" />
-          <span className="flow-step">2 <small>Customer PIN</small></span>
-          <span className="flow-line" />
-          <span className="flow-step">3 <small>Callback</small></span>
-          <span className="flow-line" />
-          <span className="flow-step">4 <small>Reconcile</small></span>
+        <div className="form-grid form-grid-two">
+          <Field label="Customer phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
+          <Field label="Amount (KSh)" type="number" min={1} value={amount} onChange={setAmount} required />
         </div>
+        {cloudMode && <>
+          <SelectField label="Received through" value={channel} onChange={value => setChannel(value as Exclude<PaymentChannel, 'credit'>)} options={[
+            { value: 'mpesa', label: 'M-Pesa already received' },
+            { value: 'cash', label: 'Cash received' },
+            { value: 'bank', label: 'Bank transfer received' },
+            { value: 'card', label: 'Card payment received' },
+          ]} />
+          <Field label="Transaction / receipt reference (optional)" value={reference} onChange={setReference} placeholder="e.g. QTX8AB12CD" />
+        </>}
+        {invoice && <div className="balance-hint"><span>Unpaid invoice balance</span><strong>{money(invoiceBalance(invoice))}</strong></div>}
+        {!cloudMode && <div className="payment-flow-note">
+          <span className="flow-step flow-step-active">1 <small>Request</small></span><span className="flow-line" />
+          <span className="flow-step">2 <small>Customer PIN</small></span><span className="flow-line" />
+          <span className="flow-step">3 <small>Callback</small></span><span className="flow-line" />
+          <span className="flow-step">4 <small>Reconcile</small></span>
+        </div>}
         <div className="modal-footer">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={!invoice || Number(amount) <= 0 || Number(amount) > invoiceBalance(invoice)}><Send size={15} /> Create payment request</Button>
+          <Button type="submit" disabled={!invoice || Number(amount) <= 0 || Number(amount) > invoiceBalance(invoice)}>
+            {cloudMode ? 'Save payment' : 'Create sample request'}
+          </Button>
         </div>
       </>}
     </form>
@@ -1252,9 +1284,10 @@ function getWorkspaceAnswer(data: AppData, question: string) {
 }
 
 function FloatingAssistant({
-  data, whatsappNumber, onWhatsAppNumberChange, onRecordSale, onRecordExpense, onUpdateStock,
+  data, whatsappNumber, onWhatsAppNumberChange, onRecordSale, onRecordExpense, onUpdateStock, cloudMode,
 }: {
   data: AppData;
+  cloudMode: boolean;
   whatsappNumber: string;
   onWhatsAppNumberChange: (value: string) => void;
   onRecordSale: () => void;
@@ -1287,11 +1320,13 @@ function FloatingAssistant({
     {panel === 'assistant' && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu assistant">
       <header className="assistant-drawer-header">
         <span className="assistant-drawer-mark"><HesabuMark /></span>
-        <span><strong>Hesabu assistant</strong><small>Answers from this workspace · Preview</small></span>
+        <span><strong>{cloudMode ? 'Hesabu insights' : 'Hesabu assistant'}</strong><small>{cloudMode ? 'Saved business records · Rules-based' : 'Answers from this workspace · Preview'}</small></span>
         <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setPanel(null)}><X size={18} /></button>
       </header>
       <div className="assistant-drawer-body">
-        <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>I can summarise the sales, balances and stock records currently saved in this browser.</p></div>
+        <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>{cloudMode
+          ? 'I can summarise the sales, balances and stock records saved for this business.'
+          : 'I can summarise the sales, balances and stock records currently saved in this browser.'}</p></div>
         <div className="assistant-suggestions">{suggestions.map(item => <button key={item} type="button" onClick={() => ask(item)}>{item}<ArrowRight size={13} /></button>)}</div>
         <div className="assistant-quick-actions">
           <span>Record something</span>
@@ -1307,7 +1342,9 @@ function FloatingAssistant({
         <input aria-label="Ask Hesabu" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask about sales, stock or balances…" />
         <button type="submit" aria-label="Send question" disabled={!question.trim()}><ArrowUpRight size={18} /></button>
       </form>
-      <p className="assistant-drawer-note">This preview uses saved records and fixed queries. Generative AI is not connected yet.</p>
+      <p className="assistant-drawer-note">{cloudMode
+        ? 'These are fixed calculations against your saved records, not generative AI. AI assistance is not connected yet.'
+        : 'This preview uses saved records and fixed queries. Generative AI is not connected yet.'}</p>
     </section>}
     {panel === 'digest' && <section className="assistant-drawer digest-drawer" role="dialog" aria-modal="false" aria-label="Daily WhatsApp digest">
       <header className="assistant-drawer-header">
@@ -1478,10 +1515,10 @@ function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
   </div>;
 }
 
-function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onResolvePayment, onAddReceipt, onMatchReceipt }: {
+function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onResolvePayment, onAddReceipt, onMatchReceipt, cloudMode }: {
   data: AppData; metrics: ReturnType<typeof getMetrics>; search: string; onSearch: (value: string) => void;
   onRequestPayment: () => void; onResolvePayment: (id: string, success: boolean) => void;
-  onAddReceipt: () => void; onMatchReceipt: (receiptId: string) => void;
+  onAddReceipt: () => void; onMatchReceipt: (receiptId: string) => void; cloudMode: boolean;
 }) {
   const list = [...data.payments].filter(payment =>
     (payment.invoiceNumber + ' ' + payment.customer + ' ' + payment.reference + ' ' + (payment.rail || '')).toLowerCase().includes(search.toLowerCase()),
@@ -1492,8 +1529,8 @@ function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onRes
   const unmatchedValue = sum(unmatched.map(receipt => receipt.amount));
   return <div className="page-stack">
     <PageHeader title="Payments" description="See what customers have paid and what still needs your attention." actions={<>
-      <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Record receipt</Button>
-      <Button onClick={onRequestPayment}><Send size={15} /> Request payment</Button>
+      {!cloudMode && <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Record receipt</Button>}
+      <Button onClick={onRequestPayment}><Plus size={15} /> {cloudMode ? 'Record payment' : 'Request payment'}</Button>
     </>} />
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Received today" value={money(metrics.collectedToday)} note="Payments recorded today" icon={CircleDollarSign} tone="green" />
@@ -1512,12 +1549,14 @@ function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onRes
         <div className="channel-total"><span>Total recorded funds</span><strong>{money(metrics.cashPosition)}</strong></div>
       </SectionCard>
       <SectionCard title="Receipts to match" detail="Payments received that still need to be linked to a customer sale.">
-        {unmatched.length ? <div className="attention-list">
-          {unmatched.slice(0, 4).map(receipt => <button key={receipt.id} onClick={() => onMatchReceipt(receipt.id)}>
-            <span><strong>{receipt.payer || 'Unidentified payer'}</strong><small>{receipt.rail} · {shortRef(receipt.reference)}</small></span>
-            <strong>{money(receipt.amount)}</strong><span className="table-action">Match</span>
-          </button>)}
-        </div> : <EmptyState title="All receipts matched" body="New receipts that need a customer match will appear here." />}
+        {cloudMode
+          ? <EmptyState title="Receipt matching is not connected" body="Hesabu can record payments against invoices. M-Pesa statement imports and automatic receipt matching are not enabled yet." />
+          : unmatched.length ? <div className="attention-list">
+            {unmatched.slice(0, 4).map(receipt => <button key={receipt.id} onClick={() => onMatchReceipt(receipt.id)}>
+              <span><strong>{receipt.payer || 'Unidentified payer'}</strong><small>{receipt.rail} · {shortRef(receipt.reference)}</small></span>
+              <strong>{money(receipt.amount)}</strong><span className="table-action">Match</span>
+            </button>)}
+          </div> : <EmptyState title="All receipts matched" body="New receipts that need a customer match will appear here." />}
       </SectionCard>
     </div>
     <SectionCard title="Payment activity" detail="Collections recorded against customer sales.">
@@ -1642,13 +1681,20 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
   </div>;
 }
 
-function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier }: {
-  data: AppData; onCreatePurchase: () => void; onReceiveOrder: (id: string) => void; onPaySupplier: (id: string) => void;
+function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier, onAddSupplier }: {
+  data: AppData;
+  onCreatePurchase: () => void;
+  onReceiveOrder: (id: string) => void;
+  onPaySupplier: (id: string) => void;
+  onAddSupplier: () => void;
 }) {
   const openOrders = data.purchaseOrders.filter(order => order.status === 'sent' || order.status === 'partially_received');
   const payables = sum(data.suppliers.map(supplier => supplier.balance));
   return <div className="page-stack">
-    <PageHeader title="Purchasing" description="Replenish stock, follow supplier deliveries and keep incoming goods on track." actions={<Button onClick={onCreatePurchase}><Plus size={16} /> New purchase order</Button>} />
+    <PageHeader title="Purchasing" description="Replenish stock, follow supplier deliveries and keep incoming goods on track." actions={<div className="page-header-actions">
+      <Button variant="outline" onClick={onAddSupplier}><Plus size={15} /> Add supplier</Button>
+      <Button onClick={onCreatePurchase}><Plus size={16} /> New purchase order</Button>
+    </div>} />
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Supplier balances" value={money(payables)} note="Recorded accounts payable" icon={Truck} tone="amber" />
       <MetricCard label="Open purchase orders" value={numberText(openOrders.length)} note="Sent or part received" icon={ShoppingCart} tone="blue" />
@@ -1663,19 +1709,47 @@ function ProcurementPage({ data, onCreatePurchase, onReceiveOrder, onPaySupplier
           <td><StatusPill status={order.status}>{order.status === 'partially_received' ? 'Part received' : order.status === 'received' ? 'Received' : order.status === 'sent' ? 'Sent to supplier' : order.status}</StatusPill></td>
           <td>{order.status === 'sent' || order.status === 'partially_received' ? <Button size="sm" variant="secondary" onClick={() => onReceiveOrder(order.id)}>Receive goods</Button> : <span className="muted-copy">Complete</span>}</td>
         </tr>)}
-      </DataTable> : <EmptyState title="No purchase orders" body="Create a purchase order when your business is ready to replenish stock." />}
+      </DataTable> : <EmptyState title="No purchase orders" body="Create a supplier record, then create an order when your business is ready to replenish stock." />}
     </SectionCard>
     <SectionCard title="Supplier accounts" detail="Open balances are tracked separately from customer receivables.">
-      <DataTable headers={['Supplier', 'Contact', 'Payment terms', 'Outstanding', '']}>
+      {data.suppliers.length ? <DataTable headers={['Supplier', 'Contact', 'Payment terms', 'Outstanding', '']}>
         {data.suppliers.map(supplier => <tr key={supplier.id}>
           <td><strong>{supplier.name}</strong><small className="cell-sub">{supplier.email}</small></td>
           <td>{supplier.phone}</td><td>{supplier.terms}</td>
           <td className="amount-cell">{money(supplier.balance)}</td>
           <td>{supplier.balance > 0 ? <button className="table-action" onClick={() => onPaySupplier(supplier.id)}>Record payment</button> : <span className="muted-copy">Up to date</span>}</td>
         </tr>)}
-      </DataTable>
+      </DataTable> : <EmptyState title="No suppliers yet" body="Add the suppliers your business buys stock or services from." />}
     </SectionCard>
   </div>;
+}
+
+function SupplierDialog({ onClose, onCreate }: {
+  onClose: () => void;
+  onCreate: (input: { name: string; phone: string; email: string; terms: string }) => void;
+}) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [terms, setTerms] = useState('Cash on delivery');
+  return <Modal title="Add supplier" detail="Create a supplier record for purchasing and payable tracking." onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      if (name.trim()) onCreate({ name: name.trim(), phone: phone.trim(), email: email.trim(), terms });
+    }}>
+      <Field label="Supplier or business name" value={name} onChange={setName} required />
+      <div className="form-grid form-grid-two">
+        <Field label="Phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
+        <Field label="Email (optional)" type="email" value={email} onChange={setEmail} />
+      </div>
+      <SelectField label="Payment terms" value={terms} onChange={setTerms} options={[
+        { value: 'Cash on delivery', label: 'Cash on delivery' },
+        { value: '7 days', label: '7 days' }, { value: '14 days', label: '14 days' },
+        { value: '30 days', label: '30 days' }, { value: 'Custom', label: 'Custom agreement' },
+      ]} />
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim()}>Save supplier</Button></div>
+    </form>
+  </Modal>;
 }
 
 function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<typeof getMetrics> }) {
@@ -2050,9 +2124,10 @@ function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
   </div>;
 }
 
-function SalesChannelsPage({ data, onCreateDemoOrder }: {
+function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode }: {
   data: AppData;
   onCreateDemoOrder: (input: { productId: string; quantity: number; customer: string; phone: string }) => void;
+  cloudMode: boolean;
 }) {
   return <div className="page-stack">
     <PageHeader title="Sales channels" description="Bring counter, online and wholesale orders into one business view." />
@@ -2070,9 +2145,13 @@ function SalesChannelsPage({ data, onCreateDemoOrder }: {
         <p>Record phone, repeat and bulk orders against the same inventory and customer balances.</p><span>Available in Sales</span>
       </div>
     </div>
-    <SectionCard title="Sample online order" detail="Place an order and see it appear with the rest of your sales.">
-      <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
-    </SectionCard>
+    {cloudMode
+      ? <SectionCard title="Website order connection" detail="Online checkout is not accepting customer orders yet.">
+          <EmptyState title="No website is connected" body="The sample checkout is not connected to a real storefront. Connect a secure order webhook before accepting online orders here." />
+        </SectionCard>
+      : <SectionCard title="Sample online order" detail="Place an order and see it appear with the rest of your sales.">
+          <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
+        </SectionCard>}
     <div className="sales-channel-note">One product catalogue. One view of sales. One view of available stock.</div>
   </div>;
 }
@@ -2101,13 +2180,14 @@ function MorePage({ allowedModules, onNavigate }: {
   </div>;
 }
 
-function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMember, onReset, theme, onThemeChange, onOpenReports, whatsappNumber, onWhatsAppNumberChange }: {
+function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMember, onReset, theme, onThemeChange, onOpenReports, whatsappNumber, onWhatsAppNumberChange, onSaveWhatsApp, cloudMode, onSignOut }: {
   profile: BusinessProfile; teamMembers: TeamMember[];
   onSave: (profile: BusinessProfile) => void;
   onAddMember: (input: { name: string; email: string; role: TeamRole }) => void;
   onUpdateMember: (id: string, patch: Partial<TeamMember>) => void;
   onReset: () => void; theme: 'dark' | 'light'; onThemeChange: (theme: 'dark' | 'light') => void; onOpenReports: () => void;
   whatsappNumber: string; onWhatsAppNumberChange: (value: string) => void;
+  onSaveWhatsApp: () => void; cloudMode: boolean; onSignOut: () => void;
 }) {
   const [tab, setTab] = useState<'profile' | 'team' | 'preferences'>('profile');
   const [form, setForm] = useState(profile);
@@ -2137,7 +2217,7 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
     <SectionCard title="Business administration" detail="Business identity and team responsibilities.">
       <div className="section-tabs">
         <button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}>Business profile</button>
-        <button className={tab === 'team' ? 'active' : ''} onClick={() => setTab('team')}>Team <span>{teamMembers.length}</span></button>
+        {!cloudMode && <button className={tab === 'team' ? 'active' : ''} onClick={() => setTab('team')}>Team <span>{teamMembers.length}</span></button>}
         <button className={tab === 'preferences' ? 'active' : ''} onClick={() => setTab('preferences')}>Preferences</button>
       </div>
       {tab === 'profile' ? <form className="settings-form" onSubmit={event => {
@@ -2197,15 +2277,25 @@ function SettingsPage({ profile, teamMembers, onSave, onAddMember, onUpdateMembe
         <section className="preference-block">
           <div><strong>WhatsApp daily digest</strong><p>Choose the number that should receive the prepared daily summary. Hesabu opens the chat for you to review and send.</p></div>
           <Field label="WhatsApp destination" value={whatsappNumber} onChange={onWhatsAppNumberChange} placeholder="2547XXXXXXXX" hint="Use country code, e.g. 254712345678. You can also enter a Kenyan number beginning with 07 or 01." />
-          <div className="whatsapp-connection-note"><MessageCircle size={16} /><span>Click-to-chat is available in this preview. Automatic scheduled messages and attachments need the WhatsApp Business API connected on a secure server.</span></div>
-          <Button variant="outline" onClick={onOpenReports}>Open daily digest</Button>
+          <div className="whatsapp-connection-note"><MessageCircle size={16} /><span>{cloudMode
+            ? 'Hesabu prepares the summary from saved business records and opens WhatsApp for you to review and send. Automatic scheduled delivery is not connected.'
+            : 'Click-to-chat is available in this preview. Automatic scheduled messages and attachments need the WhatsApp Business API connected on a secure server.'}</span></div>
+          <div className="inline-form-actions">
+            {cloudMode && <Button variant="outline" onClick={onSaveWhatsApp}>Save destination</Button>}
+            <Button variant="outline" onClick={onOpenReports}>Open daily digest</Button>
+          </div>
         </section>
       </div>}
     </SectionCard>
-    <div className="settings-reset-row">
-      <div><strong>Reset sample workspace</strong><small>Restore the original example business and sample activity.</small></div>
-      <Button variant="outline" size="sm" onClick={onReset}>Reset workspace</Button>
-    </div>
+    {cloudMode
+      ? <div className="settings-reset-row">
+          <div><strong>Account session</strong><small>Sign out of {profile.email || 'this Hesabu account'} on this device.</small></div>
+          <Button variant="outline" size="sm" onClick={onSignOut}><LogOut size={14} /> Sign out</Button>
+        </div>
+      : <div className="settings-reset-row">
+          <div><strong>Reset sample workspace</strong><small>Restore the original example business and sample activity.</small></div>
+          <Button variant="outline" size="sm" onClick={onReset}>Reset workspace</Button>
+        </div>}
   </div>;
 }
 
