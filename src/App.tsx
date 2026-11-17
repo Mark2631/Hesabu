@@ -1258,7 +1258,9 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
   onCreatePurchase: () => void; onQuickStock: () => void;
 }) {
   const chartDays = Array.from({ length: 7 }, (_, index) => addDays(today(), index - 6));
-  const chartValues = chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
+  const chartValues = chartDays.map(day => role === 'Inventory'
+    ? sum(data.purchaseOrders.filter(order => order.createdAt === day).map(order => order.total))
+    : sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
   const chartLabels = chartDays.map(day => new Date(day + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }));
   const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
   const zeroStock = data.products.filter(product => product.quantity === 0);
@@ -1366,6 +1368,10 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
         </>}
       </div>
     </section>
+    <SectionCard title={role === 'Inventory' ? 'Purchasing trend' : 'Sales trend'} detail={role === 'Inventory' ? 'Purchase order value recorded over the last seven days.' : 'Recorded sales over the last seven days.'}>
+      <div className="chart-summary"><strong>{money(sum(chartValues))}</strong><span>Last 7 days</span></div>
+      <MiniBars values={chartValues} labels={chartLabels} />
+    </SectionCard>
     <div className="content-grid content-grid-main">
       {role === 'Sales' ? <SectionCard title="Customer follow-up" detail="Customer balances requiring attention.">
         {unsettled.length ? <div className="followup-list">
