@@ -2472,8 +2472,8 @@ function App() {
     return () => { active = false; };
   }, []);
 
-  const reloadCloudWorkspace = async () => {
-    if (!cloudAccount) return;
+  const reloadCloudWorkspace = async (): Promise<boolean> => {
+    if (!cloudAccount) return false;
     setCloudWorkspaceLoading(true);
     setCloudWorkspaceError('');
     try {
@@ -2486,9 +2486,11 @@ function App() {
       const currentMember = workspace.teamMembers.find(member => member.id === cloudAccount.user.id);
       setActiveMemberId(currentMember?.id || cloudAccount.user.id);
       setCloudWorkspaceReady(true);
+      return true;
     } catch (error) {
       setCloudWorkspaceError(error instanceof Error ? error.message : 'The business workspace could not be loaded.');
       setCloudWorkspaceReady(false);
+      return false;
     } finally {
       setCloudWorkspaceLoading(false);
     }
@@ -2603,6 +2605,22 @@ function App() {
 
   const notify = (title: string, detail?: string) => setNotice({ title, detail });
   const closeNotice = () => setNotice(null);
+  const runCloudMutation = async (
+    operation: () => Promise<unknown>,
+    successTitle: string,
+    successDetail: string,
+  ) => {
+    try {
+      await operation();
+      const refreshed = await reloadCloudWorkspace();
+      setDialog(null);
+      notify(successTitle, refreshed
+        ? successDetail
+        : 'The record was submitted, but the latest workspace data could not be reloaded. Refresh the page to verify it.');
+    } catch (error) {
+      notify('Could not save this record', error instanceof Error ? error.message : 'The cloud operation failed. No success was reported.');
+    }
+  };
   const navigate = (section: ModuleKey) => {
     if (!allowedModules.includes(section)) {
       notify('This area is not included in this role', 'Switch to an authorised business role to continue.');
@@ -2618,6 +2636,37 @@ function App() {
   };
 
   const createInvoice = (input: NewInvoiceInput) => {
+    if (cloudAccount) {
+      const saleTotal = Math.max(0, sum(input.items.map(item => {
+        const product = data.products.find(candidate => candidate.id === item.productId);
+        return product ? product.sellingPrice * item.quantity : 0;
+      })) - input.discount);
+      void runCloudMutation(async () => {
+        const invoiceId = await postCloudSale(cloudAccount.business.id, {
+          customer: input.customer,
+          phone: input.phone,
+          dueDate: input.dueDate,
+          discount: input.discount,
+          channel: input.channel,
+          source: input.source,
+          items: input.items,
+        });
+        if (input.channel !== 'credit' && saleTotal > 0) {
+          await postCloudPayment(cloudAccount.business.id, {
+            invoiceId,
+            amount: saleTotal,
+            channel: input.channel,
+            phone: input.phone,
+            reference: '',
+            idempotencyKey: 'sale-payment:' + invoiceId,
+            note: 'Collected at point of sale',
+          });
+        }
+      }, 'Sale recorded', input.channel === 'credit'
+        ? 'The invoice, stock movement and accounting entries are saved to your business.'
+        : 'The sale, payment, stock movement and accounting entries are saved to your business.');
+      return;
+    }
     const requestedQuantities = new Map<string, number>();
     for (const item of input.items) {
       requestedQuantities.set(item.productId, (requestedQuantities.get(item.productId) ?? 0) + item.quantity);
@@ -2719,6 +2768,18 @@ function App() {
 
 
   const createPaymentRequest = (input: NewPaymentInput) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => postCloudPayment(cloudAccount.business.id, {
+        invoiceId: input.invoiceId,
+        amount: input.amount,
+        channel: input.channel as Exclude<PaymentChannel, 'credit'>,
+        phone: input.phone,
+        reference: input.reference || '',
+        idempotencyKey: 'manual-payment:' + makeId('IDEM'),
+        note: 'Manually recorded payment received',
+      }), 'Payment recorded', 'The payment, invoice balance and ledger entries are saved to your business.');
+      return;
+    }
     const invoice = data.invoices.find(item => item.id === input.invoiceId);
     if (!invoice) return;
     const payment: Payment = {
@@ -2888,6 +2949,11 @@ function App() {
   };
 
   const createExpense = (input: { category: string; description: string; amount: number; channel: 'cash' | 'mpesa' | 'bank' }) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => postCloudExpense(cloudAccount.business.id, input),
+        'Expense recorded', 'The expense, cash movement and accounting entries are saved to your business.');
+      return;
+    }
     const expense = { ...input, id: makeId('EXP'), date: today(), reference: makeId('EXP') };
     const debitAccount = input.category === 'Rent' ? 'Rent expense' : input.category === 'Utilities' ? 'Utilities expense' : input.category === 'Staff costs' ? 'Staff expense' : input.category === 'Transport' ? 'Transport expense' : 'Operating expenses';
     const creditAccount = input.channel === 'cash' ? 'Cash on hand' : input.channel === 'mpesa' ? 'M-Pesa clearing' : 'Bank account';
@@ -2901,6 +2967,16 @@ function App() {
   };
 
   const createProduct = (input: Omit<Product, 'id' | 'updatedAt'>) => {
+    if (cloudAccount) {
+      const sku = input.sku.trim().toUpperCase() || makeId('SKU');
+      void runCloudMutation(() => createCloudProduct(cloudAccount.business.id, {
+        sku, name: input.name, category: input.category, unit: input.unit,
+        quantity: input.quantity, reorderLevel: input.reorderLevel,
+        costPrice: input.costPrice, sellingPrice: input.sellingPrice,
+        supplierId: input.supplierId,
+      }), 'Product added', 'The product and opening stock valuation are saved to your business.');
+      return;
+    }
     const sku = input.sku.trim().toUpperCase() || makeId('SKU');
     if (data.products.some(product => product.sku.toUpperCase() === sku)) {
       notify('SKU already exists', 'Each inventory item needs a unique product code. Choose another SKU before saving.');
@@ -2927,6 +3003,14 @@ function App() {
   };
 
   const createPurchaseOrder = (input: NewPurchaseInput) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => createCloudPurchaseOrder(cloudAccount.business.id, {
+        supplierId: input.supplierId,
+        expectedDate: input.expectedAt,
+        items: input.items,
+      }), 'Purchase order created', 'The order is saved. Stock and supplier balances will change when goods are received.');
+      return;
+    }
     const supplier = data.suppliers.find(item => item.id === input.supplierId);
     if (!supplier) return;
     const lines = input.items.map(item => {
@@ -2957,6 +3041,12 @@ function App() {
   };
 
   const receivePurchaseOrder = (orderId: string, items: Array<{ productId: string; quantity: number }>) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => receiveCloudPurchaseOrder(cloudAccount.business.id, {
+        purchaseOrderId: orderId, items,
+      }), 'Goods received', 'Stock quantities, weighted costs and the supplier payable have been updated in the ledger.');
+      return;
+    }
     const order = data.purchaseOrders.find(item => item.id === orderId);
     if (!order || order.status === 'received') return;
     const receipt = planPurchaseReceipt(order.lines, items);
@@ -2999,7 +3089,13 @@ function App() {
       money(receipt.totalValue) + ' added to inventory and the supplier balance for ' + order.supplierName + '.');
   };
 
-  const paySupplier = (supplierId: string, amount: number) => {
+  const paySupplier = (supplierId: string, amount: number, channel: Exclude<PaymentChannel, 'credit'> = 'bank') => {
+    if (cloudAccount) {
+      void runCloudMutation(() => postCloudSupplierPayment(cloudAccount.business.id, {
+        supplierId, amount, channel, reference: '',
+      }), 'Supplier payment recorded', 'The supplier balance and cash ledger have been updated.');
+      return;
+    }
     const supplier = data.suppliers.find(item => item.id === supplierId);
     if (!supplier || amount <= 0 || amount > supplier.balance) return;
     const reference = makeId('BANK');
@@ -3025,6 +3121,18 @@ function App() {
 
   const adjustStock = (productId: string, quantity: number, reason: string) => {
     const product = data.products.find(item => item.id === productId);
+    if (cloudAccount && product) {
+      const delta = quantity - product.quantity;
+      if (delta === 0) {
+        setDialog(null);
+        notify('No stock change', 'The counted quantity matches the current recorded quantity.');
+        return;
+      }
+      void runCloudMutation(() => adjustCloudStock(cloudAccount.business.id, {
+        productId, quantityDelta: delta, reason,
+      }), 'Stock count saved', product.name + ' has been adjusted in the inventory and accounting ledgers.');
+      return;
+    }
     if (!product) return;
     const delta = quantity - product.quantity;
     const value = Math.abs(delta * product.costPrice);
@@ -3048,8 +3156,38 @@ function App() {
   };
 
   const saveProfile = (profile: BusinessProfile) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => saveCloudBusinessProfile(
+        cloudAccount.business.id, profile, cloudAccount.user.id,
+      ), 'Business profile updated', 'Your business details are saved to the cloud workspace.');
+      return;
+    }
     setData(current => ({ ...current, profile }));
     notify('Business profile updated', 'Changes have been saved to this browser.');
+  };
+
+  const addSupplier = (input: { name: string; phone: string; email: string; terms: string }) => {
+    if (cloudAccount) {
+      void runCloudMutation(() => createCloudSupplier(cloudAccount.business.id, input),
+        'Supplier added', 'The supplier has been saved to your business records.');
+      return;
+    }
+    const supplier: Supplier = {
+      id: makeId('SUP'), name: input.name, phone: input.phone,
+      email: input.email, terms: input.terms, balance: 0,
+    };
+    setData(current => ({ ...current, suppliers: [...current.suppliers, supplier] }));
+    setDialog(null);
+    notify('Supplier added', input.name + ' has been added to the supplier register.');
+  };
+
+  const saveWhatsAppDestination = () => {
+    if (cloudAccount) {
+      void runCloudMutation(() => saveCloudWhatsAppDestination(cloudAccount.business.id, whatsappNumber),
+        'WhatsApp destination saved', 'The number is saved. Daily summaries still open in WhatsApp for you to review and send.');
+      return;
+    }
+    notify('WhatsApp destination saved', 'The destination is saved in this preview on this device.');
   };
 
 
@@ -3073,6 +3211,10 @@ function App() {
   };
 
   const resetDemo = () => {
+    if (cloudAccount) {
+      notify('Cloud records are protected', 'Sample data reset is not available in a real business workspace.');
+      return;
+    }
     if (!window.confirm('Reset this browser to the original Hesabu demo workspace? Current local demo changes will be lost.')) return;
     const fresh = makeDemoData();
     setData(fresh);
