@@ -298,7 +298,7 @@ end;
 
 select set_config('hesabu.test_alpha_business_id', :'alpha_business_id', false);
 
-do $
+do $sales_invite_access$
 begin
   begin
     perform public.create_business_invitation(
@@ -310,7 +310,7 @@ begin
     null;
   end;
 end;
-$$;
+$sales_invite_access$;
 
 select public.create_business(
   'Beta Test Shop', 'Services', '0711000003', 'beta@example.test', 'Meru'
