@@ -792,7 +792,7 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
   }));
 
   const cashMovements: AppData['cashMovements'] = movementRows
-    .filter(row => row.direction === 'out')
+    .filter(row => row.direction === 'out' && row.source_type === 'supplier_payment')
     .map(row => ({
       id: asText(row.id), date: asText(row.movement_date),
       channel: asText(row.channel, 'cash') as CashMovement['channel'],
