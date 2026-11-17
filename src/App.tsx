@@ -10,7 +10,16 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
-import { makeDemoData, readWorkspace, saveWorkspace } from './data';
+const EMPTY_WORKSPACE_DATA: AppData = {
+  profile: {
+    name: 'Your business', legalName: '', owner: '', email: '', phone: '',
+    location: '', currency: 'KES', taxPin: '', industry: 'Other',
+  },
+  products: [], invoices: [], payments: [], unmatchedReceipts: [], expenses: [],
+  cashMovements: [], suppliers: [], purchaseOrders: [], teamMembers: [], journal: [],
+  events: [], openingBalances: { cash: 0, mpesa: 0, bank: 0, inventory: 0 },
+  nextInvoice: 1001, nextPurchaseOrder: 1,
+};
 import {
   adjustCloudStock, completeAuthCallback, createBusiness, createCloudProduct, createCloudSupplier,
   createCloudPurchaseOrder, getBusinessSettings, getCloudWorkspace,
@@ -2253,7 +2262,7 @@ function clearPendingOnboarding() {
 }
 
 function App() {
-  const [data, setData] = useState<AppData>(() => readWorkspace());
+  const [data, setData] = useState<AppData>(() => EMPTY_WORKSPACE_DATA);
   const [cloudAccount, setCloudAccount] = useState<{
     user: SupabaseUser;
     business: { id: string; name: string; industry: string | null };
@@ -2265,17 +2274,12 @@ function App() {
   const [authNotice, setAuthNotice] = useState('');
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
-  const [previewAccess, setPreviewAccess] = useState(false);
-  const [whatsappNumber, setWhatsAppNumber] = useState(() => {
-    try { return localStorage.getItem('hesabu:whatsapp-number:v1') || ''; }
-    catch { return ''; }
-  });
+  const [whatsappNumber, setWhatsAppNumber] = useState('');
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try { return localStorage.getItem('hesabu:theme:v2') === 'dark' ? 'dark' : 'light'; }
     catch { return 'light'; }
   });
   const [activeMemberId, setActiveMemberId] = useState('');
-  const [userSwitcherOpen, setUserSwitcherOpen] = useState(false);
   const [active, setActive] = useState<ModuleKey>('overview');
   const [dialog, setDialog] = useState<DialogState>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
@@ -2308,8 +2312,6 @@ function App() {
             user: result.user,
             business: { id: businessId, name: pending.businessName, industry: pending.industry || null },
           });
-          setPreviewAccess(false);
-          try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
           return;
         }
         setAuthNotice('Your account is signed in, but no business workspace has been set up for it yet. Complete the business setup on this device or contact the workspace owner.');
@@ -2323,8 +2325,6 @@ function App() {
           industry: membership.businesses.industry,
         },
       });
-      setPreviewAccess(false);
-      try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
     };
     restore()
       .catch(error => {
@@ -2399,8 +2399,6 @@ function App() {
     }
     setAuthNotice('');
     setShowAuthScreen(false);
-    setPreviewAccess(false);
-    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
   };
 
   const handleCloudSignUp = async (input: SignUpInput): Promise<'confirm_email' | void> => {
@@ -2422,8 +2420,6 @@ function App() {
     setWhatsAppNumber(input.whatsappRecipientPhone);
     setAuthNotice('');
     setShowAuthScreen(false);
-    setPreviewAccess(false);
-    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Session remains valid. */ }
   };
 
   const handleCloudSignOut = async () => {
@@ -2433,13 +2429,8 @@ function App() {
     setCloudWorkspaceError('');
     setAuthNotice('');
     setShowAuthScreen(false);
-    setPreviewAccess(false);
-    try { localStorage.removeItem('hesabu:preview-access:v1'); } catch { /* Keep the screen transition available. */ }
   };
 
-  useEffect(() => {
-    if (!cloudAccount && previewAccess) saveWorkspace(data);
-  }, [data, cloudAccount, previewAccess]);
   useEffect(() => {
     if (cloudAccount) return;
     try {
