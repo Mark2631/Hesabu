@@ -106,7 +106,7 @@ end;
 select set_config('hesabu.test_alpha_business_id', :'alpha_business_id', false);
 select set_config('hesabu.test_alpha_product_id', :'alpha_product_id', false);
 
-do $
+do $rollback_check$
 declare
   v_invoice_count bigint;
   v_payment_count bigint;
@@ -137,7 +137,7 @@ begin
     raise exception 'Failed atomic sale changed stock';
   end if;
 end;
-$$;
+$rollback_check$;
 
 select public.post_expense(
   :'alpha_business_id'::uuid,
