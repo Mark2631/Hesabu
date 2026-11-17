@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   Activity, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, BookOpen,
   Bell, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown,
@@ -367,6 +367,7 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }:
   const [amount, setAmount] = useState(String(invoice ? invoiceBalance(invoice) : 0));
   const [channel, setChannel] = useState<Exclude<PaymentChannel, 'credit'>>('mpesa');
   const [reference, setReference] = useState('');
+  const [idempotencyKey] = useState(() => 'manual-payment:' + makeId('IDEM'));
   useEffect(() => {
     const selected = outstandingInvoices.find(item => item.id === invoiceId);
     if (selected) {
@@ -382,6 +383,7 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }:
       invoiceId, phone, amount: value, channel,
       origin: cloudMode ? 'manual' : 'daraja_demo',
       reference: reference.trim(),
+      idempotencyKey,
     });
   };
   return <Modal
@@ -2461,11 +2463,14 @@ function App() {
 
   const notify = (title: string, detail?: string) => setNotice({ title, detail });
   const closeNotice = () => setNotice(null);
+  const cloudMutationLock = useRef(false);
   const runCloudMutation = async (
     operation: () => Promise<unknown>,
     successTitle: string,
     successDetail: string,
   ) => {
+    if (cloudMutationLock.current) return;
+    cloudMutationLock.current = true;
     try {
       await operation();
       const refreshed = await reloadCloudWorkspace();
@@ -2475,6 +2480,8 @@ function App() {
         : 'The record was submitted, but the latest workspace data could not be reloaded. Refresh the page to verify it.');
     } catch (error) {
       notify('Could not save this record', error instanceof Error ? error.message : 'The cloud operation failed. No success was reported.');
+    } finally {
+      cloudMutationLock.current = false;
     }
   };
   const navigate = (section: ModuleKey) => {
@@ -2631,7 +2638,7 @@ function App() {
         channel: input.channel as Exclude<PaymentChannel, 'credit'>,
         phone: input.phone,
         reference: input.reference || '',
-        idempotencyKey: 'manual-payment:' + makeId('IDEM'),
+        idempotencyKey: input.idempotencyKey || 'manual-payment:' + makeId('IDEM'),
         note: 'Manually recorded payment received',
       }), 'Payment recorded', 'The payment, invoice balance and ledger entries are saved to your business.');
       return;
