@@ -2579,11 +2579,12 @@ function App() {
     if (!cloudAccount && previewAccess) saveWorkspace(data);
   }, [data, cloudAccount, previewAccess]);
   useEffect(() => {
+    if (cloudAccount) return;
     try {
       if (whatsappNumber.trim()) localStorage.setItem('hesabu:whatsapp-number:v1', whatsappNumber.trim());
       else localStorage.removeItem('hesabu:whatsapp-number:v1');
     } catch { /* WhatsApp preference remains available for this session. */ }
-  }, [whatsappNumber]);
+  }, [whatsappNumber, cloudAccount]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try { localStorage.setItem('hesabu:theme:v2', theme); } catch { /* Keep this session's theme. */ }
@@ -2805,6 +2806,11 @@ function App() {
   };
 
   const addUnmatchedReceipt = (input: NewUnmatchedReceiptInput) => {
+    if (cloudAccount) {
+      notify('Receipt import is not connected', 'Record a payment directly against its customer invoice. M-Pesa statement imports and matching are not enabled yet.');
+      setDialog(null);
+      return;
+    }
     const reference = input.reference.trim().toUpperCase();
     const duplicateReference = data.unmatchedReceipts.some(item => item.reference.trim().toUpperCase() === reference) ||
       data.payments.some(item => item.reference.trim().toUpperCase() === reference);
@@ -2830,6 +2836,11 @@ function App() {
   };
 
   const matchUnmatchedReceipt = (receiptId: string, invoiceId: string) => {
+    if (cloudAccount) {
+      notify('Receipt matching is not connected', 'Record payments against their invoice until statement imports and reconciliation are enabled.');
+      setDialog(null);
+      return;
+    }
     const receipt = data.unmatchedReceipts.find(item => item.id === receiptId);
     const invoice = data.invoices.find(item => item.id === invoiceId);
     if (!receipt || !invoice || receipt.amount <= 0 || invoiceBalance(invoice) <= 0) return;
@@ -2882,6 +2893,10 @@ function App() {
   };
 
   const resolvePayment = (paymentId: string, success: boolean) => {
+    if (cloudAccount) {
+      notify('Payment confirmation is provider-controlled', 'Hesabu does not simulate payment callbacks in a real business. Record an already received payment or connect the Daraja API.');
+      return;
+    }
     const payment = data.payments.find(item => item.id === paymentId);
     if (!payment || payment.status !== 'pending') return;
     const invoice = data.invoices.find(item => item.id === payment.invoiceId);
