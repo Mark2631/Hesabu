@@ -1024,7 +1024,18 @@ function AuthPage({
         setMessage('Account created. Sign in with the email and password you just registered. If email verification is requested, confirm your email address first.');
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.');
+      const detail = error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.';
+      const normalised = detail.toLowerCase();
+      if (normalised.includes('already registered') || normalised.includes('already exists')) {
+        setMode('signin');
+        setMessage('An account already exists for this email address. Sign in with your existing password instead.');
+      } else if (normalised.includes('invalid login credentials') || normalised.includes('invalid credentials')) {
+        setMessage('The email or password is incorrect. Check both details and try again.');
+      } else if (normalised.includes('email not confirmed')) {
+        setMessage('Confirm your email address using the link we sent, then return here to sign in.');
+      } else {
+        setMessage(detail);
+      }
     } finally {
       setBusy(false);
     }
@@ -1061,7 +1072,7 @@ function AuthPage({
             <label className="auth-field"><span>Business phone <small>(optional)</small></span><input type="tel" autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="07XX XXX XXX" /></label>
             </>}
           </>}
-          <label className="auth-field"><span>Business email</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
+          <label className="auth-field"><span>Email address</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
           <label className="auth-field"><span>Password</span><input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /></label>
           {mode === 'signup' && !inviteMode && <section className="auth-preferences" aria-label="Optional business preferences">
             <div className="auth-preferences-heading"><strong>How should Hesabu support your daily work?</strong><small>These options work together. Manual entry is always available.</small></div>
@@ -2475,7 +2486,12 @@ function App() {
   useEffect(() => {
     let active = true;
     const restore = async () => {
-      await completeAuthCallback();
+      const authCallbackCompleted = await completeAuthCallback();
+      if (authCallbackCompleted) {
+        setAuthInitialMode('signin');
+        setShowAuthScreen(true);
+        setAuthNotice('Your email address has been confirmed. Sign in to continue to your business workspace.');
+      }
       const result = await restoreCloudSession();
       if (!active) return;
       const token = readPendingTeamInvitation();
