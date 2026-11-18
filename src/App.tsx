@@ -1021,7 +1021,7 @@ function AuthPage({
         });
         setMode('signin');
         setPassword('');
-        setMessage('Account created. Check your email inbox for a confirmation link, confirm your address, then sign in here.');
+        setMessage('Account created. Sign in with the email and password you just registered. If email verification is requested, confirm your email address first.');
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.';
