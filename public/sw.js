@@ -1,6 +1,5 @@
 const CACHE_PREFIX = 'hesabu-shell-';
-const CACHE_VERSION = 'v6';
-const CACHE = CACHE_PREFIX + CACHE_VERSION;
+const CACHE = 'hesabu-shell-v6';
 const APP_SHELL = ['/', '/manifest.json', '/hesabu-mark.svg', '/app-icon.svg', '/offline.html'];
 
 self.addEventListener('install', (event) => {
