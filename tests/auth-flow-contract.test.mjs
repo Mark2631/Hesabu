@@ -12,7 +12,7 @@ test('public product information is available before authentication', () => {
 
 test('public landing illustration contains no fabricated operating figures', () => {
   assert.doesNotMatch(app, /SAMPLE DATA|KSh 48,250|KSh 35,600|KSh 4,850|HS-0021/);
-  assert.match(app, /public-workspace-art/);
+  assert.match(app, /public-ledger-illustration/);
 });
 
 test('successful registration returns the user to the sign-in form', () => {
