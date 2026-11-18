@@ -884,7 +884,7 @@ function PublicLandingPage({
           </div>
           <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
         </div>
-        <div className="public-hero-visual public-ledger-illustration" aria-label="Illustration of connected business records">
+        <div className="public-hero-visual public-ledger-illustration public-workspace-art" aria-label="Illustration of connected business records">
           <div className="ledger-illustration-heading">
             <span className="ledger-brand-mark"><HesabuMark /></span>
             <div><span>ONE BUSINESS RECORD</span><strong>From daily activity to a clearer picture</strong></div>
