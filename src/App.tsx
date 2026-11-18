@@ -2674,6 +2674,10 @@ function App() {
     successTitle: string,
     successDetail: string,
   ) => {
+    if (cloudAccount && !navigator.onLine) {
+      notify('Offline — changes are paused', 'Reconnect to the internet before recording financial or stock changes. Your last saved workspace remains available to view.');
+      return;
+    }
     if (cloudMutationLock.current) return;
     cloudMutationLock.current = true;
     try {
@@ -2712,6 +2716,10 @@ function App() {
   };
 
   const createInvoice = (input: NewInvoiceInput) => {
+    if (cloudAccount && !navigator.onLine) {
+      notify('Offline — sale not recorded', 'Reconnect before recording a sale. No invoice or stock movement has been created.');
+      return;
+    }
     if (cloudAccount) {
       const saleTotal = Math.round((sum(input.items.map(item => {
         const product = data.products.find(candidate => candidate.id === item.productId);
