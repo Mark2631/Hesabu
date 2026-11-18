@@ -1,7 +1,7 @@
 const CACHE_PREFIX = 'hesabu-shell-';
 const CACHE = 'hesabu-shell-v8';
 const OFFLINE_URL = '/offline.html';
-const APP_SHELL = ['/', '/index.html', '/manifest.json', '/hesabu-mark.svg', '/app-icon.svg', '/hesabu-shop-owner.webp', OFFLINE_URL];
+const APP_SHELL = ['/', '/index.html', '/manifest.json', '/hesabu-mark.svg', '/app-icon.svg', '/app-icon-192.png', '/app-icon-512.png', '/hesabu-shop-owner.webp', OFFLINE_URL];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
