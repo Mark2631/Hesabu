@@ -1345,6 +1345,20 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
         </button>)}
       </div>
     </section>
+    <SectionCard title="Recent transactions" detail="Money in, money out and the latest business activity." action={<button className="text-link" onClick={() => onNavigate(role === 'Inventory' ? 'procurement' : 'payments')}>See all <ArrowRight size={13} /></button>}>
+      {activity.length ? <div className="recent-activity-list">
+        {activity.map(item => <button type="button" className="recent-activity-row" key={item.id}
+          onClick={() => item.invoiceId ? onSelectInvoice(item.invoiceId) : onNavigate(role === 'Inventory' ? 'procurement' : item.direction === 'out' ? 'accounts' : 'payments')}>
+          <span className={'recent-activity-icon ' + (item.direction === 'in' ? 'is-in' : item.direction === 'out' ? 'is-out' : 'is-neutral')}>
+            {item.direction === 'in' ? <ArrowDownLeft size={17} /> : item.direction === 'out' ? <ArrowUpRight size={17} /> : <Receipt size={17} />}
+          </span>
+          <span className="recent-activity-copy"><strong>{item.title}</strong><small>{item.detail} · {dateTimeLabel(item.time)}</small></span>
+          <span className={'recent-activity-amount ' + (item.direction === 'in' ? 'positive' : item.direction === 'out' ? 'negative' : '')}>
+            {item.label ?? ((item.direction === 'out' ? '−' : item.direction === 'in' ? '+' : '') + money(item.amount ?? 0))}
+          </span>
+        </button>)}
+      </div> : <EmptyState title="No transactions yet" body="Sales, receipts and operating payments will appear here once your team records them." action={role === 'Sales' || role === 'Owner' || role === 'Manager' ? <Button onClick={onCreateSale}>Record a sale</Button> : undefined} />}
+    </SectionCard>
     <section className="daily-summary-section" aria-label="Daily business figures">
       <div className="daily-summary-heading"><h3>{role === 'Inventory' ? 'Inventory at a glance' : role === 'Sales' ? 'Sales at a glance' : 'Business at a glance'}</h3><span>Today's figures</span></div>
       <div className="daily-summary-grid">
@@ -1390,20 +1404,7 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
         <button className="text-link stock-watch-link" onClick={() => onNavigate('inventory')}>Review inventory <ArrowRight size={13} /></button>
       </SectionCard>}
     </div>
-    <SectionCard title="Recent transactions" detail="Money in, money out and the latest business activity." action={<button className="text-link" onClick={() => onNavigate(role === 'Inventory' ? 'procurement' : 'payments')}>See all <ArrowRight size={13} /></button>}>
-      {activity.length ? <div className="recent-activity-list">
-        {activity.map(item => <button type="button" className="recent-activity-row" key={item.id}
-          onClick={() => item.invoiceId ? onSelectInvoice(item.invoiceId) : onNavigate(role === 'Inventory' ? 'procurement' : item.direction === 'out' ? 'accounts' : 'payments')}>
-          <span className={'recent-activity-icon ' + (item.direction === 'in' ? 'is-in' : item.direction === 'out' ? 'is-out' : 'is-neutral')}>
-            {item.direction === 'in' ? <ArrowDownLeft size={17} /> : item.direction === 'out' ? <ArrowUpRight size={17} /> : <Receipt size={17} />}
-          </span>
-          <span className="recent-activity-copy"><strong>{item.title}</strong><small>{item.detail} · {dateTimeLabel(item.time)}</small></span>
-          <span className={'recent-activity-amount ' + (item.direction === 'in' ? 'positive' : item.direction === 'out' ? 'negative' : '')}>
-            {item.label ?? ((item.direction === 'out' ? '−' : item.direction === 'in' ? '+' : '') + money(item.amount ?? 0))}
-          </span>
-        </button>)}
-      </div> : <EmptyState title="No transactions yet" body="Sales, receipts and operating payments will appear here once your team records them." action={role === 'Sales' || role === 'Owner' || role === 'Manager' ? <Button onClick={onCreateSale}>Record a sale</Button> : undefined} />}
-    </SectionCard>
+    
   </div>;
 }
 function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
