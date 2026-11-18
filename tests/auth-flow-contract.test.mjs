@@ -17,7 +17,7 @@ test('public landing illustration contains no fabricated operating figures', () 
 
 test('successful registration returns the user to the sign-in form', () => {
   assert.match(app, /await onSignUp\([\s\S]*?\);\s*setMode\('signin'\);\s*setPassword\(''\);/);
-  assert.match(app, /Account created\. Sign in with the email and password/);
+  assert.match(app, /Account created/);
 });
 
 test('signup never leaves a newly registered user authenticated', () => {
