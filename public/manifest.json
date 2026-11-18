@@ -1,7 +1,8 @@
 {
-  "name": "Hesabu — Run your business clearly",
+  "name": "Hesabu — Business workspace",
   "short_name": "Hesabu",
-  "description": "A business workspace for sales, stock, purchasing and financial records.",
+  "id": "/",
+  "description": "Manage sales, payments, stock, expenses and business performance in one secure workspace.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -19,7 +20,7 @@
   ],
   "icons": [
     {
-      "src": "/hesabu-mark.svg",
+      "src": "/app-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
