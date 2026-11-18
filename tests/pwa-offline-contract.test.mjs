@@ -3,31 +3,33 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
-const serviceWorker = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
+const worker = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../public/manifest.json', import.meta.url), 'utf8'));
-const supabase = await readFile(new URL('../src/lib/supabase.ts', import.meta.url), 'utf8');
+const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 
-test('PWA manifest is installable and uses the Hesabu reference palette', () => {
+test('PWA manifest is standalone and uses the Hesabu reference palette and icon', () => {
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.start_url, '/');
   assert.equal(manifest.theme_color, '#075b4c');
-  assert.ok(manifest.icons.some(icon => icon.src === '/hesabu-mark.svg'));
+  assert.ok(manifest.icons.some(icon => icon.src === '/app-icon.svg'));
+  assert.match(html, /rel="manifest"/);
 });
 
-test('service worker caches the application shell and falls back for offline navigation', () => {
-  assert.match(serviceWorker, /hesabu-shell-v4/);
-  assert.match(serviceWorker, /request\.mode === 'navigate'/);
-  assert.match(serviceWorker, /caches\.match\('\/'\)/);
+test('service worker caches app assets and has an offline navigation fallback', () => {
+  assert.match(worker, /hesabu-shell-v6/);
+  assert.match(worker, /caches\.match\('\/'\)/);
+  assert.match(worker, /offline\.html/);
+  assert.match(worker, /request\.mode === 'navigate'/);
 });
 
-test('last authenticated business workspace is cached per business and restored offline', () => {
-  assert.match(app, /hesabu:workspace-cache:v1:/);
-  assert.match(app, /setOfflineMode\(true\)/);
-  assert.match(app, /Offline mode/);
-  assert.match(supabase, /hesabu:memberships-cache:v1:/);
+test('cached ledger is explicitly read-only and does not claim offline writes', () => {
+  assert.match(app, /Saved workspace · Read only/);
+  assert.match(app, /Reconnect to post sales, payments and stock changes safely/);
 });
 
-test('cloud financial writes are not falsely reported as successful while offline', () => {
-  assert.match(app, /Offline — changes are paused/);
-  assert.match(app, /Offline — sale not recorded/);
+test('recent transactions are rendered immediately after the balance panel', () => {
+  const hero = app.indexOf('<section className="finance-balance-hero"');
+  const recent = app.indexOf('<SectionCard title="Recent transactions"');
+  const daily = app.indexOf('<section className="daily-summary-section"');
+  assert.ok(hero >= 0 && recent > hero && daily > recent);
 });
