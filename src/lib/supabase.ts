@@ -191,7 +191,7 @@ export async function signInWithPassword(email: string, password: string): Promi
 
 export async function signUpWithPassword(input: SignUpInput): Promise<{ session: SupabaseSession | null; user: SupabaseUser | null }> {
   const payload = await request<Partial<SupabaseSession> & { user?: SupabaseUser }>(
-    'auth/v1/signup?redirect_to=' + encodeURIComponent(window.location.origin),
+    'auth/v1/signup',
     {
     method: 'POST',
     body: {
@@ -215,12 +215,17 @@ export async function signUpWithPassword(input: SignUpInput): Promise<{ session:
     accessToken: publishableKey,
   });
 
-  // Registration is deliberately not a sign-in. Supabase may return a session
-  // when email confirmation is disabled; discard it so every new user follows
-  // the same explicit sign-in step after account creation.
+  // With Confirm email disabled, Supabase returns a session immediately.
+  // Keep it so the new owner enters the workspace without a second sign-in.
   const session = payload.access_token ? normaliseSession(payload) : null;
-  writeSession(null);
-  return { session: null, user: payload.user ?? session?.user ?? null };
+  if (!session) {
+    throw new SupabaseRequestError(
+      'Account creation did not return an active session. Hesabu account access is not ready on the server yet.',
+      409,
+    );
+  }
+  writeSession(session);
+  return { session, user: payload.user ?? session.user };
 }
 
 export async function signOut(): Promise<void> {
@@ -352,72 +357,6 @@ export async function listMyBusinesses(): Promise<BusinessMembership[]> {
   return request<BusinessMembership[]>('rest/v1/business_members?' + query.toString(), {
     accessToken: current.access_token,
   });
-}
-
-export async function completeAuthCallback(): Promise<boolean> {
-  if (!supabaseConfigured) return false;
-  const url = new URL(window.location.href);
-  const query = new URLSearchParams(url.search);
-  const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
-  const errorDescription = query.get('error_description') || fragment.get('error_description');
-  const callbackType = query.get('type') || fragment.get('type') || 'signup';
-
-  const cleanCallbackUrl = () => {
-    ['token_hash', 'type', 'code', 'error', 'error_code', 'error_description', 'provider_token', 'provider_refresh_token']
-      .forEach(key => query.delete(key));
-    const search = query.toString();
-    window.history.replaceState({}, document.title, url.pathname + (search ? '?' + search : ''));
-  };
-
-  if (errorDescription) {
-    cleanCallbackUrl();
-    throw new SupabaseRequestError(decodeURIComponent(errorDescription.replace(/\+/g, ' ')), 401);
-  }
-
-  const tokenHash = query.get('token_hash');
-  if (tokenHash) {
-    const payload = await request<Partial<SupabaseSession>>('auth/v1/verify', {
-      method: 'POST',
-      accessToken: publishableKey,
-      body: { token_hash: tokenHash, type: callbackType },
-    });
-    const session = normaliseSession(payload);
-    if (callbackType === 'signup') writeSession(null);
-    else writeSession(session);
-    cleanCallbackUrl();
-    return true;
-  }
-
-  const accessToken = fragment.get('access_token');
-  const refreshToken = fragment.get('refresh_token');
-  if (accessToken && refreshToken) {
-    const user = await request<SupabaseUser>('auth/v1/user', { accessToken });
-    const expiresIn = Number(fragment.get('expires_in') ?? 3600);
-    const session = normaliseSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      token_type: fragment.get('token_type') || 'bearer',
-      expires_in: expiresIn,
-      expires_at: fragment.get('expires_at')
-        ? Number(fragment.get('expires_at'))
-        : Math.floor(Date.now() / 1000) + expiresIn,
-      user,
-    });
-    if (callbackType === 'signup') writeSession(null);
-    else writeSession(session);
-    cleanCallbackUrl();
-    return true;
-  }
-
-  if (query.has('code')) {
-    cleanCallbackUrl();
-    throw new SupabaseRequestError(
-      'This email link used a PKCE callback that the current browser client cannot complete. Request a new verification email and use the confirmation link generated for Hesabu.',
-      400,
-    );
-  }
-
-  return false;
 }
 
 export async function restoreCloudSession(): Promise<{ user: SupabaseUser; memberships: BusinessMembership[] } | null> {
