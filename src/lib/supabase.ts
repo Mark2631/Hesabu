@@ -54,12 +54,36 @@ let sessionCache: SupabaseSession | null | undefined;
 export class SupabaseRequestError extends Error {
   status: number;
   code?: string;
+  /** Diagnostic detail for development logs only. Never render this in the business UI. */
+  readonly technicalMessage: string;
 
   constructor(message: string, status: number, code?: string) {
-    super(message);
+    const lower = message.toLowerCase();
+    const containsBackendDetail = /supabase|postgres|postgrest|sql|database|schema|table|column|relation|constraint|foreign key|permission denied|row level security|\\brls\\b|migration|pgrst|jwt|rpc|function|duplicate key|violates|stack trace/.test(lower);
+    const knownSafeAuthMessage = /^(sign in again|your session has expired|email address|password|verification email|this email link)/i.test(message);
+    let safeMessage = message;
+
+    if (status === 0) {
+      safeMessage = "You're offline or the connection is unstable. Try again when you're connected.";
+    } else if (status === 401) {
+      safeMessage = knownSafeAuthMessage ? message : 'Your session may have expired. Sign in again to continue.';
+    } else if (status === 403) {
+      safeMessage = 'You do not have permission to complete that action.';
+    } else if (status === 404 && containsBackendDetail) {
+      safeMessage = 'We could not find the information needed to complete that action. Refresh and try again.';
+    } else if (status === 409) {
+      safeMessage = 'This record may already have been saved. Refresh the page before trying again.';
+    } else if (status >= 500 || status === 503 || containsBackendDetail) {
+      safeMessage = 'Hesabu could not complete that action right now. Your existing records have not been changed. Please try again shortly.';
+    } else if (containsBackendDetail) {
+      safeMessage = 'We could not complete that action. Check the information and try again.';
+    }
+
+    super(safeMessage);
     this.name = 'SupabaseRequestError';
     this.status = status;
     this.code = code;
+    this.technicalMessage = message;
   }
 }
 
