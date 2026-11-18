@@ -2710,116 +2710,165 @@ html[data-theme="light"] { color-scheme:light; }
 }
 .public-hero-note svg { color:#27734b; }
 .public-hero-visual {
+  position:relative;
   overflow:hidden;
-  padding:20px;
-  border:1px solid #e6ebe7;
-  border-radius:15px;
-  background:#fff;
+  padding:clamp(18px,2.6vw,28px);
+  border:1px solid #e4ebe5;
+  border-radius:16px;
+  background:linear-gradient(145deg,#f6faf6 0%,#edf5ef 100%);
   box-shadow:0 18px 55px rgba(25,50,33,.075);
 }
-.public-visual-top {
+.public-illustration-heading,
+.public-illustration-footer {
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:14px;
-  padding-bottom:16px;
-  border-bottom:1px solid #edf1ee;
+  gap:12px;
 }
-.public-visual-top > div { display:grid; gap:6px; }
-.public-visual-top > div > span {
-  color:#89958c;
+.public-illustration-heading > span:first-child {
+  color:#748278;
   font-size:9px;
-  font-weight:750;
-  letter-spacing:.12em;
+  font-weight:800;
+  letter-spacing:.13em;
 }
-.public-visual-top strong {
-  color:#1b2b20;
-  font-size:16px;
-  letter-spacing:-.025em;
-}
-.public-visual-date {
-  padding:5px 8px;
-  border:1px solid #e6ece7;
-  border-radius:5px;
-  color:#7a887e;
-  font-size:9px;
-  font-weight:750;
-  letter-spacing:.08em;
-}
-.public-visual-metrics {
-  display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
-  gap:9px;
-  padding:15px 0;
-}
-.public-visual-metrics > div {
-  display:grid;
+.public-illustration-status {
+  display:flex;
+  align-items:center;
   gap:6px;
-  min-width:0;
-  padding:13px;
-  border:1px solid #edf1ee;
-  border-radius:8px;
+  color:#63806c;
+  font-size:9px;
+  font-weight:650;
+}
+.public-illustration-status i {
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:#36875a;
+}
+.public-workspace-art {
+  display:grid;
+  grid-template-columns:48px minmax(0,1fr);
+  min-height:310px;
+  margin:19px 0 14px;
+  overflow:hidden;
+  border:1px solid #e3eae4;
+  border-radius:12px;
+  background:#fff;
+  box-shadow:0 10px 28px rgba(25,50,33,.06);
+}
+.public-art-rail {
+  display:flex;
+  align-items:center;
+  flex-direction:column;
+  gap:18px;
+  padding:15px 0;
+  border-right:1px solid #edf1ed;
   background:#fbfcfb;
 }
-.public-visual-metrics span {
-  color:#7e8b82;
-  font-size:10px;
-}
-.public-visual-metrics strong {
-  color:#1e3325;
-  font-size:clamp(19px,2vw,25px);
-  font-weight:720;
-  letter-spacing:-.045em;
-  font-variant-numeric:tabular-nums;
-}
-.public-visual-metrics small {
-  color:#9aa59d;
-  font-size:9px;
-}
-.public-visual-activity {
+.public-art-brand {
   display:grid;
-  border-top:1px solid #edf1ee;
+  place-items:center;
+  width:27px;
+  height:27px;
+  margin-bottom:7px;
+  border-radius:8px;
+  background:#17432d;
+  color:#fff;
 }
-.public-visual-activity > div {
+.public-art-brand svg { width:17px; height:17px; }
+.public-art-rail > i {
+  width:13px;
+  height:13px;
+  border-radius:4px;
+  background:#e5ece6;
+}
+.public-art-rail > i.active { background:#b9d8c2; box-shadow:inset 0 0 0 1px #8eb99b; }
+.public-art-main { min-width:0; padding:17px clamp(12px,2vw,22px); }
+.public-art-toolbar {
+  display:flex;
+  justify-content:flex-end;
+  gap:6px;
+  padding-bottom:16px;
+  border-bottom:1px solid #f0f3f0;
+}
+.public-art-toolbar span {
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#e5ebe6;
+}
+.public-art-title { display:grid; gap:5px; padding:17px 0 13px; }
+.public-art-title span { color:#87938a; font-size:9px; }
+.public-art-title b { color:#203529; font-size:14px; font-weight:750; letter-spacing:-.025em; }
+.public-art-panels {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+}
+.public-art-panel {
   display:flex;
   align-items:center;
   gap:9px;
-  padding:12px 1px;
-  border-bottom:1px solid #f0f3f1;
+  min-width:0;
+  min-height:62px;
+  padding:10px;
+  border:1px solid #edf1ed;
+  border-radius:8px;
+  background:#fcfdfc;
 }
-.public-activity-dot {
-  width:7px;
-  height:7px;
-  flex:0 0 auto;
-  border-radius:50%;
-  background:#278153;
-}
-.public-activity-blue { background:#5482bd; }
-.public-activity-amber { background:#c38b37; }
-.public-visual-activity > div > span:nth-child(2) {
+.public-art-panel-wide { grid-column:1/-1; }
+.public-art-panel > span:nth-child(2) { display:grid; min-width:0; gap:4px; flex:1; }
+.public-art-panel b { color:#34483a; font-size:10px; font-weight:750; }
+.public-art-panel small { color:#87948a; font-size:8px; line-height:1.4; }
+.public-art-panel > svg { color:#94a399; flex:0 0 auto; }
+.public-art-panel-icon {
   display:grid;
-  flex:1;
-  gap:3px;
+  place-items:center;
+  width:31px;
+  height:31px;
+  flex:0 0 auto;
+  border-radius:8px;
+  background:#e8f2ea;
+  color:#2e7950;
 }
-.public-visual-activity strong {
-  color:#29382e;
-  font-size:11px;
+.public-art-icon-blue { background:#eaf0f8; color:#587ba9; }
+.public-art-icon-sand { background:#f5f0e6; color:#9b7a43; }
+.public-art-connection {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  padding:12px 0;
 }
-.public-visual-activity small {
-  color:#929d95;
-  font-size:9px;
+.public-art-connection span { width:5px; height:5px; border-radius:50%; background:#83ad8f; }
+.public-art-connection i { width:24px; height:1px; background:#d9e6dc; }
+.public-art-summary {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:11px;
+  border:1px solid #e4eee6;
+  border-radius:8px;
+  background:#f5faf6;
+  color:#43805a;
 }
-.public-visual-activity b {
-  color:#435349;
-  font-size:11px;
-  font-weight:700;
-  white-space:nowrap;
+.public-art-summary > span { display:grid; gap:4px; }
+.public-art-summary b { color:#31513a; font-size:9px; }
+.public-art-summary small { color:#7d8e81; font-size:8px; line-height:1.4; }
+.public-illustration-footer {
+  justify-content:flex-start;
+  flex-wrap:wrap;
+  gap:7px;
 }
-.public-visual-footnote {
-  margin:10px 0 0;
-  color:#a0aaa3;
-  font-size:9px;
-  text-align:right;
+.public-illustration-footer span {
+  padding:6px 8px;
+  border:1px solid #e0e9e2;
+  border-radius:5px;
+  color:#75867a;
+  background:rgba(255,255,255,.62);
+  font-size:8px;
+  font-weight:750;
+  letter-spacing:.08em;
 }
 .public-value-section,
 .public-workflow-section {
