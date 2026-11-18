@@ -10,28 +10,28 @@ test('public product information is available before authentication', () => {
   assert.match(app, /href="#product">Explore features<\/a>/);
 });
 
-test('public landing illustration contains no fabricated operating figures', () => {
+test('public landing uses the requested shop photography instead of invented operating figures', () => {
+  assert.match(app, /src="\/hesabu-shop-owner\.webp"/);
   assert.doesNotMatch(app, /SAMPLE DATA|KSh 48,250|KSh 35,600|KSh 4,850|HS-0021/);
-  assert.match(app, /public-ledger-illustration/);
 });
 
-test('successful registration returns the user to the sign-in form', () => {
-  assert.match(app, /await onSignUp\([\s\S]*?\);\s*setMode\('signin'\);\s*setPassword\(''\);/);
-  assert.match(app, /Account created/);
+test('signup adopts the session returned by Supabase immediately', () => {
+  assert.match(authClient, /writeSession\(session\);\s*return \{ session, user: payload\.user \?\? session\.user \}/);
+  assert.doesNotMatch(authClient, /writeSession\(null\);\s*return \{ session: null/);
 });
 
-test('signup never leaves a newly registered user authenticated', () => {
-  assert.match(authClient, /writeSession\(null\);\s*return \{ session: null, user: payload\.user/);
+test('new account setup creates its business workspace without a second sign-in', () => {
+  assert.match(app, /const businessId = await createBusiness\(input\);/);
+  assert.match(app, /setCloudAccount\(\{ user: result\.session\.user, business:/);
+  assert.match(app, /setShowAuthScreen\(false\);/);
 });
 
-test('email confirmation asks the user to sign in instead of entering the workspace', () => {
-  assert.match(authClient, /if \(callbackType === 'signup'\) writeSession\(null\);/);
-  assert.match(app, /Your email address has been confirmed\. Sign in to continue/);
+test('the frontend no longer handles email-confirmation callbacks or confirmation links', () => {
+  assert.doesNotMatch(authClient, /completeAuthCallback|auth\/v1\/verify|confirmation link/i);
+  assert.doesNotMatch(app, /Your email address has been confirmed|confirmation link|confirm your email address/i);
 });
 
-test('business workspace creation is deferred until a successful sign-in', () => {
-  const signupHandler = app.match(/const handleCloudSignUp = async \(input: SignUpInput\): Promise<void> => \{([\s\S]*?)\n  \};/);
-  assert.ok(signupHandler);
-  assert.doesNotMatch(signupHandler[1], /createBusiness\(/);
-  assert.match(app, /const businessId = await createBusiness\(pending\);/);
+test('invited team members accept their invitation after signup', () => {
+  assert.match(app, /const businessId = await acceptCloudBusinessInvitation\(invitation\);/);
+  assert.match(app, /clearPendingTeamInvitation\(\);/);
 });
