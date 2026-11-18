@@ -968,7 +968,7 @@ function AuthPage({
   onSignIn, onSignUp, initialMessage, initialMode, onBack, inviteMode = false,
 }: {
   onSignIn: (email: string, password: string) => Promise<void>;
-  onSignUp: (input: SignUpInput) => Promise<'confirm_email' | void>;
+  onSignUp: (input: SignUpInput) => Promise<void>;
   initialMessage?: string;
   initialMode: 'signin' | 'signup';
   onBack: () => void; inviteMode?: boolean;
@@ -1010,13 +1010,10 @@ function AuthPage({
           setMessage('Enter a valid WhatsApp number, including the Kenyan country code or a local mobile number.');
           return;
         }
-        const result = await onSignUp({
+        await onSignUp({
           fullName, businessName: inviteMode ? '' : businessName, industry: inviteMode ? '' : industry, phone: inviteMode ? '' : phone, email, password,
           aiAssistantEnabled: false, whatsappDigestEnabled: inviteMode ? false : whatsappDigestEnabled, whatsappRecipientPhone: inviteMode ? '' : whatsappRecipientPhone,
         });
-        if (result === 'confirm_email') {
-          setMessage('Your account has been created. Check your email for the confirmation link, then return here to sign in.');
-        }
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.');
@@ -1036,7 +1033,7 @@ function AuthPage({
         <div className="auth-copy">
           <span className="auth-kicker">BUSINESS, IN BALANCE</span>
           <h1>{inviteMode ? (mode === 'signin' ? 'Sign in to join your team.' : 'Create your team account.') : (mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.')}</h1>
-          <p>{inviteMode ? 'Use the email address this invitation was sent to. Your access activates after email verification.' : 'Sales, payments, stock and business performance in one calm workspace.'}</p>
+          <p>{inviteMode ? 'Use the email address this invitation was sent to. Your access activates when you accept the invitation.' : 'Sales, payments, stock and business performance in one calm workspace.'}</p>
         </div>
         <div className="auth-tabs" role="tablist" aria-label="Account access">
           <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setMessage(''); }}>Sign in</button>
@@ -1070,7 +1067,7 @@ function AuthPage({
           <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
         </form>
         {message && <p className="auth-message" role="status">{message}</p>}
-        <p className="auth-footnote">{inviteMode ? "The invitation is single-use and tied to the invited, verified email address." : "Your business records are stored in your secure Hesabu account and are separate from every other business."}</p>
+        <p className="auth-footnote">{inviteMode ? "The invitation is single-use and tied to the invited email address." : "Your business records are stored in your secure Hesabu account and are separate from every other business."}</p>
       </div>
       <aside className="auth-aside">
         <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">BUSINESS OPERATIONS</span></div>
@@ -2257,7 +2254,7 @@ function SettingsPage({ profile, teamMembers, teamInvitations, onSave, onAddMemb
             ]} />
             <div className="team-role-description"><strong>{memberRole}</strong><span>{roleDescriptions[memberRole]}</span></div>
           </div>
-          <p className="team-invite-explainer">A single-use invitation link will be copied for sharing. The recipient must use this email address and verify it before gaining access. Links expire after seven days.</p>
+          <p className="team-invite-explainer">A single-use invitation link will be copied for sharing. The recipient must sign in or create an account with this email address to gain access. Links expire after seven days.</p>
           <div className="inline-form-actions"><Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button><Button type="submit" disabled={!memberName.trim() || !memberEmail.trim()}>Create invitation</Button></div>
         </form>}
         <div className="team-role-grid">
@@ -2603,11 +2600,11 @@ function App() {
     setShowAuthScreen(false);
   };
 
-  const handleCloudSignUp = async (input: SignUpInput): Promise<'confirm_email' | void> => {
+  const handleCloudSignUp = async (input: SignUpInput): Promise<void> => {
     const token = readPendingTeamInvitation();
     if (token) {
       const result = await signUpWithPassword(input);
-      if (!result.session) return 'confirm_email';
+      if (!result.session) throw new Error('Your account was created, but no active session was returned. Sign in to continue.');
       const businessId = await acceptCloudBusinessInvitation(token);
       clearPendingTeamInvitation();
       setPendingInviteToken(null);
@@ -2622,7 +2619,7 @@ function App() {
     }
     savePendingOnboarding(input);
     const result = await signUpWithPassword(input);
-    if (!result.session) return 'confirm_email';
+    if (!result.session) throw new Error('Your account was created, but no active session was returned. Sign in to continue.');
     const businessId = await createBusiness(input);
     await saveBusinessPreferences({ businessId, aiAssistantEnabled: false, whatsappDigestEnabled: input.whatsappDigestEnabled, whatsappRecipientPhone: input.whatsappRecipientPhone });
     clearPendingOnboarding();
