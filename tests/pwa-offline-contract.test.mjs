@@ -8,15 +8,24 @@ const manifest = JSON.parse(await readFile(new URL('../public/manifest.json', im
 const supabase = await readFile(new URL('../src/lib/supabase.ts', import.meta.url), 'utf8');
 const offlinePage = await readFile(new URL('../public/offline.html', import.meta.url), 'utf8');
 
-test('PWA manifest is installable and uses the Hesabu reference palette', () => {
+test('PWA manifest is installable and includes Android icon sizes', () => {
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.start_url, '/');
   assert.equal(manifest.theme_color, '#075b4c');
-  assert.ok(manifest.icons.some(icon => icon.src === '/app-icon.svg' && icon.purpose.includes('maskable')));
+  assert.ok(manifest.icons.some(icon => icon.src === '/app-icon-192.png' && icon.sizes === '192x192'));
+  assert.ok(manifest.icons.some(icon => icon.src === '/app-icon-512.png' && icon.sizes === '512x512' && icon.purpose.includes('maskable')));
 });
 
-test('service worker caches the application shell and falls back for offline navigation', () => {
-  assert.match(serviceWorker, /hesabu-shell-v7/);
+test('the app exposes the native install prompt and handles completed installation', () => {
+  assert.match(app, /beforeinstallprompt/);
+  assert.match(app, /appinstalled/);
+  assert.match(app, /installPrompt\.prompt\(\)/);
+  assert.match(app, /onInstall=\{handleInstallApp\}/);
+});
+
+test('service worker caches the application shell, hero image and offline navigation', () => {
+  assert.match(serviceWorker, /hesabu-shell-v8/);
+  assert.match(serviceWorker, /hesabu-shop-owner\.webp/);
   assert.match(serviceWorker, /request\.mode === 'navigate'/);
   assert.match(serviceWorker, /caches\.match\('\/'\)/);
 });
