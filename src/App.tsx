@@ -847,11 +847,12 @@ function HesabuMark({ className = '' }: { className?: string }) {
 }
 
 function PublicLandingPage({
-  onSignIn, onCreateAccount, onInstall,
+  onSignIn, onCreateAccount, onInstall, appInstalled,
 }: {
   onSignIn: () => void;
   onCreateAccount: () => void;
   onInstall: () => void;
+  appInstalled: boolean;
 }) {
   return <div className="public-site">
     <header className="public-header">
@@ -867,7 +868,7 @@ function PublicLandingPage({
           <a href="#trust">Your records</a>
         </nav>
         <div className="public-header-actions">
-          <button type="button" className="public-install-action" onClick={onInstall}><Download size={14} /> Install</button>
+          {!appInstalled && <button type="button" className="public-install-action" onClick={onInstall}><Download size={14} /> Install</button>}
           <button type="button" className="public-signin" onClick={onSignIn}>Sign in</button>
           <button type="button" className="public-get-started" onClick={onCreateAccount}>Get started <ArrowRight size={15} /></button>
         </div>
@@ -3427,6 +3428,7 @@ function App() {
     onSignIn={() => { setAuthInitialMode('signin'); setShowAuthScreen(true); }}
     onCreateAccount={() => { setAuthInitialMode('signup'); setShowAuthScreen(true); }}
     onInstall={handleInstallApp}
+    appInstalled={appInstalled}
   />;
   if (!cloudAccount) return <AuthPage
     onSignIn={handleCloudSignIn}
