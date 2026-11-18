@@ -1021,7 +1021,7 @@ function AuthPage({
         });
         setMode('signin');
         setPassword('');
-        setMessage('Account created. Sign in with the email and password you just registered. If email verification is requested, confirm your email address first.');
+        setMessage('Account created. Check your email inbox for a confirmation link, confirm your address, then sign in here.');
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.';
@@ -1033,6 +1033,10 @@ function AuthPage({
         setMessage('The email or password is incorrect. Check both details and try again.');
       } else if (normalised.includes('email not confirmed')) {
         setMessage('Confirm your email address using the link we sent, then return here to sign in.');
+      } else if (normalised.includes('over_email_send_rate_limit') || normalised.includes('rate limit') || normalised.includes('after 35 seconds')) {
+        setMessage('A confirmation email was requested recently. Wait at least 35 seconds before trying again, then check your inbox and spam folder.');
+      } else if (normalised.includes('email_address_not_authorized')) {
+        setMessage('The current email service cannot send confirmation messages to this address. Hesabu needs a verified SMTP email provider before this address can receive account emails.');
       } else {
         setMessage(detail);
       }
@@ -2636,7 +2640,7 @@ function App() {
 
     setAuthInitialMode('signin');
     setShowAuthScreen(true);
-    setAuthNotice('Your account has been created. If email verification is requested, confirm your email first, then sign in below to open your business workspace.');
+    setAuthNotice('Your account has been created. Check your email inbox for a confirmation link, confirm your address, then sign in below to open your business workspace.');
   };
   const handleCloudSignOut = async () => {
     await signOut();
