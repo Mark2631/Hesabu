@@ -880,26 +880,43 @@ function PublicLandingPage({
           <p>Hesabu brings daily sales, payments, stock, expenses and customer balances into one clear business record. Spend less time chasing scattered notes and more time making informed decisions.</p>
           <div className="public-hero-actions">
             <button type="button" className="public-primary-action" onClick={onCreateAccount}>Create your business account <ArrowRight size={16} /></button>
+            <a className="public-explore-action" href="#product">Explore features</a>
           </div>
           <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
         </div>
-        <div className="public-hero-visual" aria-label="Illustrative Hesabu business overview">
-          <div className="public-visual-top">
-            <div><span>BUSINESS OVERVIEW</span><strong>Today at a glance</strong></div>
-            <span className="public-visual-date">SAMPLE DATA</span>
+        <div className="public-hero-visual" aria-label="Illustration of the Hesabu business workspace">
+          <div className="public-illustration-heading">
+            <span>ONE CONNECTED WORKSPACE</span>
+            <span className="public-illustration-status"><i /> Built around your records</span>
           </div>
-          <div className="public-visual-metrics">
-            <div><span>Sales recorded</span><strong>KSh 48,250</strong><small>Today's activity</small></div>
-            <div><span>Payments received</span><strong>KSh 35,600</strong><small>Matched collections</small></div>
-            <div><span>Operating expenses</span><strong>KSh 4,850</strong><small>Recorded today</small></div>
-            <div><span>Stock alerts</span><strong>3 items</strong><small>Need a closer look</small></div>
+          <div className="public-workspace-art">
+            <div className="public-art-rail">
+              <span className="public-art-brand"><HesabuMark /></span>
+              <i className="active" /><i /><i /><i /><i />
+            </div>
+            <div className="public-art-main">
+              <div className="public-art-toolbar"><span /><span /><span /></div>
+              <div className="public-art-title"><span>Business operations</span><b>Everything in one view</b></div>
+              <div className="public-art-panels">
+                <div className="public-art-panel public-art-panel-wide">
+                  <span className="public-art-panel-icon"><Wallet size={16} /></span>
+                  <span><b>Sales & payments</b><small>Keep every transaction connected</small></span>
+                  <ArrowRight size={14} />
+                </div>
+                <div className="public-art-panel">
+                  <span className="public-art-panel-icon public-art-icon-blue"><Package size={16} /></span>
+                  <span><b>Stock & suppliers</b><small>Know what is moving</small></span>
+                </div>
+                <div className="public-art-panel">
+                  <span className="public-art-panel-icon public-art-icon-sand"><Receipt size={16} /></span>
+                  <span><b>Expenses</b><small>Keep costs in view</small></span>
+                </div>
+              </div>
+              <div className="public-art-connection"><span /><i /><span /><i /><span /></div>
+              <div className="public-art-summary"><BarChart3 size={16} /><span><b>Clearer business decisions</b><small>Records that work together, from the counter to the back office</small></span></div>
+            </div>
           </div>
-          <div className="public-visual-activity">
-            <div><span className="public-activity-dot"></span><span><strong>Sale recorded</strong><small>Counter sale · 10:42 AM</small></span><b>KSh 2,400</b></div>
-            <div><span className="public-activity-dot public-activity-blue"></span><span><strong>Stock updated</strong><small>Flour · Goods received</small></span><b>+12 bags</b></div>
-            <div><span className="public-activity-dot public-activity-amber"></span><span><strong>Customer balance</strong><small>Invoice HS-0021 · Due today</small></span><b>KSh 1,800</b></div>
-          </div>
-          <p className="public-visual-footnote">Illustrative figures shown for product demonstration.</p>
+          <div className="public-illustration-footer"><span>SALES</span><span>PAYMENTS</span><span>INVENTORY</span><span>REPORTS</span></div>
         </div>
       </section>
 
@@ -1014,6 +1031,9 @@ function AuthPage({
           fullName, businessName: inviteMode ? '' : businessName, industry: inviteMode ? '' : industry, phone: inviteMode ? '' : phone, email, password,
           aiAssistantEnabled: false, whatsappDigestEnabled: inviteMode ? false : whatsappDigestEnabled, whatsappRecipientPhone: inviteMode ? '' : whatsappRecipientPhone,
         });
+        setMode('signin');
+        setPassword('');
+        setMessage('Account created. Sign in with the email and password you just registered. If email verification is requested, confirm your email address first.');
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.');
@@ -2601,32 +2621,11 @@ function App() {
   };
 
   const handleCloudSignUp = async (input: SignUpInput): Promise<void> => {
-    const token = readPendingTeamInvitation();
-    if (token) {
-      const result = await signUpWithPassword(input);
-      if (!result.session) throw new Error('Your account was created, but no active session was returned. Sign in to continue.');
-      const businessId = await acceptCloudBusinessInvitation(token);
-      clearPendingTeamInvitation();
-      setPendingInviteToken(null);
-      const memberships = await listMyBusinesses();
-      const invited = memberships.find(item => item.business_id === businessId && item.businesses?.id);
-      if (!invited?.businesses) throw new Error('The invitation was accepted but the business could not be loaded.');
-      setCloudAccount({ user: result.session.user, business: { id: invited.businesses.id, name: invited.businesses.name, industry: invited.businesses.industry } });
-      setWhatsAppNumber('');
-      setAuthNotice('');
-      setShowAuthScreen(false);
-      return;
-    }
-    savePendingOnboarding(input);
     const result = await signUpWithPassword(input);
-    if (!result.session) throw new Error('Your account was created, but no active session was returned. Sign in to continue.');
-    const businessId = await createBusiness(input);
-    await saveBusinessPreferences({ businessId, aiAssistantEnabled: false, whatsappDigestEnabled: input.whatsappDigestEnabled, whatsappRecipientPhone: input.whatsappRecipientPhone });
-    clearPendingOnboarding();
-    setCloudAccount({ user: result.session.user, business: { id: businessId, name: input.businessName.trim(), industry: input.industry || null } });
-    setWhatsAppNumber(input.whatsappRecipientPhone);
-    setAuthNotice('');
-    setShowAuthScreen(false);
+    if (!result.user) throw new Error('Hesabu could not confirm that the account was created. Check your details and try again.');
+    if (!readPendingTeamInvitation()) savePendingOnboarding(input);
+    setAuthInitialMode('signin');
+    setAuthNotice('Your account has been created. Sign in with your email and password to continue. If email verification is requested, confirm your email first.');
   };
 
   const handleCloudSignOut = async () => {
