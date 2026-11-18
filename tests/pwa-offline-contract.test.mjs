@@ -24,7 +24,7 @@ test('service worker caches the application shell and falls back for offline nav
 test('last authenticated business workspace is cached per business and restored offline', () => {
   assert.match(app, /hesabu:workspace-cache:v1:/);
   assert.match(app, /setOfflineMode\(true\)/);
-  assert.match(app, /Offline mode/);
+  assert.match(app, /Offline — changes are paused/);
   assert.match(supabase, /hesabu:memberships-cache:v1:/);
   assert.match(offlinePage, /You’re offline/);
 });
