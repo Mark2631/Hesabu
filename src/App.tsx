@@ -2446,6 +2446,7 @@ function App() {
   const [cloudWorkspaceReady, setCloudWorkspaceReady] = useState(false);
   const [cloudWorkspaceLoading, setCloudWorkspaceLoading] = useState(false);
   const [cloudWorkspaceError, setCloudWorkspaceError] = useState('');
+  const [offlineMode, setOfflineMode] = useState(!navigator.onLine);
   const [authNotice, setAuthNotice] = useState('');
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
@@ -2519,6 +2520,13 @@ function App() {
 
   const reloadCloudWorkspace = async (): Promise<boolean> => {
     if (!cloudAccount) return false;
+    if (!navigator.onLine) {
+      const cached = (() => { try { return JSON.parse(localStorage.getItem('hesabu:workspace-cache:v1:' + cloudAccount.business.id) || 'null') as { data?: AppData; whatsappNumber?: string } | null; } catch { return null; } })();
+      if (cached?.data) { setData(cached.data); setWhatsAppNumber(cached.whatsappNumber || ''); setCloudWorkspaceReady(true); setOfflineMode(true); return true; }
+      setCloudWorkspaceError('This workspace has not been saved on this device yet. Connect to the internet to load it.');
+      setCloudWorkspaceReady(false);
+      return false;
+    }
     setCloudWorkspaceLoading(true);
     setCloudWorkspaceError('');
     try {
@@ -2527,12 +2535,26 @@ function App() {
         getBusinessSettings(cloudAccount.business.id),
       ]);
       setData(workspace);
+      try { localStorage.setItem('hesabu:workspace-cache:v1:' + cloudAccount.business.id, JSON.stringify({ savedAt: new Date().toISOString(), data: workspace, whatsappNumber: settings.whatsapp_recipient_phone || '' })); } catch { /* Storage quota must not block live workspace use. */ }
+      setOfflineMode(false);
       setWhatsAppNumber(settings.whatsapp_recipient_phone || '');
       const currentMember = workspace.teamMembers.find(member => member.id === cloudAccount.user.id);
       setActiveMemberId(currentMember?.id || cloudAccount.user.id);
       setCloudWorkspaceReady(true);
       return true;
     } catch (error) {
+      const cached = (() => {
+        try { return JSON.parse(localStorage.getItem('hesabu:workspace-cache:v1:' + cloudAccount.business.id) || 'null') as { savedAt?: string; data?: AppData; whatsappNumber?: string } | null; }
+        catch { return null; }
+      })();
+      if (!navigator.onLine && cached?.data) {
+        setData(cached.data);
+        setWhatsAppNumber(cached.whatsappNumber || '');
+        setCloudWorkspaceReady(true);
+        setOfflineMode(true);
+        setCloudWorkspaceError('');
+        return true;
+      }
       setCloudWorkspaceError(error instanceof Error ? error.message : 'The business workspace could not be loaded.');
       setCloudWorkspaceReady(false);
       return false;
@@ -2667,6 +2689,14 @@ function App() {
       cloudMutationLock.current = false;
     }
   };
+  useEffect(() => {
+    const online = () => { setOfflineMode(false); if (cloudAccount) void reloadCloudWorkspace(); };
+    const offline = () => setOfflineMode(true);
+    window.addEventListener('online', online);
+    window.addEventListener('offline', offline);
+    return () => { window.removeEventListener('online', online); window.removeEventListener('offline', offline); };
+  }, [cloudAccount?.business.id]);
+
   const navigate = (section: ModuleKey) => {
     if (!allowedModules.includes(section)) {
       notify('This area is not included in this role', 'Switch to an authorised business role to continue.');
@@ -3421,6 +3451,7 @@ function App() {
       </header>
 
       <div className="page-container">
+        {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>Offline mode</strong> · Showing the last saved workspace. Changes are disabled until connection returns.</span></div>}
         {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} cloudMode={Boolean(cloudAccount)} />}

@@ -415,9 +415,18 @@ export async function completeAuthCallback(): Promise<boolean> {
 }
 
 export async function restoreCloudSession(): Promise<{ user: SupabaseUser; memberships: BusinessMembership[] } | null> {
+  if (!navigator.onLine) {
+    const cachedSession = readSession();
+    if (!cachedSession?.user?.id) return null;
+    try {
+      const memberships = JSON.parse(localStorage.getItem('hesabu:memberships-cache:v1:' + cachedSession.user.id) || '[]') as BusinessMembership[];
+      return memberships.length ? { user: cachedSession.user, memberships } : null;
+    } catch { return null; }
+  }
   const user = await getCurrentUser();
   if (!user) return null;
   const memberships = await listMyBusinesses();
+  try { localStorage.setItem('hesabu:memberships-cache:v1:' + user.id, JSON.stringify(memberships)); } catch { /* Cache is optional. */ }
   return { user, memberships };
 }
 
