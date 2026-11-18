@@ -381,7 +381,8 @@ export async function completeAuthCallback(): Promise<boolean> {
       body: { token_hash: tokenHash, type: callbackType },
     });
     const session = normaliseSession(payload);
-    writeSession(session);
+    if (callbackType === 'signup') writeSession(null);
+    else writeSession(session);
     cleanCallbackUrl();
     return true;
   }
@@ -401,7 +402,8 @@ export async function completeAuthCallback(): Promise<boolean> {
         : Math.floor(Date.now() / 1000) + expiresIn,
       user,
     });
-    writeSession(session);
+    if (callbackType === 'signup') writeSession(null);
+    else writeSession(session);
     cleanCallbackUrl();
     return true;
   }
