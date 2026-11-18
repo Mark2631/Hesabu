@@ -884,39 +884,25 @@ function PublicLandingPage({
           </div>
           <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
         </div>
-        <div className="public-hero-visual" aria-label="Illustration of the Hesabu business workspace">
-          <div className="public-illustration-heading">
-            <span>ONE CONNECTED WORKSPACE</span>
-            <span className="public-illustration-status"><i /> Built around your records</span>
+        <div className="public-hero-visual public-ledger-illustration" aria-label="Illustration of connected business records">
+          <div className="ledger-illustration-heading">
+            <span className="ledger-brand-mark"><HesabuMark /></span>
+            <div><span>ONE BUSINESS RECORD</span><strong>From daily activity to a clearer picture</strong></div>
+            <span className="ledger-live-dot" aria-hidden="true" />
           </div>
-          <div className="public-workspace-art">
-            <div className="public-art-rail">
-              <span className="public-art-brand"><HesabuMark /></span>
-              <i className="active" /><i /><i /><i /><i />
-            </div>
-            <div className="public-art-main">
-              <div className="public-art-toolbar"><span /><span /><span /></div>
-              <div className="public-art-title"><span>Business operations</span><b>Everything in one view</b></div>
-              <div className="public-art-panels">
-                <div className="public-art-panel public-art-panel-wide">
-                  <span className="public-art-panel-icon"><Wallet size={16} /></span>
-                  <span><b>Sales & payments</b><small>Keep every transaction connected</small></span>
-                  <ArrowRight size={14} />
-                </div>
-                <div className="public-art-panel">
-                  <span className="public-art-panel-icon public-art-icon-blue"><Package size={16} /></span>
-                  <span><b>Stock & suppliers</b><small>Know what is moving</small></span>
-                </div>
-                <div className="public-art-panel">
-                  <span className="public-art-panel-icon public-art-icon-sand"><Receipt size={16} /></span>
-                  <span><b>Expenses</b><small>Keep costs in view</small></span>
-                </div>
-              </div>
-              <div className="public-art-connection"><span /><i /><span /><i /><span /></div>
-              <div className="public-art-summary"><BarChart3 size={16} /><span><b>Clearer business decisions</b><small>Records that work together, from the counter to the back office</small></span></div>
-            </div>
+          <div className="ledger-flow">
+            <div className="ledger-flow-node"><span className="ledger-node-icon ledger-node-sales"><Receipt size={19} /></span><strong>Sales</strong><small>What went out</small></div>
+            <span className="ledger-flow-line" aria-hidden="true" />
+            <div className="ledger-flow-node"><span className="ledger-node-icon ledger-node-money"><Wallet size={19} /></span><strong>Payments</strong><small>What came in</small></div>
+            <span className="ledger-flow-line" aria-hidden="true" />
+            <div className="ledger-flow-node"><span className="ledger-node-icon ledger-node-stock"><Package size={19} /></span><strong>Stock</strong><small>What remains</small></div>
           </div>
-          <div className="public-illustration-footer"><span>SALES</span><span>PAYMENTS</span><span>INVENTORY</span><span>REPORTS</span></div>
+          <div className="ledger-outcome">
+            <div className="ledger-outcome-top"><span>CONNECTED BUSINESS RECORDS</span><span>HESABU WORKSPACE</span></div>
+            <div className="ledger-outcome-lines"><i /><i /><i /><i /></div>
+            <div className="ledger-outcome-footer"><span><CheckCircle2 size={14} /> One consistent view</span><span>Sales · Cash · Stock</span></div>
+          </div>
+          <p className="public-visual-footnote">A connected view of the records that keep a business moving.</p>
         </div>
       </section>
 
@@ -982,12 +968,13 @@ function PublicLandingPage({
 }
 
 function AuthPage({
-  onSignIn, onSignUp, initialMessage, initialMode, onBack, inviteMode = false,
+  onSignIn, onSignUp, initialMessage, initialMode, initialEmail, onBack, inviteMode = false,
 }: {
   onSignIn: (email: string, password: string) => Promise<void>;
   onSignUp: (input: SignUpInput) => Promise<void>;
   initialMessage?: string;
   initialMode: 'signin' | 'signup';
+  initialEmail?: string;
   onBack: () => void; inviteMode?: boolean;
 }) {
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
@@ -1004,7 +991,8 @@ function AuthPage({
 
   useEffect(() => {
     setMode(initialMode);
-  }, [initialMode]);
+    if (initialEmail) setEmail(initialEmail);
+  }, [initialMode, initialEmail]);
 
   useEffect(() => {
     if (initialMessage) setMessage(initialMessage);
@@ -2621,13 +2609,17 @@ function App() {
   };
 
   const handleCloudSignUp = async (input: SignUpInput): Promise<void> => {
+    // Save onboarding details, but require a deliberate sign-in after registration.
+    savePendingOnboarding(input);
     const result = await signUpWithPassword(input);
-    if (!result.user) throw new Error('Hesabu could not confirm that the account was created. Check your details and try again.');
-    if (!readPendingTeamInvitation()) savePendingOnboarding(input);
-    setAuthInitialMode('signin');
-    setAuthNotice('Your account has been created. Sign in with your email and password to continue. If email verification is requested, confirm your email first.');
-  };
+    if (result.session) await signOut();
 
+    setAuthInitialMode('signin');
+    setShowAuthScreen(true);
+    setAuthNotice(result.session
+      ? 'Your Hesabu account has been created. Sign in below to open your business workspace.'
+      : 'Your account has been created. Check your email for a confirmation link if requested, then sign in below. Your business setup details have been saved.');
+  };
   const handleCloudSignOut = async () => {
     await signOut();
     setCloudAccount(null);
@@ -3392,6 +3384,7 @@ function App() {
     onSignUp={handleCloudSignUp}
     initialMessage={authNotice}
     initialMode={authInitialMode}
+    initialEmail={authNotice.includes('account has been created') ? (readPendingOnboarding()?.email ?? '') : ''}
     onBack={() => { if (pendingInviteToken) { clearPendingTeamInvitation(); setPendingInviteToken(null); } setShowAuthScreen(false); }}
     inviteMode={Boolean(pendingInviteToken)}
   />;
