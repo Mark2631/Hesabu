@@ -3460,7 +3460,7 @@ function App() {
       </header>
 
       <div className="page-container">
-        {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>Offline mode</strong> · Showing the last saved workspace. Changes are disabled until connection returns.</span></div>}
+        {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>Saved workspace · Read only</strong> · This device is showing its last synced records. Reconnect to post sales, payments and stock changes safely.</span></div>}
         {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} cloudMode={Boolean(cloudAccount)} />}
