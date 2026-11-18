@@ -7,6 +7,7 @@ import { getWorkspaceReadPlan } from '../workspace-access';
 export interface SupabaseUser {
   id: string;
   email?: string;
+  identities?: Array<Record<string, unknown>> | null;
   user_metadata?: Record<string, unknown>;
 }
 
