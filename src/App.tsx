@@ -1345,6 +1345,20 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
         </button>)}
       </div>
     </section>
+    <SectionCard title="Recent transactions" detail="Money in, money out and the latest business activity." action={<button className="text-link" onClick={() => onNavigate(role === 'Inventory' ? 'procurement' : 'payments')}>See all <ArrowRight size={13} /></button>}>
+      {activity.length ? <div className="recent-activity-list">
+        {activity.map(item => <button type="button" className="recent-activity-row" key={item.id}
+          onClick={() => item.invoiceId ? onSelectInvoice(item.invoiceId) : onNavigate(role === 'Inventory' ? 'procurement' : item.direction === 'out' ? 'accounts' : 'payments')}>
+          <span className={'recent-activity-icon ' + (item.direction === 'in' ? 'is-in' : item.direction === 'out' ? 'is-out' : 'is-neutral')}>
+            {item.direction === 'in' ? <ArrowDownLeft size={17} /> : item.direction === 'out' ? <ArrowUpRight size={17} /> : <Receipt size={17} />}
+          </span>
+          <span className="recent-activity-copy"><strong>{item.title}</strong><small>{item.detail} · {dateTimeLabel(item.time)}</small></span>
+          <span className={'recent-activity-amount ' + (item.direction === 'in' ? 'positive' : item.direction === 'out' ? 'negative' : '')}>
+            {item.label ?? ((item.direction === 'out' ? '−' : item.direction === 'in' ? '+' : '') + money(item.amount ?? 0))}
+          </span>
+        </button>)}
+      </div> : <EmptyState title="No transactions yet" body="Sales, receipts and operating payments will appear here once your team records them." action={role === 'Sales' || role === 'Owner' || role === 'Manager' ? <Button onClick={onCreateSale}>Record a sale</Button> : undefined} />}
+    </SectionCard>
     <section className="daily-summary-section" aria-label="Daily business figures">
       <div className="daily-summary-heading"><h3>{role === 'Inventory' ? 'Inventory at a glance' : role === 'Sales' ? 'Sales at a glance' : 'Business at a glance'}</h3><span>Today's figures</span></div>
       <div className="daily-summary-grid">
@@ -1390,20 +1404,7 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
         <button className="text-link stock-watch-link" onClick={() => onNavigate('inventory')}>Review inventory <ArrowRight size={13} /></button>
       </SectionCard>}
     </div>
-    <SectionCard title="Recent transactions" detail="Money in, money out and the latest business activity." action={<button className="text-link" onClick={() => onNavigate(role === 'Inventory' ? 'procurement' : 'payments')}>See all <ArrowRight size={13} /></button>}>
-      {activity.length ? <div className="recent-activity-list">
-        {activity.map(item => <button type="button" className="recent-activity-row" key={item.id}
-          onClick={() => item.invoiceId ? onSelectInvoice(item.invoiceId) : onNavigate(role === 'Inventory' ? 'procurement' : item.direction === 'out' ? 'accounts' : 'payments')}>
-          <span className={'recent-activity-icon ' + (item.direction === 'in' ? 'is-in' : item.direction === 'out' ? 'is-out' : 'is-neutral')}>
-            {item.direction === 'in' ? <ArrowDownLeft size={17} /> : item.direction === 'out' ? <ArrowUpRight size={17} /> : <Receipt size={17} />}
-          </span>
-          <span className="recent-activity-copy"><strong>{item.title}</strong><small>{item.detail} · {dateTimeLabel(item.time)}</small></span>
-          <span className={'recent-activity-amount ' + (item.direction === 'in' ? 'positive' : item.direction === 'out' ? 'negative' : '')}>
-            {item.label ?? ((item.direction === 'out' ? '−' : item.direction === 'in' ? '+' : '') + money(item.amount ?? 0))}
-          </span>
-        </button>)}
-      </div> : <EmptyState title="No transactions yet" body="Sales, receipts and operating payments will appear here once your team records them." action={role === 'Sales' || role === 'Owner' || role === 'Manager' ? <Button onClick={onCreateSale}>Record a sale</Button> : undefined} />}
-    </SectionCard>
+
   </div>;
 }
 function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
@@ -2547,7 +2548,7 @@ function App() {
         try { return JSON.parse(localStorage.getItem('hesabu:workspace-cache:v1:' + cloudAccount.business.id) || 'null') as { savedAt?: string; data?: AppData; whatsappNumber?: string } | null; }
         catch { return null; }
       })();
-      if (!navigator.onLine && cached?.data) {
+      if (cached?.data) {
         setData(cached.data);
         setWhatsAppNumber(cached.whatsappNumber || '');
         setCloudWorkspaceReady(true);
@@ -3459,7 +3460,7 @@ function App() {
       </header>
 
       <div className="page-container">
-        {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>Offline mode</strong> · Showing the last saved workspace. Changes are disabled until connection returns.</span></div>}
+        {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>Saved workspace · Read only</strong> · This device is showing its last synced records. Reconnect to post sales, payments and stock changes safely.</span></div>}
         {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} cloudMode={Boolean(cloudAccount)} />}

@@ -10,7 +10,7 @@
   "theme_color": "#075b4c",
   "icons": [
     {
-      "src": "/hesabu-mark.svg",
+      "src": "/app-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
