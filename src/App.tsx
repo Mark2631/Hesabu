@@ -22,7 +22,7 @@ const EMPTY_WORKSPACE_DATA: AppData = {
   nextInvoice: 1001, nextPurchaseOrder: 1,
 };
 import {
-  acceptCloudBusinessInvitation, adjustCloudStock, completeAuthCallback, createBusiness, createCloudProduct, createCloudSupplier, createCloudBusinessInvitation,
+  acceptCloudBusinessInvitation, adjustCloudStock, createBusiness, createCloudProduct, createCloudSupplier, createCloudBusinessInvitation,
   createCloudPurchaseOrder, getBusinessSettings, getCloudWorkspace,
   listMyBusinesses, postCloudExpense, postCloudPayment, postCloudSale,
   postCloudSupplierPayment, postCloudUnmatchedReceipt, matchCloudUnmatchedReceipt, receiveCloudPurchaseOrder, restoreCloudSession,
@@ -847,10 +847,11 @@ function HesabuMark({ className = '' }: { className?: string }) {
 }
 
 function PublicLandingPage({
-  onSignIn, onCreateAccount,
+  onSignIn, onCreateAccount, onInstall,
 }: {
   onSignIn: () => void;
   onCreateAccount: () => void;
+  onInstall: () => void;
 }) {
   return <div className="public-site">
     <header className="public-header">
@@ -866,6 +867,7 @@ function PublicLandingPage({
           <a href="#trust">Your records</a>
         </nav>
         <div className="public-header-actions">
+          <button type="button" className="public-install-action" onClick={onInstall}><Download size={14} /> Install</button>
           <button type="button" className="public-signin" onClick={onSignIn}>Sign in</button>
           <button type="button" className="public-get-started" onClick={onCreateAccount}>Get started <ArrowRight size={15} /></button>
         </div>
@@ -884,25 +886,12 @@ function PublicLandingPage({
           </div>
           <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
         </div>
-        <div className="public-hero-visual public-ledger-illustration public-workspace-art" aria-label="Illustration of connected business records">
-          <div className="ledger-illustration-heading">
-            <span className="ledger-brand-mark"><HesabuMark /></span>
-            <div><span>ONE BUSINESS RECORD</span><strong>From daily activity to a clearer picture</strong></div>
-            <span className="ledger-live-dot" aria-hidden="true" />
+        <div className="public-hero-visual public-photo-visual">
+          <img src="/hesabu-shop-owner.webp" alt="A shop owner reviewing business records on her phone at the counter" width="800" height="450" fetchPriority="high" />
+          <div className="public-photo-caption">
+            <span>BUILT AROUND EVERYDAY BUSINESS</span>
+            <strong>From the counter to a clearer picture.</strong>
           </div>
-          <div className="ledger-flow">
-            <div className="ledger-flow-node"><span className="ledger-node-icon ledger-node-sales"><Receipt size={19} /></span><strong>Sales</strong><small>What went out</small></div>
-            <span className="ledger-flow-line" aria-hidden="true" />
-            <div className="ledger-flow-node"><span className="ledger-node-icon ledger-node-money"><Wallet size={19} /></span><strong>Payments</strong><small>What came in</small></div>
-            <span className="ledger-flow-line" aria-hidden="true" />
-            <div className="ledger-flow-node"><span className="ledger-node-icon ledger-node-stock"><Package size={19} /></span><strong>Stock</strong><small>What remains</small></div>
-          </div>
-          <div className="ledger-outcome">
-            <div className="ledger-outcome-top"><span>CONNECTED BUSINESS RECORDS</span><span>HESABU WORKSPACE</span></div>
-            <div className="ledger-outcome-lines"><i /><i /><i /><i /></div>
-            <div className="ledger-outcome-footer"><span><CheckCircle2 size={14} /> One consistent view</span><span>Sales · Cash · Stock</span></div>
-          </div>
-          <p className="public-visual-footnote">A connected view of the records that keep a business moving.</p>
         </div>
       </section>
 
@@ -1019,9 +1008,7 @@ function AuthPage({
           fullName, businessName: inviteMode ? '' : businessName, industry: inviteMode ? '' : industry, phone: inviteMode ? '' : phone, email, password,
           aiAssistantEnabled: false, whatsappDigestEnabled: inviteMode ? false : whatsappDigestEnabled, whatsappRecipientPhone: inviteMode ? '' : whatsappRecipientPhone,
         });
-        setMode('signin');
-        setPassword('');
-        setMessage('Account created. Sign in with the email and password you just registered. If email verification is requested, confirm your email address first.');
+        setMessage('Account created. Opening your business workspace…');
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.';
@@ -1032,11 +1019,9 @@ function AuthPage({
       } else if (normalised.includes('invalid login credentials') || normalised.includes('invalid credentials')) {
         setMessage('The email or password is incorrect. Check both details and try again.');
       } else if (normalised.includes('email not confirmed')) {
-        setMessage('Confirm your email address using the link we sent, then return here to sign in.');
-      } else if (normalised.includes('over_email_send_rate_limit') || normalised.includes('rate limit') || normalised.includes('after 35 seconds')) {
-        setMessage('A confirmation email was requested recently. Wait at least 35 seconds before trying again, then check your inbox and spam folder.');
-      } else if (normalised.includes('email_address_not_authorized')) {
-        setMessage('The current email service cannot send confirmation messages to this address. Hesabu needs a verified SMTP email provider before this address can receive account emails.');
+        setMessage('Account access could not be completed. Please try again shortly.');
+      } else if (normalised.includes('over_email_send_rate_limit') || normalised.includes('rate limit') || normalised.includes('after 35 seconds') || normalised.includes('email_address_not_authorized')) {
+        setMessage('Account setup is temporarily unavailable. Please try again shortly.');
       } else {
         setMessage(detail);
       }
@@ -2486,16 +2471,26 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }) | null>(null);
+  const [appInstalled, setAppInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+
+  useEffect(() => {
+    const beforeInstall = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> });
+    };
+    const installed = () => { setAppInstalled(true); setInstallPrompt(null); };
+    window.addEventListener('beforeinstallprompt', beforeInstall);
+    window.addEventListener('appinstalled', installed);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', beforeInstall);
+      window.removeEventListener('appinstalled', installed);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
     const restore = async () => {
-      const authCallbackCompleted = await completeAuthCallback();
-      if (authCallbackCompleted) {
-        setAuthInitialMode('signin');
-        setShowAuthScreen(true);
-        setAuthNotice('Your email address has been confirmed. Sign in to continue to your business workspace.');
-      }
       const result = await restoreCloudSession();
       if (!active) return;
       const token = readPendingTeamInvitation();
@@ -2635,12 +2630,28 @@ function App() {
     if (Array.isArray(result.user.identities) && result.user.identities.length === 0) {
       throw new Error('An account may already exist for this email address. Try signing in with your existing password.');
     }
-    if (!invitation) savePendingOnboarding(input);
-    if (result.session) await signOut();
+    if (!result.session) {
+      throw new Error('Hesabu could not start your account session. Account setup is not ready on the server yet. Please try again shortly.');
+    }
 
-    setAuthInitialMode('signin');
-    setShowAuthScreen(true);
-    setAuthNotice('Your account has been created. Check your email inbox for a confirmation link, confirm your address, then sign in below to open your business workspace.');
+    if (invitation) {
+      const businessId = await acceptCloudBusinessInvitation(invitation);
+      clearPendingTeamInvitation();
+      setPendingInviteToken(null);
+      const memberships = await listMyBusinesses();
+      const invited = memberships.find(item => item.business_id === businessId && item.businesses?.id);
+      if (!invited?.businesses) throw new Error('The invitation was accepted but the business could not be loaded.');
+      setCloudAccount({ user: result.session.user, business: { id: invited.businesses.id, name: invited.businesses.name, industry: invited.businesses.industry } });
+    } else {
+      savePendingOnboarding(input);
+      const businessId = await createBusiness(input);
+      await saveBusinessPreferences({ businessId, aiAssistantEnabled: false, whatsappDigestEnabled: input.whatsappDigestEnabled, whatsappRecipientPhone: input.whatsappRecipientPhone });
+      clearPendingOnboarding();
+      setWhatsAppNumber(input.whatsappRecipientPhone);
+      setCloudAccount({ user: result.session.user, business: { id: businessId, name: input.businessName, industry: input.industry || null } });
+    }
+    setAuthNotice('');
+    setShowAuthScreen(false);
   };
   const handleCloudSignOut = async () => {
     await signOut();
@@ -2679,6 +2690,21 @@ function App() {
 
   const notify = (title: string, detail?: string) => setNotice({ title, detail });
   const closeNotice = () => setNotice(null);
+  const handleInstallApp = async () => {
+    if (appInstalled) return;
+    if (!installPrompt) {
+      notify('Install Hesabu', 'Open your browser menu and choose Install app or Add to Home screen.');
+      return;
+    }
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === 'accepted') setAppInstalled(true);
+      setInstallPrompt(null);
+    } catch {
+      notify('Install Hesabu', 'Use your browser menu to add Hesabu to your home screen.');
+    }
+  };
   const cloudMutationLock = useRef(false);
   const runCloudMutation = async (
     operation: () => Promise<unknown>,
@@ -3400,13 +3426,14 @@ function App() {
   if (!showAuthScreen && !cloudAccount) return <PublicLandingPage
     onSignIn={() => { setAuthInitialMode('signin'); setShowAuthScreen(true); }}
     onCreateAccount={() => { setAuthInitialMode('signup'); setShowAuthScreen(true); }}
+    onInstall={handleInstallApp}
   />;
   if (!cloudAccount) return <AuthPage
     onSignIn={handleCloudSignIn}
     onSignUp={handleCloudSignUp}
     initialMessage={authNotice}
     initialMode={authInitialMode}
-    initialEmail={authNotice.includes('account has been created') ? (readPendingOnboarding()?.email ?? '') : ''}
+    initialEmail=""
     onBack={() => { if (pendingInviteToken) { clearPendingTeamInvitation(); setPendingInviteToken(null); } setShowAuthScreen(false); }}
     inviteMode={Boolean(pendingInviteToken)}
   />;
@@ -3451,6 +3478,7 @@ function App() {
           <div className="breadcrumb"><ChevronRight size={13} /><strong>{activeMeta.title}</strong></div>
         </div>
         <div className="topbar-right">
+          {!appInstalled && <button type="button" className="app-install-button" onClick={handleInstallApp}><Download size={15} /><span>Install</span></button>}
           <div className={'global-search ' + (searchOpen ? 'global-search-open' : '')}><Search size={15} /><input value={search} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)} onChange={event => setSearch(event.target.value)} placeholder="Search this register…" /></div>
           <span className="topbar-divider" />
           <button className="topbar-date" onClick={() => notify('Workspace date', dateLabel(today()))}><CalendarDays size={15} /> <span>{dateLabel(today())}</span></button>
