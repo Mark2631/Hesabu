@@ -214,9 +214,12 @@ export async function signUpWithPassword(input: SignUpInput): Promise<{ session:
     accessToken: publishableKey,
   });
 
+  // Registration is deliberately not a sign-in. Supabase may return a session
+  // when email confirmation is disabled; discard it so every new user follows
+  // the same explicit sign-in step after account creation.
   const session = payload.access_token ? normaliseSession(payload) : null;
-  if (session) writeSession(session);
-  return { session, user: payload.user ?? session?.user ?? null };
+  writeSession(null);
+  return { session: null, user: payload.user ?? session?.user ?? null };
 }
 
 export async function signOut(): Promise<void> {
