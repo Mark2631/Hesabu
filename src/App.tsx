@@ -1028,7 +1028,7 @@ function AuthPage({
       const normalised = detail.toLowerCase();
       if (normalised.includes('already registered') || normalised.includes('already exists')) {
         setMode('signin');
-        setMessage('An account already exists for this email address. Sign in with your existing password instead.');
+        setMessage('An account may already exist for this email address. Try signing in with your existing password instead.');
       } else if (normalised.includes('invalid login credentials') || normalised.includes('invalid credentials')) {
         setMessage('The email or password is incorrect. Check both details and try again.');
       } else if (normalised.includes('email not confirmed')) {
@@ -2625,16 +2625,18 @@ function App() {
   };
 
   const handleCloudSignUp = async (input: SignUpInput): Promise<void> => {
-    // Save onboarding details, but require a deliberate sign-in after registration.
-    savePendingOnboarding(input);
+    const invitation = readPendingTeamInvitation();
     const result = await signUpWithPassword(input);
+    if (!result.user) throw new Error('Hesabu could not confirm that the account was created. Check your details and try again.');
+    if (Array.isArray(result.user.identities) && result.user.identities.length === 0) {
+      throw new Error('An account may already exist for this email address. Try signing in with your existing password.');
+    }
+    if (!invitation) savePendingOnboarding(input);
     if (result.session) await signOut();
 
     setAuthInitialMode('signin');
     setShowAuthScreen(true);
-    setAuthNotice(result.session
-      ? 'Your Hesabu account has been created. Sign in below to open your business workspace.'
-      : 'Your account has been created. Check your email for a confirmation link if requested, then sign in below. Your business setup details have been saved.');
+    setAuthNotice('Your account has been created. If email verification is requested, confirm your email first, then sign in below to open your business workspace.');
   };
   const handleCloudSignOut = async () => {
     await signOut();
