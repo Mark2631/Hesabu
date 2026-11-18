@@ -59,7 +59,7 @@ export class SupabaseRequestError extends Error {
 
   constructor(message: string, status: number, code?: string) {
     const lower = message.toLowerCase();
-    const containsBackendDetail = /supabase|postgres|postgrest|sql|database|schema|table|column|relation|constraint|foreign key|permission denied|row level security|\\brls\\b|migration|pgrst|jwt|rpc|function|duplicate key|violates|stack trace/.test(lower);
+    const containsBackendDetail = /supabase|postgres|postgrest|sql|database|schema|table|column|relation|constraint|foreign key|permission denied|row level security|\brls\b|migration|pgrst|jwt|rpc|function|duplicate key|violates|stack trace/.test(lower);
     const knownSafeAuthMessage = /^(sign in again|your session has expired|email address|password|verification email|this email link)/i.test(message);
     let safeMessage = message;
 
