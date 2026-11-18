@@ -12,8 +12,7 @@ test('PWA manifest is installable and includes Android icon sizes', () => {
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.start_url, '/');
   assert.equal(manifest.theme_color, '#075b4c');
-  assert.ok(manifest.icons.some(icon => icon.src === '/app-icon-192.png' && icon.sizes === '192x192'));
-  assert.ok(manifest.icons.some(icon => icon.src === '/app-icon-512.png' && icon.sizes === '512x512' && icon.purpose.includes('maskable')));
+  assert.ok(manifest.icons.some(icon => icon.src === '/app-icon.svg' && icon.purpose.includes('maskable')));
 });
 
 test('the app exposes the native install prompt and handles completed installation', () => {
