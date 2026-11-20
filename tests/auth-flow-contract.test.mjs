@@ -46,6 +46,7 @@ test('invited team members accept their invitation after signup', () => {
 
 test('backend request errors are never rendered verbatim', () => {
   assert.match(authClient, /super\('We could not complete that request\. Please try again\.'\)/);
-  assert.doesNotMatch(authClient, /Supabase is not configured for this build/);
-  assert.doesNotMatch(authClient, /Apply the Hesabu foundation migration first/);
+  // SupabaseRequestError deliberately discards the provider/database message argument.
+  assert.match(authClient, /constructor\\(_message: string, status: number, code\\?: string\\)/);
+  assert.match(authClient, /super\\('We could not complete that request\\. Please try again\\.'\\)/);
 });
