@@ -43,3 +43,9 @@ test('invited team members accept their invitation after signup', () => {
   assert.match(app, /const businessId = await acceptCloudBusinessInvitation\(invitation\);/);
   assert.match(app, /clearPendingTeamInvitation\(\);/);
 });
+
+test('backend request errors are never rendered verbatim', () => {
+  assert.match(authClient, /super\('We could not complete that request\. Please try again\.'\)/);
+  assert.doesNotMatch(authClient, /Supabase is not configured for this build/);
+  assert.doesNotMatch(authClient, /Apply the Hesabu foundation migration first/);
+});
