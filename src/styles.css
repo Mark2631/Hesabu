@@ -3668,3 +3668,13 @@ html[data-theme="light"] { color-scheme:light; }
 @media(max-width:390px) {
   .public-install-action { min-height:35px; padding:0 8px; font-size:10px; }
 }
+
+/* Authentication field controls */
+.auth-password-wrap{position:relative;display:block;width:100%}
+.auth-password-wrap input{width:100%;padding-right:48px!important}
+.auth-password-toggle{position:absolute;top:50%;right:8px;display:grid;place-items:center;width:34px;height:34px;transform:translateY(-50%);border:0;border-radius:8px;background:transparent;color:#64776b;cursor:pointer}
+.auth-password-toggle:hover{background:#f0f5f1;color:#075b4c}
+.auth-password-toggle:focus-visible{outline:2px solid #4b9672;outline-offset:1px}
+.public-hero-visual{width:100%;max-width:620px;margin-inline:auto;justify-self:center;align-self:center}
+.public-workspace-art{width:100%;max-width:100%;margin-inline:auto}
+@media(max-width:700px){.public-hero-visual{width:100%;max-width:550px;margin:0 auto}.public-workspace-art{min-height:270px}}
