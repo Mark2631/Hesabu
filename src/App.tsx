@@ -1132,14 +1132,14 @@ function getWorkspaceAnswer(data: AppData, question: string) {
   }
   if (/profit|margin|gross/.test(query)) {
     const rows = /month|monthly/.test(query) ? month : week;
-    return 'Estimated gross profit for ' + (/month|monthly/.test(query) ? 'this month' : 'the last 7 days') + ' is ' + money(sum(rows.map(calculateGrossProfit))) + ' from ' + money(sales(rows)) + ' in recorded sales. This is before operating expenses, not net profit.';
+    return 'Estimated gross profit for ' + (/month|monthly/.test(query) ? 'this month' : 'the last 7 days') + ' is ' + money(sum(rows.map(item => calculateGrossProfit(item.lines, item.discount)))) + ' from ' + money(sales(rows)) + ' in recorded sales. This is before operating expenses, not net profit.';
   }
   if (/payment|cash received|collected|collection|mpesa|m pesa/.test(query))
     return 'Payments received today total ' + money(digest.receivedTotal) + '. There are ' + data.payments.filter(item => item.status === 'pending').length + ' pending payment records. Customer balances still outstanding total ' + money(unpaidTotal) + '.';
   if (/month|monthly/.test(query))
     return 'Month-to-date sales are ' + money(sales(month)) + ' across ' + month.length + ' invoices. Outstanding customer balances are ' + money(unpaidTotal) + '. Recorded expenses this month total ' + money(sum(data.expenses.filter(item => item.date >= monthStart && item.date <= todayDate).map(item => item.amount))) + '.';
   if (/week|weekly|last 7|seven day/.test(query))
-    return 'Over the last 7 days, sales total ' + money(sales(week)) + ' across ' + week.length + ' invoices. Daily average: ' + money(sales(week)/7) + '. Gross profit: ' + money(sum(week.map(calculateGrossProfit))) + '.';
+    return 'Over the last 7 days, sales total ' + money(sales(week)) + ' across ' + week.length + ' invoices. Daily average: ' + money(sales(week)/7) + '. Gross profit: ' + money(sum(week.map(item => calculateGrossProfit(item.lines, item.discount)))) + '.';
   if (/today|daily|how are sales|sales doing|sales summary|revenue/.test(query))
     return 'Today: ' + money(digest.salesTotal) + ' in sales across ' + digest.sales.length + ' invoices. Payments received: ' + money(digest.receivedTotal) + '. Gross profit: ' + money(digest.grossProfit) + '. Seven-day daily sales average: ' + money(sales(week)/7) + '.';
   if (/invoice|customer/.test(query))
