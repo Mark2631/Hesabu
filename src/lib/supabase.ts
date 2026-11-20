@@ -215,17 +215,44 @@ export async function signUpWithPassword(input: SignUpInput): Promise<{ session:
     accessToken: publishableKey,
   });
 
-  // With Confirm email disabled, Supabase returns a session immediately.
-  // Keep it so the new owner enters the workspace without a second sign-in.
-  const session = payload.access_token ? normaliseSession(payload) : null;
+  // Supabase returns a session immediately when email confirmation is disabled.
+  // Some Auth configurations return only a user object; in that case, exchange
+  // the just-created credentials for a session instead of stranding the owner.
+  let session: SupabaseSession | null = payload.access_token ? normaliseSession(payload) : null;
+  const user = payload.user ?? session?.user ?? null;
+
+  if (!session && user) {
+    if (Array.isArray(user.identities) && user.identities.length === 0) {
+      throw new SupabaseRequestError(
+        'An account already exists for this email address. Sign in with your existing password instead.',
+        409,
+        'user_already_exists',
+      );
+    }
+    try {
+      session = await signInWithPassword(input.email, input.password);
+    } catch (error) {
+      if (error instanceof SupabaseRequestError && /email not confirmed|email_not_confirmed/i.test(error.message + ' ' + (error.code ?? ''))) {
+        throw new SupabaseRequestError(
+          'This account was created, but Supabase is still requiring email confirmation. Disable Confirm email in the Hesabu Supabase Email provider settings, then sign in again.',
+          403,
+          'email_not_confirmed',
+        );
+      }
+      throw error;
+    }
+  }
+
   if (!session) {
     throw new SupabaseRequestError(
-      'Account creation did not return an active session. Hesabu account access is not ready on the server yet.',
+      'Hesabu created the account but could not establish a secure session. Try signing in with the same email and password.',
       409,
+      'session_not_created',
     );
   }
+
   writeSession(session);
-  return { session, user: payload.user ?? session.user };
+  return { session, user: user ?? session.user };
 }
 
 export async function signOut(): Promise<void> {
