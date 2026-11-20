@@ -20,7 +20,12 @@ test('signup adopts a returned session or exchanges newly created credentials fo
   assert.match(authClient, /session = await signInWithPassword\(input\.email, input\.password\)/);
   assert.match(authClient, /writeSession\(session\)/);
   assert.match(authClient, /email_not_confirmed/);
+  assert.match(authClient, /The request could not be completed\\./);
+  assert.doesNotMatch(authClient, /Supabase is still requiring email confirmation/);
+  assert.doesNotMatch(authClient, /Cloud request failed \\(/);
   assert.doesNotMatch(authClient, /Account creation did not return an active session/);
+  assert.doesNotMatch(app, /setMessage\\(detail\\)/);
+  assert.match(app, /We could not complete that request/);
 });
 
 test('new account setup creates its business workspace without a second sign-in', () => {
