@@ -964,7 +964,7 @@ function AuthPage({
   onSignUp: (input: SignUpInput) => Promise<void>;
   onResetPassword: (email: string, password: string) => Promise<void>;
   initialMessage?: string;
-  initialMode: 'signin' | 'signup';
+  initialMode: 'signin' | 'signup' | 'reset';
   initialEmail?: string;
   onBack: () => void; inviteMode?: boolean;
 }) {
