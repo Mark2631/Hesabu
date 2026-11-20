@@ -3806,7 +3806,7 @@ html[data-theme="light"] { color-scheme:light; }
 }
 .public-brand > span:last-child { color:#173c2a; letter-spacing:-.045em; }
 .floating-tools-dock .assistant-launcher { display:grid !important; }
-.assistant-drawer { display:flex !important; }
+.assistant-drawer.assistant-drawer { display:flex !important; }
 .floating-tools-dock {
   z-index:110 !important;
   pointer-events:auto !important;
