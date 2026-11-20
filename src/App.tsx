@@ -969,6 +969,7 @@ function AuthPage({
   onBack: () => void; inviteMode?: boolean;
 }) {
   const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>(initialMode);
+  const [signupStep, setSignupStep] = useState<1 | 2>(1);
   const [fullName, setFullName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [industry, setIndustry] = useState('Retail / shop');
@@ -983,6 +984,7 @@ function AuthPage({
 
   useEffect(() => {
     setMode(initialMode);
+    setSignupStep(1);
     if (initialEmail) setEmail(initialEmail);
   }, [initialMode, initialEmail]);
 
@@ -1001,17 +1003,21 @@ function AuthPage({
       } else if (mode === 'reset') {
         await onResetPassword(email, password);
       } else {
+        if (signupStep === 1 && !inviteMode) {
+          if (!fullName.trim() || !email.trim() || password.length < 8) {
+            setMessage('Enter your name, a valid email address and a password of at least 8 characters.');
+            return;
+          }
+          setSignupStep(2);
+          return;
+        }
         if (!fullName.trim() || (!inviteMode && !businessName.trim())) {
           setMessage('Enter your name and business name to continue.');
           return;
         }
-        if (whatsappDigestEnabled && !normaliseWhatsAppNumber(whatsappRecipientPhone)) {
-          setMessage('Enter a valid WhatsApp number, including the Kenyan country code or a local mobile number.');
-          return;
-        }
         await onSignUp({
           fullName, businessName: inviteMode ? '' : businessName, industry: inviteMode ? '' : industry, phone: inviteMode ? '' : phone, email, password,
-          aiAssistantEnabled: false, whatsappDigestEnabled: inviteMode ? false : whatsappDigestEnabled, whatsappRecipientPhone: inviteMode ? '' : whatsappRecipientPhone,
+          aiAssistantEnabled: false, whatsappDigestEnabled: false, whatsappRecipientPhone: '',
         });
         setMessage('Account created. Opening your business workspace…');
       }
@@ -1048,37 +1054,25 @@ function AuthPage({
           <h1>{mode === 'reset' ? 'Choose a new password.' : inviteMode ? (mode === 'signin' ? 'Sign in to join your team.' : 'Create your team account.') : (mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.')}</h1>
           <p>{mode === 'reset' ? 'Enter the email address for your account and choose a new password.' : inviteMode ? 'Use the email address this invitation was sent to. Your access activates when you accept the invitation.' : 'Sales, payments, stock and business performance in one calm workspace.'}</p>
         </div>
+        {mode === 'signup' && !inviteMode && <div className="auth-step-indicator"><span className={signupStep === 1 ? 'current' : 'complete'}>1 <small>Account</small></span><i /><span className={signupStep === 2 ? 'current' : ''}>2 <small>Business</small></span></div>}
         {mode !== 'reset' && <div className="auth-tabs" role="tablist" aria-label="Account access">
           <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setMessage(''); }}>Sign in</button>
           <button type="button" role="tab" aria-selected={mode === 'signup'} className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setMessage(''); }}>Create account</button>
         </div>}
         <form className="auth-form" onSubmit={submit}>
           {mode === 'signup' && <>
-            <label className="auth-field"><span>Your full name</span><input autoComplete="name" value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Name of the business owner" required /></label>
-            {!inviteMode && <>
-            <label className="auth-field"><span>Business name</span><input value={businessName} onChange={event => setBusinessName(event.target.value)} placeholder="e.g. Muriuki Stores" required /></label>
-            <label className="auth-field"><span>Business type</span>
-              <select value={industry} onChange={event => setIndustry(event.target.value)}>
-                <option>Retail / shop</option><option>Food & hospitality</option><option>Wholesale / distribution</option>
-                <option>Services</option><option>Manufacturing / production</option><option>Other</option>
-              </select>
-            </label>
-            <label className="auth-field"><span>Business phone <small>(optional)</small></span><input type="tel" autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="07XX XXX XXX" /></label>
+            {inviteMode || signupStep === 1 ? <label className="auth-field"><span>Your full name</span><input autoComplete="name" value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Your name" required /></label> : <>
+              <label className="auth-field"><span>Business name</span><input autoComplete="organization" value={businessName} onChange={event => setBusinessName(event.target.value)} placeholder="e.g. Muriuki Stores" required /></label>
+              <label className="auth-field"><span>Business type</span><select value={industry} onChange={event => setIndustry(event.target.value)}><option>Retail / shop</option><option>Food & hospitality</option><option>Wholesale / distribution</option><option>Services</option><option>Manufacturing / production</option><option>Other</option></select></label>
+              <label className="auth-field"><span>Business phone <small>(optional)</small></span><input type="tel" autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="07XX XXX XXX" /></label>
             </>}
           </>}
-          <label className="auth-field"><span>Email address</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
-          <label className="auth-field"><span>{mode === 'reset' ? 'New password' : 'Password'}</span><span className="auth-password-wrap"><input type={showPassword ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /><button type="button" className="auth-password-toggle" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></span></label>
-          {mode === 'signup' && !inviteMode && <section className="auth-preferences" aria-label="Optional business preferences">
-            <div className="auth-preferences-heading"><strong>How should Hesabu support your daily work?</strong><small>These options work together. Manual entry is always available.</small></div>
-            <div className="auth-preference-manual"><span><strong>Manual records</strong><small>Record sales, payments, expenses and stock yourself.</small></span><span>Always on</span></div>
-            <label className="auth-preference-option">
-              <input type="checkbox" checked={whatsappDigestEnabled} onChange={event => setWhatsappDigestEnabled(event.target.checked)} />
-              <span><strong>WhatsApp daily digest</strong><small>Prepare a daily business summary for WhatsApp.</small></span>
-            </label>
-            {whatsappDigestEnabled && <label className="auth-field auth-whatsapp-field"><span>WhatsApp destination</span><input type="tel" inputMode="tel" value={whatsappRecipientPhone} onChange={event => setWhatsappRecipientPhone(event.target.value)} placeholder="2547XXXXXXXX" required /></label>}
-          </section>}
+          {(mode !== 'signup' || signupStep === 1 || inviteMode) && <label className="auth-field"><span>Email address</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>}
+          {(mode !== 'signup' || signupStep === 1 || inviteMode) && <label className="auth-field"><span>{mode === 'reset' ? 'New password' : 'Password'}</span><span className="auth-password-wrap"><input type={showPassword ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /><button type="button" className="auth-password-toggle" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></span></label>}
+          {mode === 'signup' && !inviteMode && signupStep === 2 && <p className="auth-step-note">You can change these details later in business settings.</p>}
           {mode === 'signin' && <button type="button" className="auth-forgot-link" onClick={async () => { if (!email.trim()) { setMessage('Enter your email address first.'); return; } setBusy(true); setMessage(''); try { await sendPasswordRecoveryEmail(email); setMessage('If an account exists for that email, a password reset link has been sent. Check your inbox.'); } catch { setMessage('We could not send the reset email. Check the address and try again.'); } finally { setBusy(false); } }}>Forgot password?</button>}
-          <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : mode === 'reset' ? 'Save new password' : 'Create account'} <ArrowRight size={15} /></Button>
+          {mode === 'signup' && !inviteMode && signupStep === 2 && <button type="button" className="auth-forgot-link auth-step-back" onClick={() => { setSignupStep(1); setMessage(''); }}>Back to account details</button>}
+          <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : mode === 'reset' ? 'Save new password' : signupStep === 1 && !inviteMode ? 'Continue' : 'Create account'} <ArrowRight size={15} /></Button>
           {mode === 'reset' && <button type="button" className="auth-forgot-link" onClick={() => { setMode('signin'); setMessage(''); }}>Back to sign in</button>}
         </form>
         {message && <p className="auth-message" role="status">{message}</p>}
