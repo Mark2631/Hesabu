@@ -977,8 +977,6 @@ function AuthPage({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [whatsappDigestEnabled, setWhatsappDigestEnabled] = useState(false);
-  const [whatsappRecipientPhone, setWhatsappRecipientPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(initialMessage ?? '');
 
@@ -1057,7 +1055,7 @@ function AuthPage({
         {mode === 'signup' && !inviteMode && <div className="auth-step-indicator"><span className={signupStep === 1 ? 'current' : 'complete'}>1 <small>Account</small></span><i /><span className={signupStep === 2 ? 'current' : ''}>2 <small>Business</small></span></div>}
         {mode !== 'reset' && <div className="auth-tabs" role="tablist" aria-label="Account access">
           <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setMessage(''); }}>Sign in</button>
-          <button type="button" role="tab" aria-selected={mode === 'signup'} className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setMessage(''); }}>Create account</button>
+          <button type="button" role="tab" aria-selected={mode === 'signup'} className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setSignupStep(1); setMessage(''); }}>Create account</button>
         </div>}
         <form className="auth-form" onSubmit={submit}>
           {mode === 'signup' && <>
