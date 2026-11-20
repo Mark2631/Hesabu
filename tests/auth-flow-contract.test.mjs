@@ -52,8 +52,8 @@ test('invited team members accept their invitation after signup', () => {
 });
 
 test('backend request errors are never rendered verbatim', () => {
-  assert.match(authClient, /super\('We could not complete that request\. Please try again\.'\)/);
-  // SupabaseRequestError deliberately discards the provider/database message argument.
-  assert.match(authClient, /constructor\\(_message: string, status: number, code\\?: string\\)/);
-  assert.match(authClient, /super\\('We could not complete that request\\. Please try again\\.'\\)/);
+  // Provider/database details are discarded before an Error reaches the UI.
+  assert.ok(authClient.includes("constructor(_message: string, status: number, code?: string)"));
+  assert.ok(authClient.includes("super('We could not complete that request. Please try again.')"));
+  assert.doesNotMatch(app, /setMessage\\(detail\\)/);
 });
