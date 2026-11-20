@@ -143,13 +143,14 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    const detail = typeof payload === 'object' && payload !== null
-      ? String((payload as Record<string, unknown>).msg ?? (payload as Record<string, unknown>).message ?? (payload as Record<string, unknown>).error_description ?? '')
+    const rawCode = typeof payload === 'object' && payload !== null
+      ? String((payload as Record<string, unknown>).code ?? (payload as Record<string, unknown>).error_code ?? '')
       : '';
-    const code = typeof payload === 'object' && payload !== null
-      ? String((payload as Record<string, unknown>).code ?? '')
-      : undefined;
-    throw new SupabaseRequestError(detail || 'Cloud request failed (' + response.status + ').', response.status, code);
+    const safeCode = /invalid.*credential/i.test(rawCode) ? 'invalid_credentials'
+      : /email.*not.*confirmed/i.test(rawCode) ? 'email_not_confirmed'
+      : rawCode;
+    // Never pass provider or database response text to the UI.
+    throw new SupabaseRequestError('The request could not be completed.', response.status, safeCode);
   }
 
   return payload as T;
@@ -234,7 +235,7 @@ export async function signUpWithPassword(input: SignUpInput): Promise<{ session:
     } catch (error) {
       if (error instanceof SupabaseRequestError && /email not confirmed|email_not_confirmed/i.test(error.message + ' ' + (error.code ?? ''))) {
         throw new SupabaseRequestError(
-          'This account was created, but Supabase is still requiring email confirmation. Disable Confirm email in the Hesabu Supabase Email provider settings, then sign in again.',
+          'Account setup could not be completed.',
           403,
           'email_not_confirmed',
         );
@@ -245,7 +246,7 @@ export async function signUpWithPassword(input: SignUpInput): Promise<{ session:
 
   if (!session) {
     throw new SupabaseRequestError(
-      'Hesabu created the account but could not establish a secure session. Try signing in with the same email and password.',
+      'Account setup could not be completed.',
       409,
       'session_not_created',
     );
