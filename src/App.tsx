@@ -4,7 +4,7 @@ import {
   Bell, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown,
   ChevronRight, CircleDollarSign, Clock3, Download,
   FileCheck2, FileSpreadsheet, FileText, Filter, LayoutDashboard, Link2, MessageCircle, Moon, Sun,
-  Menu, MoreHorizontal, Package, PanelLeftClose, Plus, Receipt,
+  Menu, MoreHorizontal, Mic, MicOff, Package, PanelLeftClose, Plus, Receipt,
   Search, Send, Settings, ShieldCheck, ShoppingCart, Smartphone,
   Store, TrendingDown, TrendingUp, Truck, Wallet, X, LogOut,
   type LucideIcon,
@@ -1146,6 +1146,16 @@ function getWorkspaceAnswer(data: AppData, question: string) {
     return 'There are ' + invoices.length + ' recorded invoices. ' + unpaid.length + ' still have a balance, totalling ' + money(unpaidTotal) + '. Ask “Who still owes us?” for the largest balances.';
   return 'I can answer questions about sales today, this week or this month; payments received; customer balances; expenses; supplier balances; stock and reorder alerts; best-selling products; and gross profit. I use only records saved in this Hesabu workspace. Try one of the suggested questions.';
 }
+type SpeechRecognitionLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+};
+
 function FloatingAssistant({
   data, whatsappNumber, onWhatsAppNumberChange, onRecordSale, onRecordExpense, onUpdateStock, cloudMode,
 }: {
@@ -1159,6 +1169,8 @@ function FloatingAssistant({
 }) {
   const [panel, setPanel] = useState<'assistant' | 'digest' | null>(null);
   const [question, setQuestion] = useState('');
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
   const [digestError, setDigestError] = useState('');
   const digest = getDailyDigest(data);
@@ -1172,6 +1184,33 @@ function FloatingAssistant({
     setDigestError('');
     setPanel(current => current === next ? null : next);
   };
+  const startVoiceCapture = () => {
+    setVoiceError('');
+    const speechWindow = window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
+    const Recognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      setVoiceError('Voice typing is not supported in this browser. Use your keyboard microphone or type your question.');
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = 'en-KE';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.onresult = event => {
+      const transcript = Array.from(event.results).map(result => result[0]?.transcript || '').join(' ').trim();
+      if (transcript) setQuestion(transcript);
+    };
+    recognition.onerror = () => {
+      setVoiceListening(false);
+      setVoiceError('Could not capture speech. Check microphone permission and try again.');
+    };
+    recognition.onend = () => setVoiceListening(false);
+    setVoiceListening(true);
+    try { recognition.start(); } catch {
+      setVoiceListening(false);
+      setVoiceError('Microphone is busy. Try again in a moment.');
+    }
+  };
   const shareDigest = () => {
     setDigestError('');
     openDailyDigestWhatsApp(data, whatsappNumber, () => {
@@ -1183,7 +1222,7 @@ function FloatingAssistant({
     {panel === 'assistant' && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu assistant">
       <header className="assistant-drawer-header">
         <span className="assistant-drawer-mark"><HesabuMark /></span>
-        <span><strong>Hesabu assistant</strong><small>{cloudMode ? 'Answers from your saved business records' : 'Answers from this workspace'}</small></span>
+        <span><strong>Hesabu</strong><small>Business assistant · {cloudMode ? 'Your saved records' : 'This workspace'}</small></span>
         <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setPanel(null)}><X size={18} /></button>
       </header>
       <div className="assistant-drawer-body">
@@ -1206,8 +1245,10 @@ function FloatingAssistant({
           </div>
         </div>
       </div>
+      {voiceError && <p className="assistant-voice-error" role="status">{voiceError}</p>}
       <form className="assistant-drawer-entry" onSubmit={event => { event.preventDefault(); ask(question); }}>
-        <input aria-label="Ask Hesabu" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask about sales, stock or balances…" />
+        <button type="button" className={'assistant-voice-button ' + (voiceListening ? 'assistant-voice-active' : '')} aria-label={voiceListening ? 'Listening for your question' : 'Ask Hesabu by voice'} title={voiceListening ? 'Listening…' : 'Speak your question'} onClick={startVoiceCapture}><Mic size={17} /></button>
+        <input aria-label="Ask Hesabu" value={question} onChange={event => setQuestion(event.target.value)} placeholder={voiceListening ? 'Listening… speak now' : 'Ask or speak to Hesabu…'} />
         <button type="submit" aria-label="Send question" disabled={!question.trim()}><ArrowUpRight size={18} /></button>
       </form>
       <p className="assistant-drawer-note">{cloudMode
