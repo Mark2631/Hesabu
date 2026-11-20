@@ -840,9 +840,8 @@ function StockPickerDialog({ products, onClose, onAdjust }: {
 
 function HesabuMark({ className = '' }: { className?: string }) {
   return <svg className={'hesabu-quill-mark ' + className} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
-    <path d="M29.5 5.2C18.2 6.7 9.6 14 8.8 23.4c-.4 4.7 2.1 8 6.2 9.1 8-4.2 14.7-14.6 14.5-27.3Z" fill="currentColor" />
-    <path d="M8.1 35.2C13.2 27.1 19.8 18.1 28.7 7.3M13.4 27.6l-4.8-1.2m9.7-6.8-5.7-1.1m10.2-6.2-2.9-3.7" fill="none" stroke="#176b4c" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M6.8 36.1 10.6 32" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    <path d="M10 9v22M30 9v22M10 20h20" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M10 9h8M22 31h8" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
   </svg>;
 }
 
@@ -1147,14 +1146,14 @@ function FloatingAssistant({
 }) {
   const [panel, setPanel] = useState<'assistant' | 'digest' | null>(null);
   const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
   const [digestError, setDigestError] = useState('');
   const digest = getDailyDigest(data);
   const ask = (value: string) => {
     const clean = value.trim();
     if (!clean) return;
-    setQuestion(clean);
-    setAnswer(getWorkspaceAnswer(data, clean));
+    setMessages(current => [...current, { role: 'user', text: clean }, { role: 'assistant', text: getWorkspaceAnswer(data, clean) }]);
+    setQuestion('');
   };
   const togglePanel = (next: 'assistant' | 'digest') => {
     setDigestError('');
@@ -1166,19 +1165,25 @@ function FloatingAssistant({
       setDigestError('Enter a valid WhatsApp number to prepare this summary.');
     });
   };
-  const suggestions = ['How are sales doing?', 'What stock needs attention?', 'Who still owes us?'];
+  const suggestions = ['How much did we sell today?', 'How are sales this month?', 'Which products need restocking?', 'Who still owes us?', 'What are our expenses?', 'What is our gross profit?'];
   return <>
     {panel === 'assistant' && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu assistant">
       <header className="assistant-drawer-header">
         <span className="assistant-drawer-mark"><HesabuMark /></span>
-        <span><strong>{cloudMode ? 'Business insights' : 'Hesabu assistant'}</strong><small>{cloudMode ? 'Saved business records · Rules-based' : 'Answers from this workspace · Preview'}</small></span>
+        <span><strong>Hesabu assistant</strong><small>{cloudMode ? 'Answers from your saved business records' : 'Answers from this workspace'}</small></span>
         <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setPanel(null)}><X size={18} /></button>
       </header>
       <div className="assistant-drawer-body">
-        <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>{cloudMode
-          ? 'I can answer a small set of business questions using calculations from the records saved for this business.'
-          : 'I can summarise the sales, balances and stock records currently saved in this browser.'}</p></div>
-        <div className="assistant-suggestions">{suggestions.map(item => <button key={item} type="button" onClick={() => ask(item)}>{item}<ArrowRight size={13} /></button>)}</div>
+        {messages.length === 0 ? <>
+          <div className="assistant-welcome-message"><strong>What would you like to understand?</strong><p>I can explain sales, payments, customer balances, expenses, supplier obligations and stock using records saved in this workspace.</p></div>
+          <div className="assistant-suggestions">{suggestions.map(item => <button key={item} type="button" onClick={() => ask(item)}>{item}<ArrowRight size={13} /></button>)}</div>
+        </> : <div className="assistant-conversation" aria-live="polite">
+          {messages.map((message,index) => <div className={'assistant-message assistant-message-' + message.role} key={index}>
+            {message.role === 'assistant' && <span className="assistant-message-brand"><HesabuMark /></span>}
+            <p>{message.text}</p>
+          </div>)}
+          <div className="assistant-followups">{suggestions.slice(0,3).map(item => <button key={item} type="button" onClick={() => ask(item)}>{item}</button>)}</div>
+        </div>}
         <div className="assistant-quick-actions">
           <span>Record something</span>
           <div>
@@ -1187,15 +1192,14 @@ function FloatingAssistant({
             <button type="button" onClick={() => { setPanel(null); onUpdateStock(); }}><Package size={14} /> Stock</button>
           </div>
         </div>
-        {question && <div className="assistant-answer" aria-live="polite"><span className="assistant-question">{question}</span><p>{answer}</p></div>}
       </div>
       <form className="assistant-drawer-entry" onSubmit={event => { event.preventDefault(); ask(question); }}>
         <input aria-label="Ask Hesabu" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask about sales, stock or balances…" />
         <button type="submit" aria-label="Send question" disabled={!question.trim()}><ArrowUpRight size={18} /></button>
       </form>
       <p className="assistant-drawer-note">{cloudMode
-        ? 'These are fixed calculations against your saved records. Generative AI is not connected in this release.'
-        : 'This preview uses saved records and fixed queries. Generative AI is not connected yet.'}</p>
+        ? 'Answers are calculated from saved records. If a figure is missing, add the transaction first.'
+        : 'Answers use saved records and fixed calculations; no figures are invented.'}</p>
     </section>}
     {panel === 'digest' && <section className="assistant-drawer digest-drawer" role="dialog" aria-modal="false" aria-label="Daily WhatsApp digest">
       <header className="assistant-drawer-header">
