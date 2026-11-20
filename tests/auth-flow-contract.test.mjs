@@ -20,7 +20,7 @@ test('signup adopts a returned session or exchanges newly created credentials fo
   assert.match(authClient, /session = await signInWithPassword\(input\.email, input\.password\)/);
   assert.match(authClient, /writeSession\(session\)/);
   assert.match(authClient, /email_not_confirmed/);
-  assert.match(authClient, /We could not complete that request\\. Please try again\\./);
+  assert.match(authClient, /We could not complete that request\. Please try again\./);
   assert.doesNotMatch(authClient, /Supabase is still requiring email confirmation/);
   assert.equal(authClient.includes('Cloud request failed ('), false);
   assert.doesNotMatch(authClient, /Account creation did not return an active session/);
