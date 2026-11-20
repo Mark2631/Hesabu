@@ -2644,12 +2644,30 @@ function App() {
       if (!invited?.businesses) throw new Error('The invitation was accepted but the business could not be loaded.');
       setCloudAccount({ user: result.session.user, business: { id: invited.businesses.id, name: invited.businesses.name, industry: invited.businesses.industry } });
     } else {
-      savePendingOnboarding(input);
-      const businessId = await createBusiness(input);
-      await saveBusinessPreferences({ businessId, aiAssistantEnabled: false, whatsappDigestEnabled: input.whatsappDigestEnabled, whatsappRecipientPhone: input.whatsappRecipientPhone });
-      clearPendingOnboarding();
-      setWhatsAppNumber(input.whatsappRecipientPhone);
-      setCloudAccount({ user: result.session.user, business: { id: businessId, name: input.businessName, industry: input.industry || null } });
+      // Duplicate-signup recovery may have authenticated an existing account.
+      // Reuse its workspace instead of creating a second business.
+      const memberships = await listMyBusinesses();
+      const existingMembership = memberships.find(item => item.businesses?.id);
+      if (existingMembership?.businesses) {
+        clearPendingOnboarding();
+        setCloudAccount({
+          user: result.session.user,
+          business: {
+            id: existingMembership.businesses.id,
+            name: existingMembership.businesses.name,
+            industry: existingMembership.businesses.industry,
+          },
+        });
+      } else {
+        // Save locally before provisioning so a failed request can be resumed
+        // from sign-in or after a page refresh on this device.
+        savePendingOnboarding(input);
+        const businessId = await createBusiness(input);
+        await saveBusinessPreferences({ businessId, aiAssistantEnabled: false, whatsappDigestEnabled: input.whatsappDigestEnabled, whatsappRecipientPhone: input.whatsappRecipientPhone });
+        clearPendingOnboarding();
+        setWhatsAppNumber(input.whatsappRecipientPhone);
+        setCloudAccount({ user: result.session.user, business: { id: businessId, name: input.businessName, industry: input.industry || null } });
+      }
     }
     setAuthNotice('');
     setShowAuthScreen(false);
