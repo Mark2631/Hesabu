@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Hesabu">
   <rect width="64" height="64" rx="15" fill="#173c2a"/>
-  <path d="M47 9C29 11 15 23 14 39c-.5 8 3.2 13 10 15 13-7 23-23 23-45Z" fill="#ffffff"/>
-  <path d="M12 57C20 44 31 29 45 12M20 44l-8-2m16-11-9-2m17-11-4-6" fill="none" stroke="#173c2a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="m9 58 6-7" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  <path d="M20 13v38M44 13v38" fill="none" stroke="#f7f8f1" stroke-width="6" stroke-linecap="round"/>
+  <path d="M20 32h10M34 32h10" fill="none" stroke="#f7f8f1" stroke-width="6" stroke-linecap="round"/>
+  <path d="M26 21h12M26 43h12" fill="none" stroke="#a9c66c" stroke-width="2.8" stroke-linecap="round"/>
+  <circle cx="32" cy="32" r="3" fill="#c9dc72"/>
 </svg>
