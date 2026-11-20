@@ -18,6 +18,8 @@ test('public landing uses the requested shop photography instead of invented ope
 test('signup adopts a returned session or exchanges newly created credentials for one', () => {
   assert.match(authClient, /payload\.access_token \? normaliseSession\(payload\) : null/);
   assert.match(authClient, /session = await signInWithPassword\(input\.email, input\.password\)/);
+  assert.match(authClient, /error\.code !== 'user_already_exists'/);
+  assert.match(authClient, /return \{ session, user: session\.user \}/);
   assert.match(authClient, /writeSession\(session\)/);
   assert.match(authClient, /email_not_confirmed/);
   assert.match(authClient, /We could not complete that request\. Please try again\./);
@@ -26,6 +28,11 @@ test('signup adopts a returned session or exchanges newly created credentials fo
   assert.doesNotMatch(authClient, /Account creation did not return an active session/);
   assert.doesNotMatch(app, /setMessage\\(detail\\)/);
   assert.match(app, /We could not complete that request/);
+});
+
+test('signup recovery reuses an existing business instead of creating duplicates', () => {
+  assert.match(app, /const existingMembership = memberships\.find\(item => item\.businesses\?\.id\)/);
+  assert.match(app, /if \(existingMembership\?\.businesses\)/);
 });
 
 test('new account setup creates its business workspace without a second sign-in', () => {
