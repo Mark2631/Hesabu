@@ -1094,45 +1094,58 @@ function AuthPage({
 }
 
 function getWorkspaceAnswer(data: AppData, question: string) {
-  const query = question.toLowerCase();
-  const todayDigest = getDailyDigest(data);
-  const lastSevenDays = data.invoices.filter(invoice => invoice.date >= addDays(today(), -6) && invoice.date <= today());
-  const sevenDaySales = sum(lastSevenDays.map(invoice => invoice.total));
-  const averageDailySales = sevenDaySales / 7;
+  const query = question.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/ +/g, ' ').trim();
+  const digest = getDailyDigest(data);
+  const todayDate = today();
+  const weekStart = addDays(todayDate, -6);
+  const monthStart = todayDate.slice(0, 7) + '-01';
+  const invoices = data.invoices.filter(item => item.status !== 'draft');
+  const week = invoices.filter(item => item.date >= weekStart && item.date <= todayDate);
+  const month = invoices.filter(item => item.date >= monthStart && item.date <= todayDate);
+  const sales = (rows: Invoice[]) => sum(rows.map(item => item.total));
+  const unpaid = invoices.filter(item => invoiceBalance(item) > 0);
+  const unpaidTotal = sum(unpaid.map(invoiceBalance));
+  const lowStock = data.products.filter(item => item.quantity <= item.reorderLevel);
+  const outOfStock = data.products.filter(item => item.quantity <= 0);
+  if (/^(hi|hello|hey|habari|sasa|good morning|good afternoon|good evening|help|what can you do)$/.test(query))
+    return 'Hello. I’m Hesabu, your business-record assistant. I can explain sales, payments, customer balances, expenses, supplier balances, stock levels, best-selling products and gross profit using records saved in this workspace. Try asking: “How much did we sell this month?”';
   if (/stock|inventory|reorder|out of stock|product|slow mov/.test(query)) {
-    const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
-    const outOfStock = lowStock.filter(product => product.quantity <= 0);
-    const names = lowStock.slice(0, 4).map(product => product.name + ' (' + numberText(product.quantity) + ' ' + product.unit + ')');
-    return 'Stock check: ' + outOfStock.length + ' products are out of stock and ' + lowStock.length + ' are at or below their reorder point. ' +
-      (names.length ? 'Review: ' + names.join(', ') + '.' : 'No products are currently at or below their reorder point.') +
-      ' Stock value at cost is ' + money(sum(data.products.map(productValue))) + '.';
+    const names = lowStock.slice(0, 5).map(item => item.name + ' (' + numberText(item.quantity) + ' ' + item.unit + ')');
+    return 'There are ' + data.products.length + ' products recorded. ' + outOfStock.length + ' are out of stock and ' + lowStock.length + ' are at or below reorder level. ' + (names.length ? 'Needs attention: ' + names.join(', ') + '. ' : 'No products currently need restocking. ') + 'Stock value at cost is ' + money(sum(data.products.map(productValue))) + '.';
   }
-  if (/owe|debt|receivable|unpaid|customer balance|who.*pay/.test(query)) {
-    const due = data.invoices.filter(invoice => invoiceBalance(invoice) > 0).sort((a, b) => invoiceBalance(b) - invoiceBalance(a));
-    const names = due.slice(0, 3).map(invoice => invoice.customer + ' · ' + money(invoiceBalance(invoice)));
-    return 'Customer balances total ' + money(sum(due.map(invoiceBalance))) + ' across ' + due.length + ' unpaid invoices. ' +
-      (names.length ? 'Largest balances: ' + names.join('; ') + '.' : 'There are no unpaid customer invoices in the current records.');
+  if (/owe|debt|receivable|unpaid|customer balance|who.*pay|outstanding|credit sale/.test(query)) {
+    const names = unpaid.slice(0, 4).map(item => item.customer + ' (' + money(invoiceBalance(item)) + ')');
+    return 'Customers owe ' + money(unpaidTotal) + ' across ' + unpaid.length + ' unpaid invoices. ' + (names.length ? 'Largest balances: ' + names.join(', ') + '.' : 'There are no unpaid customer invoices in the current records.');
   }
   if (/expense|spend|spent|cost today/.test(query)) {
-    return 'Expenses recorded today total ' + money(todayDigest.expenseTotal) + '. Supplier payments were ' +
-      money(todayDigest.supplierPaymentTotal) + '. These are separate figures so supplier settlements are not mixed with operating expenses.';
+    const monthExpenses = data.expenses.filter(item => item.date >= monthStart && item.date <= todayDate);
+    return 'Expenses recorded today total ' + money(digest.expenseTotal) + '. Month-to-date operating expenses total ' + money(sum(monthExpenses.map(item => item.amount))) + '. Supplier payments are tracked separately.';
   }
-  if (/best sell|top sell|popular|fast mov/.test(query)) {
-    const cutoff = addDays(today(), -29);
-    const ranked = data.products.map(product => ({
-      product,
-      units: sum(data.invoices.filter(invoice => invoice.date >= cutoff && invoice.date <= today())
-        .flatMap(invoice => invoice.lines.filter(line => line.productId === product.id).map(line => line.quantity))),
-    })).filter(item => item.units > 0).sort((a, b) => b.units - a.units).slice(0, 3);
-    return ranked.length
-      ? 'Top sellers by units over the last 30 days: ' + ranked.map((item, index) => (index + 1) + '. ' + item.product.name + ' — ' + numberText(item.units) + ' ' + item.product.unit).join('; ') + '.'
-      : 'There are no recorded product sales in the last 30 days, so I cannot rank best sellers yet.';
+  if (/supplier|vendor|payable|we owe/.test(query)) {
+    const due = data.suppliers.filter(item => item.balance > 0).sort((a,b) => b.balance-a.balance);
+    return 'There are ' + data.suppliers.length + ' suppliers recorded. Outstanding supplier balances total ' + money(sum(due.map(item => item.balance))) + '. ' + (due.length ? 'Largest balances: ' + due.slice(0,4).map(item => item.name + ' (' + money(item.balance) + ')').join(', ') + '.' : 'No supplier balances are currently outstanding.');
   }
-  return 'Today: ' + money(todayDigest.salesTotal) + ' in sales across ' + todayDigest.sales.length + ' invoices, with gross profit of ' +
-    money(todayDigest.grossProfit) + '. The seven-day daily sales average is ' + money(averageDailySales) +
-    '. Ask about stock, unpaid customer balances, expenses or best-selling products for a more specific view.';
+  if (/best sell|top sell|popular|fast mov|most sold|best product/.test(query)) {
+    const cutoff = addDays(todayDate, -29);
+    const ranked = data.products.map(product => ({ product, units: sum(invoices.filter(invoice => invoice.date >= cutoff && invoice.date <= todayDate).flatMap(invoice => invoice.lines.filter(line => line.productId === product.id).map(line => line.quantity))) })).filter(item => item.units > 0).sort((a,b) => b.units-a.units).slice(0,5);
+    return ranked.length ? 'Top products by units sold in the last 30 days: ' + ranked.map((item,index) => (index+1) + '. ' + item.product.name + ' — ' + numberText(item.units) + ' ' + item.product.unit).join('; ') + '.' : 'No product sales are recorded in the last 30 days, so I cannot rank best sellers yet.';
+  }
+  if (/profit|margin|gross/.test(query)) {
+    const rows = /month|monthly/.test(query) ? month : week;
+    return 'Estimated gross profit for ' + (/month|monthly/.test(query) ? 'this month' : 'the last 7 days') + ' is ' + money(sum(rows.map(calculateGrossProfit))) + ' from ' + money(sales(rows)) + ' in recorded sales. This is before operating expenses, not net profit.';
+  }
+  if (/payment|cash received|collected|collection|mpesa|m pesa/.test(query))
+    return 'Payments received today total ' + money(digest.receivedTotal) + '. There are ' + data.payments.filter(item => item.status === 'pending').length + ' pending payment records. Customer balances still outstanding total ' + money(unpaidTotal) + '.';
+  if (/month|monthly/.test(query))
+    return 'Month-to-date sales are ' + money(sales(month)) + ' across ' + month.length + ' invoices. Outstanding customer balances are ' + money(unpaidTotal) + '. Recorded expenses this month total ' + money(sum(data.expenses.filter(item => item.date >= monthStart && item.date <= todayDate).map(item => item.amount))) + '.';
+  if (/week|weekly|last 7|seven day/.test(query))
+    return 'Over the last 7 days, sales total ' + money(sales(week)) + ' across ' + week.length + ' invoices. Daily average: ' + money(sales(week)/7) + '. Gross profit: ' + money(sum(week.map(calculateGrossProfit))) + '.';
+  if (/today|daily|how are sales|sales doing|sales summary|revenue/.test(query))
+    return 'Today: ' + money(digest.salesTotal) + ' in sales across ' + digest.sales.length + ' invoices. Payments received: ' + money(digest.receivedTotal) + '. Gross profit: ' + money(digest.grossProfit) + '. Seven-day daily sales average: ' + money(sales(week)/7) + '.';
+  if (/invoice|customer/.test(query))
+    return 'There are ' + invoices.length + ' recorded invoices. ' + unpaid.length + ' still have a balance, totalling ' + money(unpaidTotal) + '. Ask “Who still owes us?” for the largest balances.';
+  return 'I can answer questions about sales today, this week or this month; payments received; customer balances; expenses; supplier balances; stock and reorder alerts; best-selling products; and gross profit. I use only records saved in this Hesabu workspace. Try one of the suggested questions.';
 }
-
 function FloatingAssistant({
   data, whatsappNumber, onWhatsAppNumberChange, onRecordSale, onRecordExpense, onUpdateStock, cloudMode,
 }: {
