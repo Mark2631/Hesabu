@@ -277,6 +277,31 @@ export async function signUpWithPassword(input: SignUpInput): Promise<{ session:
   return { session, user: user ?? session.user };
 }
 
+export async function sendPasswordRecoveryEmail(email: string): Promise<void> {
+  const redirect = new URL(window.location.origin + window.location.pathname);
+  redirect.searchParams.set('password-reset', '1');
+  await request<unknown>('auth/v1/recover?redirect_to=' + encodeURIComponent(redirect.toString()), {
+    method: 'POST',
+    body: { email: email.trim().toLowerCase() },
+    accessToken: publishableKey,
+  });
+}
+
+export async function updatePasswordFromRecovery(password: string): Promise<void> {
+  const recovery = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const accessToken = recovery.get('access_token');
+  const type = recovery.get('type');
+  if (!accessToken || type !== 'recovery') {
+    throw new SupabaseRequestError('This password reset link is invalid or has expired. Request a new one.', 400, 'invalid_recovery_link');
+  }
+  await request<unknown>('auth/v1/user', {
+    method: 'PUT',
+    body: { password },
+    accessToken,
+  });
+  window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+}
+
 export async function signOut(): Promise<void> {
   const current = await validSession();
   if (current) {
