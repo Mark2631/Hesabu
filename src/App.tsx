@@ -840,8 +840,10 @@ function StockPickerDialog({ products, onClose, onAdjust }: {
 
 function HesabuMark({ className = '' }: { className?: string }) {
   return <svg className={'hesabu-quill-mark ' + className} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
-    <path d="M10 9v22M30 9v22M10 20h20" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M10 9h8M22 31h8" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    <path d="M9 8.5v23M31 8.5v23" fill="none" stroke="currentColor" strokeWidth="4.2" strokeLinecap="round" />
+    <path d="M9 19.8h8.2M22.8 19.8H31" fill="none" stroke="currentColor" strokeWidth="4.2" strokeLinecap="round" />
+    <path d="M17.2 13.5h5.6M17.2 26.2h5.6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" opacity=".72" />
+    <circle cx="20" cy="19.8" r="2.1" fill="#c9dc72" />
   </svg>;
 }
 
@@ -858,7 +860,7 @@ function PublicLandingPage({
       <div className="public-header-inner">
         <a className="public-brand" href="#top" aria-label="Hesabu home">
           <span className="brand-mark"><HesabuMark /></span>
-          <span>hesabu<span>.</span></span>
+          <span>Hesabu</span>
         </a>
         <nav className="public-nav" aria-label="Main navigation">
           <a href="#product">Product</a>
@@ -3492,7 +3494,7 @@ function App() {
     navigate('settings');
     notify('Add a WhatsApp destination', 'Enter your business WhatsApp number in Settings before preparing the daily summary.');
   };
-  if (cloudRestoring) return <main className="auth-page"><section className="cloud-account-card cloud-loading-card"><span className="brand-mark"><HesabuMark /></span><h1>Hesabu</h1><p>Checking your secure business session…</p></section></main>;
+  if (cloudRestoring) return <main className="auth-page"><section className="cloud-account-card cloud-loading-card"><span className="brand-mark"><HesabuMark /></span><h1>Hesabu</h1><p>Getting your business ready…</p></section></main>;
   if (cloudAccount && !cloudWorkspaceReady) return <main className="auth-page">
     <section className="cloud-account-card cloud-loading-card">
       <span className="brand-mark"><HesabuMark /></span><h1>{cloudAccount.business.name}</h1>
@@ -3582,7 +3584,7 @@ function App() {
       </header>
 
       <div className="page-container">
-        {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>Saved workspace · Read only</strong> · This device is showing its last synced records. Reconnect to post sales, payments and stock changes safely.</span></div>}
+        {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>You’re offline.</strong> You can still view your saved records. Connect to the internet to record new sales, payments or stock changes.</span></div>}
         {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} cloudMode={Boolean(cloudAccount)} />}
