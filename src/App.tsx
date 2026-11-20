@@ -4,7 +4,7 @@ import {
   Bell, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown,
   ChevronRight, CircleDollarSign, Clock3, Download,
   FileCheck2, FileSpreadsheet, FileText, Filter, LayoutDashboard, Link2, MessageCircle, Moon, Sun,
-  Menu, MoreHorizontal, Mic, MicOff, Package, PanelLeftClose, Plus, Receipt,
+  Menu, MoreHorizontal, Mic, Package, PanelLeftClose, Plus, Receipt,
   Search, Send, Settings, ShieldCheck, ShoppingCart, Smartphone,
   Store, TrendingDown, TrendingUp, Truck, Wallet, X, LogOut,
   type LucideIcon,
