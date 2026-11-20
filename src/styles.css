@@ -3783,3 +3783,56 @@ html[data-theme="light"] { color-scheme:light; }
   .floating-tools-dock .assistant-launcher, .floating-whatsapp-launcher { width:50px; height:50px; }
   .assistant-drawer { right:10px !important; width:calc(100vw - 20px); bottom:calc(max(14px, env(safe-area-inset-bottom)) + 60px) !important; max-height:calc(100dvh - 95px - env(safe-area-inset-bottom)); min-height:320px; }
 }
+
+
+/* Hesabu identity and mobile assistant placement. Keep the primary navigation clear. */
+.hesabu-quill-mark { width:22px; height:22px; }
+.topbar-brand-name {
+  display:flex;
+  flex-direction:column;
+  color:#17231b;
+  font-family:'DM Sans',sans-serif;
+  font-size:16px;
+  font-weight:800;
+  line-height:1;
+  letter-spacing:-.055em;
+}
+.topbar-brand-name small {
+  margin-top:4px;
+  color:#829087;
+  font-size:7px;
+  font-weight:750;
+  letter-spacing:.14em;
+}
+.public-brand > span:last-child { color:#173c2a; letter-spacing:-.045em; }
+.floating-tools-dock .assistant-launcher { display:grid !important; }
+.assistant-drawer { display:flex !important; }
+.floating-tools-dock {
+  z-index:110 !important;
+  pointer-events:auto !important;
+}
+.assistant-drawer { z-index:109 !important; }
+.assistant-launcher { touch-action:manipulation; }
+@media (max-width:700px) {
+  .floating-tools-dock {
+    right:max(12px,env(safe-area-inset-right)) !important;
+    bottom:calc(88px + env(safe-area-inset-bottom)) !important;
+    gap:8px;
+  }
+  .floating-tools-dock .assistant-launcher,
+  .floating-tools-dock .floating-whatsapp-launcher {
+    width:48px;
+    height:48px;
+  }
+  .assistant-drawer {
+    right:10px !important;
+    bottom:calc(148px + env(safe-area-inset-bottom)) !important;
+    width:calc(100vw - 20px);
+    max-height:calc(100dvh - 175px - env(safe-area-inset-bottom));
+    min-height:300px;
+  }
+}
+@media (prefers-reduced-motion:reduce) {
+  .cloud-loading-card::after,
+  .assistant-drawer-entry .assistant-voice-active { animation:none !important; }
+}
