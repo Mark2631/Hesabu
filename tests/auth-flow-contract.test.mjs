@@ -15,9 +15,12 @@ test('public landing uses the requested shop photography instead of invented ope
   assert.doesNotMatch(app, /SAMPLE DATA|KSh 48,250|KSh 35,600|KSh 4,850|HS-0021/);
 });
 
-test('signup adopts the session returned by Supabase immediately', () => {
-  assert.match(authClient, /writeSession\(session\);\s*return \{ session, user: payload\.user \?\? session\.user \}/);
-  assert.doesNotMatch(authClient, /writeSession\(null\);\s*return \{ session: null/);
+test('signup adopts a returned session or exchanges newly created credentials for one', () => {
+  assert.match(authClient, /payload\.access_token \? normaliseSession\(payload\) : null/);
+  assert.match(authClient, /session = await signInWithPassword\(input\.email, input\.password\)/);
+  assert.match(authClient, /writeSession\(session\)/);
+  assert.match(authClient, /email_not_confirmed/);
+  assert.doesNotMatch(authClient, /Account creation did not return an active session/);
 });
 
 test('new account setup creates its business workspace without a second sign-in', () => {
