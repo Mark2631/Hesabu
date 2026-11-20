@@ -2462,7 +2462,7 @@ function App() {
   const [offlineMode, setOfflineMode] = useState(!navigator.onLine);
   const [authNotice, setAuthNotice] = useState('');
   const [showAuthScreen, setShowAuthScreen] = useState(false);
-  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
+  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => capturePendingTeamInvitation());
   const [whatsappNumber, setWhatsAppNumber] = useState('');
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -2498,6 +2498,8 @@ function App() {
   useEffect(() => {
     let active = true;
     const restore = async () => {
+      const recovery = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('type') === 'recovery';
+      if (recovery) { setAuthInitialMode('reset'); setShowAuthScreen(true); return; }
       const result = await restoreCloudSession();
       if (!active) return;
       const token = readPendingTeamInvitation();
@@ -2677,6 +2679,10 @@ function App() {
     }
     setAuthNotice('');
     setShowAuthScreen(false);
+  };
+  const handleCloudPasswordReset = async (email: string, password: string) => {
+    await updatePasswordFromRecovery(password);
+    await handleCloudSignIn(email, password);
   };
   const handleCloudSignOut = async () => {
     await signOut();
@@ -3457,6 +3463,7 @@ function App() {
   if (!cloudAccount) return <AuthPage
     onSignIn={handleCloudSignIn}
     onSignUp={handleCloudSignUp}
+    onResetPassword={handleCloudPasswordReset}
     initialMessage={authNotice}
     initialMode={authInitialMode}
     initialEmail=""
