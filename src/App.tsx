@@ -27,7 +27,7 @@ import {
   listMyBusinesses, postCloudExpense, postCloudPayment, postCloudSale,
   postCloudSupplierPayment, postCloudUnmatchedReceipt, matchCloudUnmatchedReceipt, receiveCloudPurchaseOrder, restoreCloudSession,
   saveBusinessPreferences, saveCloudBusinessProfile, saveCloudWhatsAppDestination, updateCloudBusinessMember, revokeCloudBusinessInvitation,
-  signInWithPassword, signOut, signUpWithPassword,
+  sendPasswordRecoveryEmail, signInWithPassword, signOut, signUpWithPassword, updatePasswordFromRecovery,
   type SignUpInput, type SupabaseUser,
 } from './lib/supabase';
 import type {
@@ -958,16 +958,17 @@ function PublicLandingPage({
 }
 
 function AuthPage({
-  onSignIn, onSignUp, initialMessage, initialMode, initialEmail, onBack, inviteMode = false,
+  onSignIn, onSignUp, onResetPassword, initialMessage, initialMode, initialEmail, onBack, inviteMode = false,
 }: {
   onSignIn: (email: string, password: string) => Promise<void>;
   onSignUp: (input: SignUpInput) => Promise<void>;
+  onResetPassword: (email: string, password: string) => Promise<void>;
   initialMessage?: string;
   initialMode: 'signin' | 'signup';
   initialEmail?: string;
   onBack: () => void; inviteMode?: boolean;
 }) {
-  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
+  const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>(initialMode);
   const [fullName, setFullName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [industry, setIndustry] = useState('Retail / shop');
@@ -997,6 +998,8 @@ function AuthPage({
     try {
       if (mode === 'signin') {
         await onSignIn(email, password);
+      } else if (mode === 'reset') {
+        await onResetPassword(email, password);
       } else {
         if (!fullName.trim() || (!inviteMode && !businessName.trim())) {
           setMessage('Enter your name and business name to continue.');
@@ -1042,13 +1045,13 @@ function AuthPage({
         <button type="button" className="auth-back-button" onClick={onBack}><ChevronRight size={13} /> Back to Hesabu</button>
         <div className="auth-copy">
           <span className="auth-kicker">BUSINESS, IN BALANCE</span>
-          <h1>{inviteMode ? (mode === 'signin' ? 'Sign in to join your team.' : 'Create your team account.') : (mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.')}</h1>
-          <p>{inviteMode ? 'Use the email address this invitation was sent to. Your access activates when you accept the invitation.' : 'Sales, payments, stock and business performance in one calm workspace.'}</p>
+          <h1>{mode === 'reset' ? 'Choose a new password.' : inviteMode ? (mode === 'signin' ? 'Sign in to join your team.' : 'Create your team account.') : (mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.')}</h1>
+          <p>{mode === 'reset' ? 'Enter the email address for your account and choose a new password.' : inviteMode ? 'Use the email address this invitation was sent to. Your access activates when you accept the invitation.' : 'Sales, payments, stock and business performance in one calm workspace.'}</p>
         </div>
-        <div className="auth-tabs" role="tablist" aria-label="Account access">
+        {mode !== 'reset' && <div className="auth-tabs" role="tablist" aria-label="Account access">
           <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setMessage(''); }}>Sign in</button>
           <button type="button" role="tab" aria-selected={mode === 'signup'} className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setMessage(''); }}>Create account</button>
-        </div>
+        </div>}
         <form className="auth-form" onSubmit={submit}>
           {mode === 'signup' && <>
             <label className="auth-field"><span>Your full name</span><input autoComplete="name" value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Name of the business owner" required /></label>
@@ -1064,7 +1067,7 @@ function AuthPage({
             </>}
           </>}
           <label className="auth-field"><span>Email address</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
-          <label className="auth-field"><span>Password</span><span className="auth-password-wrap"><input type={showPassword ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /><button type="button" className="auth-password-toggle" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></span></label>
+          <label className="auth-field"><span>{mode === 'reset' ? 'New password' : 'Password'}</span><span className="auth-password-wrap"><input type={showPassword ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /><button type="button" className="auth-password-toggle" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></span></label>
           {mode === 'signup' && !inviteMode && <section className="auth-preferences" aria-label="Optional business preferences">
             <div className="auth-preferences-heading"><strong>How should Hesabu support your daily work?</strong><small>These options work together. Manual entry is always available.</small></div>
             <div className="auth-preference-manual"><span><strong>Manual records</strong><small>Record sales, payments, expenses and stock yourself.</small></span><span>Always on</span></div>
@@ -1074,7 +1077,9 @@ function AuthPage({
             </label>
             {whatsappDigestEnabled && <label className="auth-field auth-whatsapp-field"><span>WhatsApp destination</span><input type="tel" inputMode="tel" value={whatsappRecipientPhone} onChange={event => setWhatsappRecipientPhone(event.target.value)} placeholder="2547XXXXXXXX" required /></label>}
           </section>}
-          <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
+          {mode === 'signin' && <button type="button" className="auth-forgot-link" onClick={async () => { if (!email.trim()) { setMessage('Enter your email address first.'); return; } setBusy(true); setMessage(''); try { await sendPasswordRecoveryEmail(email); setMessage('If an account exists for that email, a password reset link has been sent. Check your inbox.'); } catch { setMessage('We could not send the reset email. Check the address and try again.'); } finally { setBusy(false); } }}>Forgot password?</button>}
+          <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : mode === 'reset' ? 'Save new password' : 'Create account'} <ArrowRight size={15} /></Button>
+          {mode === 'reset' && <button type="button" className="auth-forgot-link" onClick={() => { setMode('signin'); setMessage(''); }}>Back to sign in</button>}
         </form>
         {message && <p className="auth-message" role="status">{message}</p>}
         <p className="auth-footnote">{inviteMode ? "The invitation is single-use and tied to the invited email address." : "Your business records are stored in your secure Hesabu account and are separate from every other business."}</p>
