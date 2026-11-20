@@ -26,7 +26,7 @@ test('the app exposes the native install prompt and handles completed installati
 });
 
 test('service worker caches the application shell, generated hero image and offline navigation', () => {
-  assert.match(serviceWorker, /hesabu-shell-v8/);
+  assert.match(serviceWorker, /hesabu-shell-v9/);
   assert.match(serviceWorker, /hesabu-shop-owner\.webp/);
   assert.match(serviceWorker, /request\.mode === 'navigate'/);
   assert.match(serviceWorker, /caches\.match\('\/'\)/);
