@@ -3736,3 +3736,50 @@ html[data-theme="light"] { color-scheme:light; }
   .public-photo-visual { width:100%; }
   .assistant-message p { font-size:11px; }
 }
+
+
+/* Keep the assistant reachable above mobile browser and device safe areas. */
+.floating-tools-dock {
+  position:fixed !important;
+  right:max(16px, env(safe-area-inset-right)) !important;
+  bottom:max(18px, env(safe-area-inset-bottom)) !important;
+  z-index:999 !important;
+  visibility:visible !important;
+  opacity:1 !important;
+  pointer-events:auto !important;
+}
+.floating-tools-dock button { pointer-events:auto; touch-action:manipulation; }
+.assistant-drawer {
+  right:max(16px, env(safe-area-inset-right)) !important;
+  bottom:calc(max(18px, env(safe-area-inset-bottom)) + 66px) !important;
+  z-index:998 !important;
+  max-height:calc(100dvh - 115px - env(safe-area-inset-bottom));
+}
+.assistant-drawer-entry { align-items:center; }
+.assistant-drawer-entry .assistant-voice-button {
+  display:grid;
+  place-items:center;
+  width:42px;
+  height:42px;
+  flex:0 0 42px;
+  border:1px solid #dce7df;
+  border-radius:10px;
+  background:#f7faf7;
+  color:#176b4c;
+}
+.assistant-drawer-entry .assistant-voice-button:hover,
+.assistant-drawer-entry .assistant-voice-active {
+  border-color:#176b4c;
+  background:#e9f4ed;
+  color:#105337;
+}
+.assistant-drawer-entry .assistant-voice-active { animation:hesabu-mic-pulse 1.2s ease-in-out infinite; }
+.assistant-voice-error { margin:0; padding:7px 14px 0; color:#a34e42; font-size:10px; line-height:1.45; }
+@keyframes hesabu-mic-pulse { 50% { box-shadow:0 0 0 5px rgba(23,107,76,.12); } }
+.topbar-brand-lockup > span:last-child > strong { display:block; font-size:16px; line-height:1; font-weight:800; color:#17231b; letter-spacing:-.055em; }
+.topbar-brand-lockup > span:last-child > strong > span { color:#176b4c; }
+@media (max-width:640px) {
+  .floating-tools-dock { right:12px !important; bottom:max(14px, env(safe-area-inset-bottom)) !important; gap:8px; }
+  .floating-tools-dock .assistant-launcher, .floating-whatsapp-launcher { width:50px; height:50px; }
+  .assistant-drawer { right:10px !important; width:calc(100vw - 20px); bottom:calc(max(14px, env(safe-area-inset-bottom)) + 60px) !important; max-height:calc(100dvh - 95px - env(safe-area-inset-bottom)); min-height:320px; }
+}
