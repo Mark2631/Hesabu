@@ -1012,19 +1012,19 @@ function AuthPage({
         setMessage('Account created. Opening your business workspace…');
       }
     } catch (error) {
-      const detail = error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.';
-      const normalised = detail.toLowerCase();
-      if (normalised.includes('already registered') || normalised.includes('already exists')) {
+      const code = error instanceof Error && 'code' in error ? String((error as Error & { code?: string }).code ?? '') : '';
+      const status = error instanceof Error && 'status' in error ? Number((error as Error & { status?: number }).status ?? 0) : 0;
+      if (code === 'user_already_exists') {
         setMode('signin');
-        setMessage('An account may already exist for this email address. Try signing in with your existing password instead.');
-      } else if (normalised.includes('invalid login credentials') || normalised.includes('invalid credentials')) {
+        setMessage('An account may already exist for this email address. Try signing in instead.');
+      } else if (code === 'invalid_credentials' || status === 400) {
         setMessage('The email or password is incorrect. Check both details and try again.');
-      } else if (normalised.includes('email not confirmed')) {
-        setMessage('Account access could not be completed. Please try again shortly.');
-      } else if (normalised.includes('over_email_send_rate_limit') || normalised.includes('rate limit') || normalised.includes('after 35 seconds') || normalised.includes('email_address_not_authorized')) {
-        setMessage('Account setup is temporarily unavailable. Please try again shortly.');
+      } else if (code === 'email_not_confirmed' || code === 'session_not_created' || code === 'account_setup_failed') {
+        setMessage('We could not complete account setup. Please try again. If the problem continues, contact Hesabu support.');
+      } else if (status === 0) {
+        setMessage('Connection problem. Check your internet connection and try again.');
       } else {
-        setMessage(detail);
+        setMessage('We could not complete that request. Please check your details and try again.');
       }
     } finally {
       setBusy(false);
