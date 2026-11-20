@@ -10,21 +10,22 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
+import { addBusinessDays, businessDate, formatBusinessDate, formatBusinessDateTime, formatBusinessDay } from './business-time';
 const EMPTY_WORKSPACE_DATA: AppData = {
   profile: {
     name: 'Your business', legalName: '', owner: '', email: '', phone: '',
     location: '', currency: 'KES', taxPin: '', industry: 'Other',
   },
   products: [], invoices: [], payments: [], unmatchedReceipts: [], expenses: [],
-  cashMovements: [], suppliers: [], purchaseOrders: [], teamMembers: [], teamInvitations: [], journal: [],
+  cashMovements: [], inventoryMovements: [], suppliers: [], purchaseOrders: [], teamMembers: [], teamInvitations: [], journal: [],
   events: [], openingBalances: { cash: 0, mpesa: 0, bank: 0, inventory: 0 },
   nextInvoice: 1001, nextPurchaseOrder: 1,
 };
 import {
-  acceptCloudBusinessInvitation, adjustCloudStock, completeAuthCallback, createBusiness, createCloudProduct, createCloudSupplier, createCloudBusinessInvitation,
+  acceptCloudBusinessInvitation, adjustCloudStock, createBusiness, createCloudProduct, createCloudSupplier, createCloudBusinessInvitation,
   createCloudPurchaseOrder, getBusinessSettings, getCloudWorkspace,
   listMyBusinesses, postCloudExpense, postCloudPayment, postCloudSale,
-  postCloudSupplierPayment, receiveCloudPurchaseOrder, restoreCloudSession,
+  postCloudSupplierPayment, postCloudUnmatchedReceipt, matchCloudUnmatchedReceipt, receiveCloudPurchaseOrder, restoreCloudSession,
   saveBusinessPreferences, saveCloudBusinessProfile, saveCloudWhatsAppDestination, updateCloudBusinessMember, revokeCloudBusinessInvitation,
   signInWithPassword, signOut, signUpWithPassword,
   type SignUpInput, type SupabaseUser,
@@ -90,22 +91,11 @@ const money = (value: number) => new Intl.NumberFormat('en-KE', {
 }).format(Math.round(value || 0)).replace('KES', 'KSh');
 
 const numberText = (value: number) => new Intl.NumberFormat('en-KE', { maximumFractionDigits: 0 }).format(value || 0);
-const dateKey = (date: Date) => {
-  const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return shifted.toISOString().slice(0, 10);
-};
-const today = () => dateKey(new Date());
-const addDays = (source: string, amount: number) => {
-  const date = new Date(source + 'T12:00:00');
-  date.setDate(date.getDate() + amount);
-  return dateKey(date);
-};
-const dateLabel = (value: string) => new Date(value + 'T12:00:00').toLocaleDateString('en-KE', {
-  day: 'numeric', month: 'short', year: 'numeric',
-});
-const dateTimeLabel = (value: string) => new Date(value).toLocaleString('en-KE', {
-  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-});
+const dateKey = businessDate;
+const today = () => businessDate(new Date());
+const addDays = addBusinessDays;
+const dateLabel = (value: string) => formatBusinessDate(value);
+const dateTimeLabel = (value: string) => formatBusinessDateTime(value);
 const makeId = (prefix: string) => prefix + '-' + Math.random().toString(36).slice(2, 9).toUpperCase();
 const channelLabel = (channel: PaymentChannel) => ({
   mpesa: 'M-Pesa', cash: 'Cash', bank: 'Bank transfer', card: 'Card', credit: 'On credit',
@@ -701,7 +691,7 @@ function ReceiptDialog({ onClose, onCreate }: {
   const [phone, setPhone] = useState('');
   const [reference, setReference] = useState('');
   const [amount, setAmount] = useState('');
-  return <Modal title="Record a payment received" detail="Record a customer payment and link it to the correct sale." onClose={onClose}>
+  return <Modal title="Record a payment received" detail="Capture a receipt that arrived without a clear invoice allocation. Match it after saving." onClose={onClose}>
     <form className="modal-body" onSubmit={event => {
       event.preventDefault();
       const value = Number(amount);
@@ -725,7 +715,7 @@ function ReceiptDialog({ onClose, onCreate }: {
         <Field label="Payer name" value={payer} onChange={setPayer} placeholder="Name shown on the receipt" />
         <Field label="Payer phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
       </div>
-      <div className="demo-notice"><ShieldCheck size={16} /><span><strong>Receipt capture only</strong><small>This records the receipt so it can be matched to the correct customer sale.</small></span></div>
+      <div className="demo-notice"><ShieldCheck size={16} /><span><strong>Manual receipt record</strong><small>This does not verify the payment with Safaricom or the bank. It records the reference you checked.</small></span></div>
       <div className="modal-footer">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button type="submit" disabled={!reference.trim() || Number(amount) <= 0}><Plus size={15} /> Save receipt</Button>
@@ -857,10 +847,12 @@ function HesabuMark({ className = '' }: { className?: string }) {
 }
 
 function PublicLandingPage({
-  onSignIn, onCreateAccount,
+  onSignIn, onCreateAccount, onInstall, appInstalled,
 }: {
   onSignIn: () => void;
   onCreateAccount: () => void;
+  onInstall: () => void;
+  appInstalled: boolean;
 }) {
   return <div className="public-site">
     <header className="public-header">
@@ -876,6 +868,7 @@ function PublicLandingPage({
           <a href="#trust">Your records</a>
         </nav>
         <div className="public-header-actions">
+          {!appInstalled && <button type="button" className="public-install-action" onClick={onInstall}><Download size={14} /> Install</button>}
           <button type="button" className="public-signin" onClick={onSignIn}>Sign in</button>
           <button type="button" className="public-get-started" onClick={onCreateAccount}>Get started <ArrowRight size={15} /></button>
         </div>
@@ -890,26 +883,16 @@ function PublicLandingPage({
           <p>Hesabu brings daily sales, payments, stock, expenses and customer balances into one clear business record. Spend less time chasing scattered notes and more time making informed decisions.</p>
           <div className="public-hero-actions">
             <button type="button" className="public-primary-action" onClick={onCreateAccount}>Create your business account <ArrowRight size={16} /></button>
+            <a className="public-explore-action" href="#product">Explore features</a>
           </div>
           <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
         </div>
-        <div className="public-hero-visual" aria-label="Illustrative Hesabu business overview">
-          <div className="public-visual-top">
-            <div><span>BUSINESS OVERVIEW</span><strong>Today at a glance</strong></div>
-            <span className="public-visual-date">SAMPLE DATA</span>
+        <div className="public-hero-visual public-photo-visual">
+          <img src="/hesabu-shop-owner.webp" alt="A shop owner reviewing business records on her phone at the counter" width="800" height="450" fetchPriority="high" />
+          <div className="public-photo-caption">
+            <span>BUILT AROUND EVERYDAY BUSINESS</span>
+            <strong>From the counter to a clearer picture.</strong>
           </div>
-          <div className="public-visual-metrics">
-            <div><span>Sales recorded</span><strong>KSh 48,250</strong><small>Today's activity</small></div>
-            <div><span>Payments received</span><strong>KSh 35,600</strong><small>Matched collections</small></div>
-            <div><span>Operating expenses</span><strong>KSh 4,850</strong><small>Recorded today</small></div>
-            <div><span>Stock alerts</span><strong>3 items</strong><small>Need a closer look</small></div>
-          </div>
-          <div className="public-visual-activity">
-            <div><span className="public-activity-dot"></span><span><strong>Sale recorded</strong><small>Counter sale · 10:42 AM</small></span><b>KSh 2,400</b></div>
-            <div><span className="public-activity-dot public-activity-blue"></span><span><strong>Stock updated</strong><small>Flour · Goods received</small></span><b>+12 bags</b></div>
-            <div><span className="public-activity-dot public-activity-amber"></span><span><strong>Customer balance</strong><small>Invoice HS-0021 · Due today</small></span><b>KSh 1,800</b></div>
-          </div>
-          <p className="public-visual-footnote">Illustrative figures shown for product demonstration.</p>
         </div>
       </section>
 
@@ -975,12 +958,13 @@ function PublicLandingPage({
 }
 
 function AuthPage({
-  onSignIn, onSignUp, initialMessage, initialMode, onBack, inviteMode = false,
+  onSignIn, onSignUp, initialMessage, initialMode, initialEmail, onBack, inviteMode = false,
 }: {
   onSignIn: (email: string, password: string) => Promise<void>;
-  onSignUp: (input: SignUpInput) => Promise<'confirm_email' | void>;
+  onSignUp: (input: SignUpInput) => Promise<void>;
   initialMessage?: string;
   initialMode: 'signin' | 'signup';
+  initialEmail?: string;
   onBack: () => void; inviteMode?: boolean;
 }) {
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
@@ -997,7 +981,8 @@ function AuthPage({
 
   useEffect(() => {
     setMode(initialMode);
-  }, [initialMode]);
+    if (initialEmail) setEmail(initialEmail);
+  }, [initialMode, initialEmail]);
 
   useEffect(() => {
     if (initialMessage) setMessage(initialMessage);
@@ -1020,16 +1005,27 @@ function AuthPage({
           setMessage('Enter a valid WhatsApp number, including the Kenyan country code or a local mobile number.');
           return;
         }
-        const result = await onSignUp({
+        await onSignUp({
           fullName, businessName: inviteMode ? '' : businessName, industry: inviteMode ? '' : industry, phone: inviteMode ? '' : phone, email, password,
           aiAssistantEnabled: false, whatsappDigestEnabled: inviteMode ? false : whatsappDigestEnabled, whatsappRecipientPhone: inviteMode ? '' : whatsappRecipientPhone,
         });
-        if (result === 'confirm_email') {
-          setMessage('Your account has been created. Check your email for the confirmation link, then return here to sign in.');
-        }
+        setMessage('Account created. Opening your business workspace…');
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Hesabu could not complete that request. Try again.');
+      const code = error instanceof Error && 'code' in error ? String((error as Error & { code?: string }).code ?? '') : '';
+      const status = error instanceof Error && 'status' in error ? Number((error as Error & { status?: number }).status ?? 0) : 0;
+      if (code === 'user_already_exists') {
+        setMode('signin');
+        setMessage('An account may already exist for this email address. Try signing in instead.');
+      } else if (code === 'invalid_credentials' || status === 400) {
+        setMessage('The email or password is incorrect. Check both details and try again.');
+      } else if (code === 'email_not_confirmed' || code === 'session_not_created' || code === 'account_setup_failed') {
+        setMessage('We could not complete account setup. Please try again. If the problem continues, contact Hesabu support.');
+      } else if (status === 0) {
+        setMessage('Connection problem. Check your internet connection and try again.');
+      } else {
+        setMessage('We could not complete that request. Please check your details and try again.');
+      }
     } finally {
       setBusy(false);
     }
@@ -1046,7 +1042,7 @@ function AuthPage({
         <div className="auth-copy">
           <span className="auth-kicker">BUSINESS, IN BALANCE</span>
           <h1>{inviteMode ? (mode === 'signin' ? 'Sign in to join your team.' : 'Create your team account.') : (mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.')}</h1>
-          <p>{inviteMode ? 'Use the email address this invitation was sent to. Your access activates after email verification.' : 'Sales, payments, stock and business performance in one calm workspace.'}</p>
+          <p>{inviteMode ? 'Use the email address this invitation was sent to. Your access activates when you accept the invitation.' : 'Sales, payments, stock and business performance in one calm workspace.'}</p>
         </div>
         <div className="auth-tabs" role="tablist" aria-label="Account access">
           <button type="button" role="tab" aria-selected={mode === 'signin'} className={mode === 'signin' ? 'active' : ''} onClick={() => { setMode('signin'); setMessage(''); }}>Sign in</button>
@@ -1066,7 +1062,7 @@ function AuthPage({
             <label className="auth-field"><span>Business phone <small>(optional)</small></span><input type="tel" autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="07XX XXX XXX" /></label>
             </>}
           </>}
-          <label className="auth-field"><span>Business email</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
+          <label className="auth-field"><span>Email address</span><input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@business.com" required /></label>
           <label className="auth-field"><span>Password</span><input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" minLength={8} required /></label>
           {mode === 'signup' && !inviteMode && <section className="auth-preferences" aria-label="Optional business preferences">
             <div className="auth-preferences-heading"><strong>How should Hesabu support your daily work?</strong><small>These options work together. Manual entry is always available.</small></div>
@@ -1080,7 +1076,7 @@ function AuthPage({
           <Button type="submit" block disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight size={15} /></Button>
         </form>
         {message && <p className="auth-message" role="status">{message}</p>}
-        <p className="auth-footnote">{inviteMode ? "The invitation is single-use and tied to the invited, verified email address." : "Your business records are stored in your secure Hesabu account and are separate from every other business."}</p>
+        <p className="auth-footnote">{inviteMode ? "The invitation is single-use and tied to the invited email address." : "Your business records are stored in your secure Hesabu account and are separate from every other business."}</p>
       </div>
       <aside className="auth-aside">
         <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">BUSINESS OPERATIONS</span></div>
@@ -1250,15 +1246,21 @@ function FloatingAssistant({
   </>;
 }
 
-function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice, onRecordExpense, onRecordPayment, onQuickStock }: {
-  data: AppData; metrics: ReturnType<typeof getMetrics>; onCreateSale: () => void;
-  onNavigate: (section: ModuleKey) => void; onSelectInvoice: (id: string) => void; onRecordExpense: () => void;
-  onRecordPayment: () => void; onCreatePurchase: () => void; onQuickStock: () => void;
+function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNavigate, onSelectInvoice, onRecordExpense, onRecordPayment, onRecordReceipt, onCreatePurchase, onQuickStock }: {
+  data: AppData; metrics: ReturnType<typeof getMetrics>; role: TeamRole;
+  onCreateSale: () => void; onCreateProduct: () => void;
+  onNavigate: (section: ModuleKey) => void; onSelectInvoice: (id: string) => void;
+  onRecordExpense: () => void; onRecordPayment: () => void; onRecordReceipt: () => void;
+  onCreatePurchase: () => void; onQuickStock: () => void;
 }) {
   const chartDays = Array.from({ length: 7 }, (_, index) => addDays(today(), index - 6));
-  const chartValues = chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
-  const chartLabels = chartDays.map(day => new Date(day + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }));
-  const recentInvoices = [...data.invoices].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const stockProducts = [...data.products].sort((a, b) => b.quantity - a.quantity).slice(0, 7);
+  const chartValues = role === 'Inventory'
+    ? stockProducts.map(product => product.quantity)
+    : chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
+  const chartLabels = role === 'Inventory'
+    ? stockProducts.map(product => product.name.length > 9 ? product.name.slice(0, 8) + '…' : product.name)
+    : chartDays.map(day => formatBusinessDay(day, { weekday: 'short' }));
   const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
   const zeroStock = data.products.filter(product => product.quantity === 0);
   const slowStock = data.products.filter(product => product.quantity > 0 && !data.invoices.some(invoice =>
@@ -1266,86 +1268,151 @@ function OverviewPage({ data, metrics, onCreateSale, onNavigate, onSelectInvoice
   ));
   const unsettled = data.invoices.filter(invoice => invoiceBalance(invoice) > 0)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
+
+  type RecentActivity = {
+    id: string; title: string; detail: string; time: string;
+    amount: number | null; direction: 'in' | 'out' | 'neutral';
+    invoiceId?: string; label?: string;
+  };
+  const activity: RecentActivity[] = [
+    ...data.payments.filter(payment => payment.status === 'succeeded').map(payment => ({
+      id: 'payment-' + payment.id,
+      title: payment.customer || 'Customer payment',
+      detail: (payment.invoiceNumber ? payment.invoiceNumber + ' · ' : '') + channelLabel(payment.channel) +
+        (payment.reference && payment.reference !== '—' ? ' · ' + shortRef(payment.reference) : ''),
+      time: payment.createdAt, amount: payment.amount, direction: 'in' as const, invoiceId: payment.invoiceId,
+    })),
+    ...data.expenses.map(expense => ({
+      id: 'expense-' + expense.id, title: expense.description || 'Business expense',
+      detail: expense.category + ' · ' + channelLabel(expense.channel),
+      time: expense.date + 'T12:00:00', amount: expense.amount, direction: 'out' as const,
+    })),
+    ...(data.cashMovements ?? []).filter(movement => movement.direction === 'out').map(movement => ({
+      id: 'movement-' + movement.id, title: movement.description || 'Business payment',
+      detail: movement.source === 'supplier_payment' ? 'Supplier payment · ' + (movement.reference || channelLabel(movement.channel)) : channelLabel(movement.channel),
+      time: movement.date + 'T12:00:00', amount: movement.amount, direction: 'out' as const,
+    })),
+    ...data.invoices.filter(invoice => invoice.total > 0 && invoice.paid === 0).map(invoice => ({
+      id: 'credit-' + invoice.id, title: invoice.customer || 'Credit sale',
+      detail: invoice.number + ' · Sale on credit', time: invoice.date + 'T12:00:00',
+      amount: invoice.total, direction: 'neutral' as const, invoiceId: invoice.id, label: 'On credit',
+    })),
+    ...(role === 'Inventory' ? data.purchaseOrders.map(order => ({
+      id: 'order-' + order.id, title: order.supplierName || 'Supplier order',
+      detail: order.number + ' · ' + order.status.replaceAll('_', ' '),
+      time: order.createdAt + 'T12:00:00', amount: order.total,
+      direction: 'neutral' as const, label: 'Purchase order',
+    })) : []),
+  ].sort((a, b) => b.time.localeCompare(a.time)).slice(0, 7);
+
+  const quickActions: Array<{ label: string; icon: LucideIcon; run: () => void }> =
+    role === 'Owner' || role === 'Manager' ? [
+      { label: 'Sale', icon: ArrowUpRight, run: onCreateSale },
+      { label: 'Expense', icon: ArrowDownLeft, run: onRecordExpense },
+      { label: 'Payment', icon: Wallet, run: onRecordPayment },
+      { label: 'Stock', icon: Package, run: onQuickStock },
+    ] : role === 'Sales' ? [
+      { label: 'Sale', icon: ArrowUpRight, run: onCreateSale },
+      { label: 'Payment', icon: Wallet, run: onRecordPayment },
+      { label: 'Receipt', icon: ArrowDownLeft, run: onRecordReceipt },
+      { label: 'Follow up', icon: Receipt, run: () => onNavigate('sales') },
+    ] : role === 'Inventory' ? [
+      { label: 'Add item', icon: Package, run: onCreateProduct },
+      { label: 'Count stock', icon: Boxes, run: onQuickStock },
+      { label: 'Purchase', icon: ShoppingCart, run: onCreatePurchase },
+      { label: 'Suppliers', icon: Truck, run: () => onNavigate('procurement') },
+    ] : [
+      { label: 'Expense', icon: ArrowDownLeft, run: onRecordExpense },
+      { label: 'Payment', icon: Wallet, run: onRecordPayment },
+      { label: 'Receipt', icon: ArrowDownLeft, run: onRecordReceipt },
+      { label: 'Reports', icon: BarChart3, run: () => onNavigate('reports') },
+    ];
+
+  const heroTitle = role === 'Sales' ? 'Sales recorded today' : role === 'Inventory' ? 'Stock at cost' : 'Business cash position';
+  const heroValue = role === 'Sales' ? metrics.salesToday : role === 'Inventory' ? metrics.inventoryValue : metrics.cashPosition;
+  const heroDetail = role === 'Sales' ? 'Customer sales entered today'
+    : role === 'Inventory' ? 'Recorded value of stock on hand'
+    : 'Recorded cash, M-Pesa, bank and card balances';
+
   return <div className="page-stack">
     <div className="overview-welcome">
       <div><div className="eyebrow">BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Your business, at a glance.</p></div>
       <div className="overview-welcome-actions"><span className="date-chip"><CalendarDays size={14} /> {dateLabel(today())}</span></div>
     </div>
-    <section className="finance-balance-hero" aria-label="Business balance">
+    <section className="finance-balance-hero" aria-label={heroTitle}>
       <div className="finance-balance-top">
-        <div><span>Business cash position</span><small>Recorded cash, M-Pesa, bank and card balances</small></div>
+        <div><span>{heroTitle}</span><small>{heroDetail}</small></div>
         <span className="finance-balance-mark"><Wallet size={20} /></span>
       </div>
-      <strong className="finance-balance-value">{money(metrics.cashPosition)}</strong>
+      <strong className="finance-balance-value">{money(heroValue)}</strong>
       <div className="finance-balance-actions" aria-label="Quick business actions">
-        <button type="button" onClick={onCreateSale}><span><ArrowUpRight size={19} /></span><strong>Sale</strong></button>
-        <button type="button" onClick={onRecordExpense}><span><ArrowDownLeft size={19} /></span><strong>Expense</strong></button>
-        <button type="button" onClick={onRecordPayment}><span><Wallet size={19} /></span><strong>Payment</strong></button>
-        <button type="button" onClick={onQuickStock}><span><Package size={19} /></span><strong>Stock</strong></button>
+        {quickActions.map(({ label, icon: Icon, run }) => <button type="button" key={label} onClick={run}>
+          <span><Icon size={19} /></span><strong>{label}</strong>
+        </button>)}
       </div>
     </section>
+    <SectionCard title="Recent transactions" detail="Money in, money out and the latest business activity." action={<button className="text-link" onClick={() => onNavigate(role === 'Inventory' ? 'procurement' : 'payments')}>See all <ArrowRight size={13} /></button>}>
+      {activity.length ? <div className="recent-activity-list">
+        {activity.map(item => <button type="button" className="recent-activity-row" key={item.id}
+          onClick={() => item.invoiceId ? onSelectInvoice(item.invoiceId) : onNavigate(role === 'Inventory' ? 'procurement' : item.direction === 'out' ? 'accounts' : 'payments')}>
+          <span className={'recent-activity-icon ' + (item.direction === 'in' ? 'is-in' : item.direction === 'out' ? 'is-out' : 'is-neutral')}>
+            {item.direction === 'in' ? <ArrowDownLeft size={17} /> : item.direction === 'out' ? <ArrowUpRight size={17} /> : <Receipt size={17} />}
+          </span>
+          <span className="recent-activity-copy"><strong>{item.title}</strong><small>{item.detail} · {dateTimeLabel(item.time)}</small></span>
+          <span className={'recent-activity-amount ' + (item.direction === 'in' ? 'positive' : item.direction === 'out' ? 'negative' : '')}>
+            {item.label ?? ((item.direction === 'out' ? '−' : item.direction === 'in' ? '+' : '') + money(item.amount ?? 0))}
+          </span>
+        </button>)}
+      </div> : <EmptyState title="No transactions yet" body="Sales, receipts and operating payments will appear here once your team records them." action={role === 'Sales' || role === 'Owner' || role === 'Manager' ? <Button onClick={onCreateSale}>Record a sale</Button> : undefined} />}
+    </SectionCard>
     <section className="daily-summary-section" aria-label="Daily business figures">
-      <div className="daily-summary-heading"><h3>Business at a glance</h3><span>Today's figures</span></div>
+      <div className="daily-summary-heading"><h3>{role === 'Inventory' ? 'Inventory at a glance' : role === 'Sales' ? 'Sales at a glance' : 'Business at a glance'}</h3><span>Today's figures</span></div>
       <div className="daily-summary-grid">
-        <div className="daily-summary-item daily-summary-sales">
-          <div className="daily-summary-top"><span>Sales today</span><span className="daily-summary-icon"><TrendingUp size={16} /></span></div>
-          <strong>{money(metrics.salesToday)}</strong>
-          <small>Recorded customer sales</small>
-        </div>
-        <div className="daily-summary-item daily-summary-expenses">
-          <div className="daily-summary-top"><span>Payments received</span><span className="daily-summary-icon"><ArrowDownLeft size={16} /></span></div>
-          <strong>{money(metrics.collectedToday)}</strong>
-          <small>Customer payments recorded</small>
-        </div>
-        <div className="daily-summary-item daily-summary-stock">
-          <div className="daily-summary-top"><span>Expenses today</span><span className="daily-summary-icon"><TrendingDown size={16} /></span></div>
-          <strong>{money(sum(data.expenses.filter(expense => expense.date === today()).map(expense => expense.amount)))}</strong>
-          <small>Business costs recorded</small>
-        </div>
-        <div className="daily-summary-item daily-summary-payables">
-          <div className="daily-summary-top"><span>Stock alerts</span><span className="daily-summary-icon"><Package size={16} /></span></div>
-          <strong>{numberText(lowStock.length)}</strong>
-          <small>Products at reorder level</small>
-        </div>
+        {role === 'Inventory' ? <>
+          <div className="daily-summary-item daily-summary-sales"><div className="daily-summary-top"><span>Products</span><span className="daily-summary-icon"><Package size={16} /></span></div><strong>{numberText(data.products.length)}</strong><small>Active inventory items</small></div>
+          <div className="daily-summary-item daily-summary-stock"><div className="daily-summary-top"><span>Stock alerts</span><span className="daily-summary-icon"><AlertTriangle size={16} /></span></div><strong>{numberText(lowStock.length)}</strong><small>At or below reorder level</small></div>
+          <div className="daily-summary-item daily-summary-expenses"><div className="daily-summary-top"><span>Out of stock</span><span className="daily-summary-icon"><Package size={16} /></span></div><strong>{numberText(zeroStock.length)}</strong><small>Unavailable to sell</small></div>
+          <div className="daily-summary-item daily-summary-payables"><div className="daily-summary-top"><span>Stock at cost</span><span className="daily-summary-icon"><Wallet size={16} /></span></div><strong>{money(metrics.inventoryValue)}</strong><small>Current stock valuation</small></div>
+        </> : <>
+          <div className="daily-summary-item daily-summary-sales"><div className="daily-summary-top"><span>Sales today</span><span className="daily-summary-icon"><TrendingUp size={16} /></span></div><strong>{money(metrics.salesToday)}</strong><small>Recorded customer sales</small></div>
+          <div className="daily-summary-item daily-summary-expenses"><div className="daily-summary-top"><span>Payments received</span><span className="daily-summary-icon"><ArrowDownLeft size={16} /></span></div><strong>{money(metrics.collectedToday)}</strong><small>Customer payments recorded</small></div>
+          {role !== 'Sales' && <div className="daily-summary-item daily-summary-stock"><div className="daily-summary-top"><span>Expenses today</span><span className="daily-summary-icon"><TrendingDown size={16} /></span></div><strong>{money(sum(data.expenses.filter(expense => expense.date === today()).map(expense => expense.amount)))}</strong><small>Business costs recorded</small></div>}
+          <div className="daily-summary-item daily-summary-payables"><div className="daily-summary-top"><span>{role === 'Sales' ? 'Open invoices' : 'Stock alerts'}</span><span className="daily-summary-icon"><Package size={16} /></span></div><strong>{numberText(role === 'Sales' ? metrics.unpaidInvoices : lowStock.length)}</strong><small>{role === 'Sales' ? money(metrics.receivables) + ' awaiting collection' : 'Products at reorder level'}</small></div>
+        </>}
       </div>
     </section>
+    <SectionCard title={role === 'Inventory' ? 'Stock by item' : 'Sales trend'} detail={role === 'Inventory' ? 'Current units on hand across the largest stock lines.' : 'Recorded sales over the last seven days.'}>
+      <div className="chart-summary"><strong>{role === 'Inventory' ? numberText(sum(chartValues)) + ' units' : money(sum(chartValues))}</strong><span>{role === 'Inventory' ? 'Top stock lines' : 'Last 7 days'}</span></div>
+      {chartValues.length ? <MiniBars values={chartValues} labels={chartLabels} /> : <EmptyState title="No stock items yet" body="Products will appear here after the first inventory item is added." />}
+    </SectionCard>
     <div className="content-grid content-grid-main">
-      <SectionCard title="Sales trend" detail="Recorded sales over the last seven days.">
-        <div className="chart-summary"><strong>{money(sum(chartValues))}</strong><span>Last 7 days</span></div>
-        <MiniBars values={chartValues} labels={chartLabels} />
-      </SectionCard>
-      <SectionCard title="Stock watch" detail="Products that could interrupt sales or tie up cash.">
-        <div className="stock-watch-list">
-          <button onClick={() => onNavigate('inventory')}><span><strong>Out of stock</strong><small>Products unavailable to sell</small></span><b>{zeroStock.length}</b></button>
-          <button onClick={() => onNavigate('inventory')}><span><strong>Reorder soon</strong><small>At or below the reorder point</small></span><b>{lowStock.length}</b></button>
-          <button onClick={() => onNavigate('inventory')}><span><strong>Slow stock</strong><small>No recorded sale in 30 days</small></span><b>{slowStock.length}</b></button>
-        </div>
-        <button className="text-link stock-watch-link" onClick={() => onNavigate('inventory')}>Review inventory <ArrowRight size={13} /></button>
-      </SectionCard>
-    </div>
-    <div className="content-grid content-grid-main">
-      <SectionCard title="Recent sales" detail="The latest activity across your sales channels." action={<button className="text-link" onClick={() => onNavigate('sales')}>All sales <ArrowRight size={13} /></button>}>
-        {recentInvoices.length ? <DataTable headers={['Sale', 'Customer', 'Date', 'Status', 'Total']}>
-          {recentInvoices.map(invoice => <tr key={invoice.id} className="clickable-row" onClick={() => onSelectInvoice(invoice.id)}>
-            <td><strong>{invoice.number}</strong><small className="cell-sub">{sourceLabel(invoice.source)}</small></td>
-            <td>{invoice.customer}</td><td>{dateLabel(invoice.date)}</td>
-            <td><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill></td>
-            <td className="amount-cell">{money(invoice.total)}</td>
-          </tr>)}
-        </DataTable> : <EmptyState title="No sales yet" body="Record the first sale to start building your business record." action={<Button onClick={onCreateSale}>Record a sale</Button>} />}
-      </SectionCard>
-      <SectionCard title="Customer follow-up" detail="Sales where payment is still outstanding.">
+      {role === 'Sales' ? <SectionCard title="Customer follow-up" detail="Customer balances requiring attention.">
         {unsettled.length ? <div className="followup-list">
           {unsettled.map(invoice => <button key={invoice.id} onClick={() => onSelectInvoice(invoice.id)}>
             <span><strong>{invoice.customer}</strong><small>{invoice.number} · Due {dateLabel(invoice.dueDate)}</small></span>
             <strong>{money(invoiceBalance(invoice))}</strong>
           </button>)}
         </div> : <EmptyState title="No balances to follow up" body="Unpaid and part-paid sales will appear here." />}
-      </SectionCard>
+      </SectionCard> : role === 'Finance' ? <SectionCard title="Collections & obligations" detail="Customer and supplier balances that require attention.">
+        <div className="working-capital-list">
+          <div><span>Customer receivables</span><strong>{money(metrics.receivables)}</strong></div>
+          <div><span>Open customer invoices</span><strong>{numberText(metrics.unpaidInvoices)}</strong></div>
+          <div><span>Supplier payables</span><strong className="negative-text">{money(metrics.payables)}</strong></div>
+          <div><span>Unapplied customer advances</span><strong>{money(metrics.customerAdvances)}</strong></div>
+        </div>
+        <button className="text-link stock-watch-link" onClick={() => onNavigate('accounts')}>Review financial records <ArrowRight size={13} /></button>
+      </SectionCard> : <SectionCard title="Stock watch" detail="Products that could interrupt sales or tie up cash.">
+        <div className="stock-watch-list">
+          <button onClick={() => onNavigate('inventory')}><span><strong>Out of stock</strong><small>Products unavailable to sell</small></span><b>{zeroStock.length}</b></button>
+          <button onClick={() => onNavigate('inventory')}><span><strong>Reorder soon</strong><small>At or below the reorder point</small></span><b>{lowStock.length}</b></button>
+          {role !== 'Inventory' && <button onClick={() => onNavigate('inventory')}><span><strong>Slow stock</strong><small>No recorded sale in 30 days</small></span><b>{slowStock.length}</b></button>}
+        </div>
+        <button className="text-link stock-watch-link" onClick={() => onNavigate('inventory')}>Review inventory <ArrowRight size={13} /></button>
+      </SectionCard>}
     </div>
+    
   </div>;
 }
-
 function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
   data: AppData; search: string; onSearch: (value: string) => void; onCreateSale: () => void; onSelectInvoice: (id: string) => void;
 }) {
@@ -1400,7 +1467,7 @@ function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onRes
   const unmatchedValue = sum(unmatched.map(receipt => receipt.amount));
   return <div className="page-stack">
     <PageHeader title="Payments" description="See what customers have paid and what still needs your attention." actions={<>
-      {!cloudMode && <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Record receipt</Button>}
+      <Button variant="outline" onClick={onAddReceipt}><Plus size={15} /> Record receipt</Button>
       <Button onClick={onRequestPayment}><Plus size={15} /> {cloudMode ? 'Record payment' : 'Request payment'}</Button>
     </>} />
     <div className="metric-grid metric-grid-four compact-metrics">
@@ -1420,14 +1487,12 @@ function PaymentsPage({ data, metrics, search, onSearch, onRequestPayment, onRes
         <div className="channel-total"><span>Total recorded funds</span><strong>{money(metrics.cashPosition)}</strong></div>
       </SectionCard>
       <SectionCard title="Receipts to match" detail="Payments received that still need to be linked to a customer sale.">
-        {cloudMode
-          ? <EmptyState title="Receipt matching is not connected" body="Hesabu can record payments against invoices. M-Pesa statement imports and automatic receipt matching are not enabled yet." />
-          : unmatched.length ? <div className="attention-list">
-            {unmatched.slice(0, 4).map(receipt => <button key={receipt.id} onClick={() => onMatchReceipt(receipt.id)}>
-              <span><strong>{receipt.payer || 'Unidentified payer'}</strong><small>{receipt.rail} · {shortRef(receipt.reference)}</small></span>
-              <strong>{money(receipt.amount)}</strong><span className="table-action">Match</span>
-            </button>)}
-          </div> : <EmptyState title="All receipts matched" body="New receipts that need a customer match will appear here." />}
+        {unmatched.length ? <div className="attention-list">
+          {unmatched.slice(0, 6).map(receipt => <button key={receipt.id} onClick={() => onMatchReceipt(receipt.id)}>
+            <span><strong>{receipt.payer || 'Unidentified payer'}</strong><small>{receipt.rail} · {shortRef(receipt.reference)}</small></span>
+            <strong>{money(receipt.amount)}</strong><span className="table-action">Match</span>
+          </button>)}
+        </div> : <EmptyState title="All receipts matched" body="Record a receipt when money arrives without a clear invoice allocation. It will appear here until it is allocated." />}
       </SectionCard>
     </div>
     <SectionCard title="Payment activity" detail="Collections recorded against customer sales.">
@@ -1459,9 +1524,11 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
   const [view, setView] = useState<'all' | 'attention' | 'slow'>('all');
   const since = addDays(today(), -30);
   const soldByProduct = new Map<string, number>();
-  data.invoices.filter(invoice => invoice.date >= since).forEach(invoice => invoice.lines.forEach(line => {
-    soldByProduct.set(line.productId, (soldByProduct.get(line.productId) ?? 0) + line.quantity);
-  }));
+  data.inventoryMovements
+    .filter(movement => movement.type === 'sale' && dateKey(new Date(movement.occurredAt)) >= since)
+    .forEach(movement => {
+      soldByProduct.set(movement.productId, (soldByProduct.get(movement.productId) ?? 0) + Math.abs(movement.quantityDelta));
+    });
   const incomingByProduct = new Map<string, number>();
   data.purchaseOrders.filter(order => order.status === 'sent' || order.status === 'partially_received')
     .forEach(order => order.lines.forEach(line => {
@@ -1548,6 +1615,21 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
           </tr>;
         })}
       </DataTable> : <EmptyState title="No products match" body="Change the search or choose another stock view." />}
+    </SectionCard>
+    <SectionCard title="Stock movement history" detail="Opening stock, sales, deliveries, count adjustments and returns.">
+      {data.inventoryMovements.length ? <DataTable headers={['When', 'Product', 'Movement', 'Quantity', 'Reference', 'Note', 'Value']}>
+        {data.inventoryMovements.slice(0, 20).map(movement => <tr key={movement.id}>
+          <td>{dateTimeLabel(movement.occurredAt)}</td>
+          <td><strong>{movement.productName}</strong></td>
+          <td><StatusPill status={movement.type === 'sale' ? 'pending' : movement.type === 'adjustment' ? 'draft' : 'delivered'}>{movement.type.replaceAll('_', ' ')}</StatusPill></td>
+          <td className={movement.quantityDelta < 0 ? 'negative-text' : 'amount-cell'}>
+            {movement.quantityDelta > 0 ? '+' : ''}{new Intl.NumberFormat('en-KE', { maximumFractionDigits: 3 }).format(movement.quantityDelta)}
+          </td>
+          <td className="mono-text">{movement.reference || '—'}</td>
+          <td>{movement.note || movement.source || '—'}</td>
+          <td>{money(movement.totalCost)}</td>
+        </tr>)}
+      </DataTable> : <EmptyState title="No stock movements yet" body="Opening stock, sales, received deliveries and stock counts will be recorded here automatically." />}
     </SectionCard>
   </div>;
 }
@@ -1836,17 +1918,62 @@ function downloadDailyWorkbook(data: AppData) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: { data: AppData; metrics: ReturnType<typeof getMetrics>; whatsappNumber: string; onWhatsAppUnavailable: () => void }) {
-  const [period, setPeriod] = useState<'week' | 'month'>('week');
-  const days = period === 'week' ? 7 : 30;
-  const dayRows = Array.from({ length: days }, (_, index) => {
-    const date = addDays(today(), index - (days - 1));
-    const invoices = data.invoices.filter(invoice => invoice.date === date);
-    return { date, sales: sum(invoices.map(invoice => invoice.total)), cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))) };
+function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, role }: {
+  data: AppData; metrics: ReturnType<typeof getMetrics>; whatsappNumber: string;
+  onWhatsAppUnavailable: () => void; role: TeamRole;
+}) {
+  const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
+  const todayDate = today();
+  const currentMonthStart = todayDate.slice(0, 7) + '-01';
+  const yearStart = todayDate.slice(0, 4) + '-01-01';
+  const startDate = period === 'week' ? addDays(todayDate, -6) : period === 'month' ? currentMonthStart : yearStart;
+  const elapsedDays = Math.max(1, Math.floor((Date.parse(todayDate + 'T12:00:00Z') - Date.parse(startDate + 'T12:00:00Z')) / 86400000) + 1);
+  const periodLabel = period === 'week' ? 'Weekly' : period === 'month' ? 'Monthly' : 'Yearly';
+
+  const weeklyRows = Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(todayDate, index - 6);
+    const invoices = data.invoices.filter(invoice => invoice.date === date && invoice.date <= todayDate);
+    return {
+      key: date,
+      label: formatBusinessDay(date, { weekday: 'short' }),
+      title: dateLabel(date),
+      sales: sum(invoices.map(invoice => invoice.total)),
+      cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))),
+    };
   });
-  const filteredInvoices = data.invoices.filter(invoice => invoice.date >= addDays(today(), -(days - 1)) && invoice.date <= today());
+  const monthYear = Number(todayDate.slice(0, 4));
+  const monthNumber = Number(todayDate.slice(5, 7));
+  const monthDayCount = new Date(Date.UTC(monthYear, monthNumber, 0)).getUTCDate();
+  const monthlyWeekRows = Array.from({ length: Math.ceil(monthDayCount / 7) }, (_, index) => {
+    const firstDay = index * 7 + 1;
+    const lastDay = Math.min(monthDayCount, firstDay + 6);
+    const bucketStart = todayDate.slice(0, 7) + '-' + String(firstDay).padStart(2, '0');
+    const bucketEnd = todayDate.slice(0, 7) + '-' + String(lastDay).padStart(2, '0');
+    const invoices = data.invoices.filter(invoice => invoice.date >= bucketStart && invoice.date <= bucketEnd && invoice.date <= todayDate);
+    return {
+      key: bucketStart,
+      label: firstDay + '–' + lastDay,
+      title: dateLabel(bucketStart) + ' to ' + dateLabel(bucketEnd),
+      sales: sum(invoices.map(invoice => invoice.total)),
+      cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))),
+    };
+  });
+  const monthlyRows = Array.from({ length: 12 }, (_, index) => {
+    const month = String(index + 1).padStart(2, '0');
+    const key = todayDate.slice(0, 4) + '-' + month;
+    const invoices = data.invoices.filter(invoice => invoice.date.slice(0, 7) === key && invoice.date <= todayDate);
+    return {
+      key,
+      label: formatBusinessDay(key + '-01', { month: 'short' }),
+      title: formatBusinessDay(key + '-01', { month: 'long', year: 'numeric' }),
+      sales: sum(invoices.map(invoice => invoice.total)),
+      cost: sum(invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity)))),
+    };
+  });
+  const dayRows = period === 'week' ? weeklyRows : period === 'month' ? monthlyWeekRows : monthlyRows;
+  const filteredInvoices = data.invoices.filter(invoice => invoice.date >= startDate && invoice.date <= todayDate);
   const sales = sum(filteredInvoices.map(invoice => invoice.total));
-  const averageDailySales = sales / days;
+  const averageDailySales = sales / elapsedDays;
   const averageOrderValue = filteredInvoices.length ? sales / filteredInvoices.length : 0;
   const unitsSoldInPeriod = sum(filteredInvoices.flatMap(invoice => invoice.lines.map(line => line.quantity)));
   const grossProfitInPeriod = sum(filteredInvoices.map(marginValue));
@@ -1860,47 +1987,53 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: {
     return { product, unitsSold, netSales, itemCost, grossProfit: netSales - itemCost,
       marginRate: netSales > 0 ? ((netSales - itemCost) / netSales) * 100 : 0 };
   }).filter(item => item.unitsSold > 0).sort((a, b) => b.grossProfit - a.grossProfit).slice(0, 10);
-  const max = Math.max(1, ...dayRows.map(row => row.sales));
+  const max = Math.max(1, ...dayRows.flatMap(row => [row.sales, row.cost]));
+  const digest = getDailyDigest(data);
+
   return <div className="page-stack">
-    <PageHeader title="Reports" description="A practical view of sales, margin, cash movement and inventory value." actions={<Button variant="outline" onClick={() => window.print()}><Download size={15} /> Print report</Button>} />
+    <PageHeader title="Analytics" description="Understand sales, margin, customer balances and business performance." actions={<Button variant="outline" onClick={() => window.print()}><Download size={15} /> Print report</Button>} />
     <SectionCard title="Today's business digest" detail="Daily operations, with clear numbers and downloadable records." className="daily-digest-print">
       <div className="daily-digest-metrics">
-        <div><span>Sales today</span><strong>{money(getDailyDigest(data).salesTotal)}</strong><small>{getDailyDigest(data).sales.length} sales recorded</small></div>
-        <div><span>Payments received</span><strong>{money(getDailyDigest(data).receivedTotal)}</strong><small>Matched and unmatched receipts</small></div>
-        <div><span>Expenses</span><strong>{money(getDailyDigest(data).expenseTotal)}</strong><small>Operating expenses recorded</small></div>
-        <div><span>Gross profit</span><strong>{money(getDailyDigest(data).grossProfit)}</strong><small>After recorded product cost</small></div>
+        <div><span>Sales today</span><strong>{money(digest.salesTotal)}</strong><small>{digest.sales.length} sales recorded</small></div>
+        <div><span>Payments received</span><strong>{money(digest.receivedTotal)}</strong><small>Matched and unmatched receipts</small></div>
+        {role !== 'Sales' && <div><span>Expenses</span><strong>{money(digest.expenseTotal)}</strong><small>Operating expenses recorded</small></div>}
+        <div><span>Gross profit</span><strong>{money(digest.grossProfit)}</strong><small>After recorded product cost</small></div>
       </div>
       <div className="daily-digest-lower">
-        <span>{money(getDailyDigest(data).supplierPaymentTotal)} supplier payments</span>
-        <span>{numberText(getDailyDigest(data).unitsSold)} units sold</span>
-        <span>{numberText(getDailyDigest(data).purchaseOrders.length)} supplier orders raised</span>
-        <span>{numberText(getDailyDigest(data).inventoryActivity.length)} stock updates</span>
-        <span>{numberText(getDailyDigest(data).lowStock.length)} products at reorder level</span>
+        {role !== 'Sales' && <span>{money(digest.supplierPaymentTotal)} supplier payments</span>}
+        <span>{numberText(digest.unitsSold)} units sold</span>
+        {role !== 'Sales' && <span>{numberText(digest.purchaseOrders.length)} supplier orders raised</span>}
+        {(role === 'Owner' || role === 'Manager') && <span>{numberText(digest.inventoryActivity.length)} stock updates</span>}
+        <span>{numberText(digest.lowStock.length)} products at reorder level</span>
       </div>
       <div className="daily-digest-actions">
         <Button variant="outline" onClick={() => downloadDailyWorkbook(data)}><FileSpreadsheet size={16} /> Download Excel workbook</Button>
         <Button variant="outline" onClick={() => window.print()}><FileText size={16} /> Save as PDF</Button>
         <Button onClick={() => openDailyDigestWhatsApp(data, whatsappNumber, onWhatsAppUnavailable)}><MessageCircle size={16} /> Prepare WhatsApp summary</Button>
       </div>
-      <p className="daily-digest-note">The workbook is generated from the latest records loaded for this business. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery requires the WhatsApp Business API and a secure server connection.</p>
+      <p className="daily-digest-note">The workbook is generated from the latest records loaded for this business. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery is not enabled.</p>
     </SectionCard>
     <div className="metric-grid metric-grid-six compact-metrics">
-      <MetricCard label="Sales recorded" value={money(sales)} note={filteredInvoices.length + ' invoices · ' + days + ' days'} icon={TrendingUp} tone="green" />
+      <MetricCard label="Sales recorded" value={money(sales)} note={filteredInvoices.length + ' invoices · ' + periodLabel.toLowerCase()} icon={TrendingUp} tone="green" />
       <MetricCard label="Average daily sales" value={money(averageDailySales)} note="Includes days with no sales" icon={BarChart3} tone="green" />
       <MetricCard label="Average sale" value={money(averageOrderValue)} note="Sales value per invoice" icon={Receipt} tone="blue" />
       <MetricCard label="Gross profit" value={money(grossProfitInPeriod)} note="After recorded item cost" icon={Activity} tone="blue" />
       <MetricCard label="Gross margin" value={(sales > 0 ? (grossProfitInPeriod / sales) * 100 : 0).toFixed(1) + '%'} note="Gross profit as share of sales" icon={TrendingUp} tone="slate" />
       <MetricCard label="Units sold" value={numberText(unitsSoldInPeriod)} note="Across the selected period" icon={Package} tone="amber" />
     </div>
-    <SectionCard title="Trading performance" detail="Sales and cost of goods sold by day." action={<div className="segmented-control"><button className={period === 'week' ? 'active' : ''} onClick={() => setPeriod('week')}>7 days</button><button className={period === 'month' ? 'active' : ''} onClick={() => setPeriod('month')}>30 days</button></div>}>
+    <SectionCard title="Trading performance" detail="Sales and cost of goods sold grouped by day for the last week, week for the current month, or month for the current year." action={<div className="segmented-control">
+      <button className={period === 'week' ? 'active' : ''} onClick={() => setPeriod('week')}>Weekly</button>
+      <button className={period === 'month' ? 'active' : ''} onClick={() => setPeriod('month')}>Monthly</button>
+      <button className={period === 'year' ? 'active' : ''} onClick={() => setPeriod('year')}>Yearly</button>
+    </div>}>
       <div className="report-chart-legend"><span><i className="legend-dot legend-green" /> Sales</span><span><i className="legend-dot legend-blue" /> Cost of goods sold</span></div>
-      <div className="report-bars">
-        {dayRows.map(row => <div className="report-bar-column" key={row.date} title={dateLabel(row.date) + ': ' + money(row.sales)}>
+      <div className={'report-bars ' + (period === 'year' ? 'report-bars-year' : period === 'month' ? 'report-bars-month' : '')}>
+        {dayRows.map(row => <div className="report-bar-column" key={row.key} title={row.title + ': ' + money(row.sales)}>
           <div className="report-bar-space">
             <div className="report-bar report-bar-sales" style={{ height: Math.max(2, row.sales / max * 100) + '%' }} />
             <div className="report-bar report-bar-cost" style={{ height: Math.max(2, row.cost / max * 100) + '%' }} />
           </div>
-          <span>{period === 'week' ? new Date(row.date + 'T12:00:00').toLocaleDateString('en-KE', { weekday: 'short' }) : String(new Date(row.date + 'T12:00:00').getDate())}</span>
+          <span>{row.label}</span>
         </div>)}
       </div>
     </SectionCard>
@@ -1909,15 +2042,17 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: {
         {productPerformance.length ? <DataTable headers={['Product', 'Units', 'Net sales', 'Item cost', 'Gross profit', 'Margin']}>
           {productPerformance.map(item => <tr key={item.product.id}>
             <td><strong>{item.product.name}</strong><small className="cell-sub">{item.product.sku}</small></td>
-            <td>{numberText(item.unitsSold)}</td>
-            <td className="amount-cell">{money(item.netSales)}</td>
-            <td className="amount-cell">{money(item.itemCost)}</td>
-            <td className="amount-cell">{money(item.grossProfit)}</td>
-            <td>{item.marginRate.toFixed(1)}%</td>
+            <td>{numberText(item.unitsSold)}</td><td className="amount-cell">{money(item.netSales)}</td><td className="amount-cell">{money(item.itemCost)}</td>
+            <td className="amount-cell">{money(item.grossProfit)}</td><td>{item.marginRate.toFixed(1)}%</td>
           </tr>)}
         </DataTable> : <EmptyState title="No product sales in this period" body="Recorded sales will show which products contribute most to gross profit." />}
       </SectionCard>
-      <SectionCard title="Working capital" detail="Short-term funds tied up in operations">
+      {role === 'Sales' ? <SectionCard title="Customer balances" detail="Invoices that still need payment.">
+        <div className="working-capital-list">
+          <div><span>Customer receivables</span><strong>{money(metrics.receivables)}</strong></div>
+          <div><span>Open invoices</span><strong>{numberText(metrics.unpaidInvoices)}</strong></div>
+        </div>
+      </SectionCard> : <SectionCard title="Working capital" detail="Short-term funds tied up in operations">
         <div className="working-capital-list">
           <div><span>Cash and bank balances</span><strong>{money(metrics.cashPosition)}</strong></div>
           <div><span>Customer receivables</span><strong>{money(metrics.receivables)}</strong></div>
@@ -1925,12 +2060,11 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable }: {
           <div><span>Supplier payables</span><strong className="negative-text">{money(metrics.payables)}</strong></div>
           <div className="working-capital-total"><span>Net operating working capital</span><strong>{money(metrics.cashPosition + metrics.receivables + metrics.inventoryValue - metrics.payables - metrics.customerAdvances)}</strong></div>
         </div>
-      </SectionCard>
+      </SectionCard>}
     </div>
     <div className="report-footnote">Reports use the dates and costs recorded in this workspace. They are not audited financial statements or tax returns.</div>
   </div>;
 }
-
 
 function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
   profile: BusinessProfile;
@@ -2129,7 +2263,7 @@ function SettingsPage({ profile, teamMembers, teamInvitations, onSave, onAddMemb
             ]} />
             <div className="team-role-description"><strong>{memberRole}</strong><span>{roleDescriptions[memberRole]}</span></div>
           </div>
-          <p className="team-invite-explainer">A single-use invitation link will be copied for sharing. The recipient must use this email address and verify it before gaining access. Links expire after seven days.</p>
+          <p className="team-invite-explainer">A single-use invitation link will be copied for sharing. The recipient must sign in or create an account with this email address to gain access. Links expire after seven days.</p>
           <div className="inline-form-actions"><Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button><Button type="submit" disabled={!memberName.trim() || !memberEmail.trim()}>Create invitation</Button></div>
         </form>}
         <div className="team-role-grid">
@@ -2319,6 +2453,7 @@ function App() {
   const [cloudWorkspaceReady, setCloudWorkspaceReady] = useState(false);
   const [cloudWorkspaceLoading, setCloudWorkspaceLoading] = useState(false);
   const [cloudWorkspaceError, setCloudWorkspaceError] = useState('');
+  const [offlineMode, setOfflineMode] = useState(!navigator.onLine);
   const [authNotice, setAuthNotice] = useState('');
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin');
@@ -2337,11 +2472,26 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }) | null>(null);
+  const [appInstalled, setAppInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+
+  useEffect(() => {
+    const beforeInstall = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> });
+    };
+    const installed = () => { setAppInstalled(true); setInstallPrompt(null); };
+    window.addEventListener('beforeinstallprompt', beforeInstall);
+    window.addEventListener('appinstalled', installed);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', beforeInstall);
+      window.removeEventListener('appinstalled', installed);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
     const restore = async () => {
-      await completeAuthCallback();
       const result = await restoreCloudSession();
       if (!active) return;
       const token = readPendingTeamInvitation();
@@ -2392,6 +2542,13 @@ function App() {
 
   const reloadCloudWorkspace = async (): Promise<boolean> => {
     if (!cloudAccount) return false;
+    if (!navigator.onLine) {
+      const cached = (() => { try { return JSON.parse(localStorage.getItem('hesabu:workspace-cache:v1:' + cloudAccount.business.id) || 'null') as { data?: AppData; whatsappNumber?: string } | null; } catch { return null; } })();
+      if (cached?.data) { setData(cached.data); setWhatsAppNumber(cached.whatsappNumber || ''); setCloudWorkspaceReady(true); setOfflineMode(true); return true; }
+      setCloudWorkspaceError('This workspace has not been saved on this device yet. Connect to the internet to load it.');
+      setCloudWorkspaceReady(false);
+      return false;
+    }
     setCloudWorkspaceLoading(true);
     setCloudWorkspaceError('');
     try {
@@ -2400,12 +2557,26 @@ function App() {
         getBusinessSettings(cloudAccount.business.id),
       ]);
       setData(workspace);
+      try { localStorage.setItem('hesabu:workspace-cache:v1:' + cloudAccount.business.id, JSON.stringify({ savedAt: new Date().toISOString(), data: workspace, whatsappNumber: settings.whatsapp_recipient_phone || '' })); } catch { /* Storage quota must not block live workspace use. */ }
+      setOfflineMode(false);
       setWhatsAppNumber(settings.whatsapp_recipient_phone || '');
       const currentMember = workspace.teamMembers.find(member => member.id === cloudAccount.user.id);
       setActiveMemberId(currentMember?.id || cloudAccount.user.id);
       setCloudWorkspaceReady(true);
       return true;
     } catch (error) {
+      const cached = (() => {
+        try { return JSON.parse(localStorage.getItem('hesabu:workspace-cache:v1:' + cloudAccount.business.id) || 'null') as { savedAt?: string; data?: AppData; whatsappNumber?: string } | null; }
+        catch { return null; }
+      })();
+      if (!navigator.onLine && cached?.data) {
+        setData(cached.data);
+        setWhatsAppNumber(cached.whatsappNumber || '');
+        setCloudWorkspaceReady(true);
+        setOfflineMode(true);
+        setCloudWorkspaceError('');
+        return true;
+      }
       setCloudWorkspaceError(error instanceof Error ? error.message : 'The business workspace could not be loaded.');
       setCloudWorkspaceReady(false);
       return false;
@@ -2453,35 +2624,54 @@ function App() {
     setShowAuthScreen(false);
   };
 
-  const handleCloudSignUp = async (input: SignUpInput): Promise<'confirm_email' | void> => {
-    const token = readPendingTeamInvitation();
-    if (token) {
-      const result = await signUpWithPassword(input);
-      if (!result.session) return 'confirm_email';
-      const businessId = await acceptCloudBusinessInvitation(token);
+  const handleCloudSignUp = async (input: SignUpInput): Promise<void> => {
+    const invitation = readPendingTeamInvitation();
+    const result = await signUpWithPassword(input);
+    if (!result.user) throw new Error('Hesabu could not confirm that the account was created. Check your details and try again.');
+    if (Array.isArray(result.user.identities) && result.user.identities.length === 0) {
+      throw new Error('An account may already exist for this email address. Try signing in with your existing password.');
+    }
+    if (!result.session) {
+      throw new Error('Hesabu could not start your account session. Account setup is not ready on the server yet. Please try again shortly.');
+    }
+
+    if (invitation) {
+      const businessId = await acceptCloudBusinessInvitation(invitation);
       clearPendingTeamInvitation();
       setPendingInviteToken(null);
       const memberships = await listMyBusinesses();
       const invited = memberships.find(item => item.business_id === businessId && item.businesses?.id);
       if (!invited?.businesses) throw new Error('The invitation was accepted but the business could not be loaded.');
       setCloudAccount({ user: result.session.user, business: { id: invited.businesses.id, name: invited.businesses.name, industry: invited.businesses.industry } });
-      setWhatsAppNumber('');
-      setAuthNotice('');
-      setShowAuthScreen(false);
-      return;
+    } else {
+      // Duplicate-signup recovery may have authenticated an existing account.
+      // Reuse its workspace instead of creating a second business.
+      const memberships = await listMyBusinesses();
+      const existingMembership = memberships.find(item => item.businesses?.id);
+      if (existingMembership?.businesses) {
+        clearPendingOnboarding();
+        setCloudAccount({
+          user: result.session.user,
+          business: {
+            id: existingMembership.businesses.id,
+            name: existingMembership.businesses.name,
+            industry: existingMembership.businesses.industry,
+          },
+        });
+      } else {
+        // Save locally before provisioning so a failed request can be resumed
+        // from sign-in or after a page refresh on this device.
+        savePendingOnboarding(input);
+        const businessId = await createBusiness(input);
+        await saveBusinessPreferences({ businessId, aiAssistantEnabled: false, whatsappDigestEnabled: input.whatsappDigestEnabled, whatsappRecipientPhone: input.whatsappRecipientPhone });
+        clearPendingOnboarding();
+        setWhatsAppNumber(input.whatsappRecipientPhone);
+        setCloudAccount({ user: result.session.user, business: { id: businessId, name: input.businessName, industry: input.industry || null } });
+      }
     }
-    savePendingOnboarding(input);
-    const result = await signUpWithPassword(input);
-    if (!result.session) return 'confirm_email';
-    const businessId = await createBusiness(input);
-    await saveBusinessPreferences({ businessId, aiAssistantEnabled: false, whatsappDigestEnabled: input.whatsappDigestEnabled, whatsappRecipientPhone: input.whatsappRecipientPhone });
-    clearPendingOnboarding();
-    setCloudAccount({ user: result.session.user, business: { id: businessId, name: input.businessName.trim(), industry: input.industry || null } });
-    setWhatsAppNumber(input.whatsappRecipientPhone);
     setAuthNotice('');
     setShowAuthScreen(false);
   };
-
   const handleCloudSignOut = async () => {
     await signOut();
     setCloudAccount(null);
@@ -2519,12 +2709,31 @@ function App() {
 
   const notify = (title: string, detail?: string) => setNotice({ title, detail });
   const closeNotice = () => setNotice(null);
+  const handleInstallApp = async () => {
+    if (appInstalled) return;
+    if (!installPrompt) {
+      notify('Install Hesabu', 'Open your browser menu and choose Install app or Add to Home screen.');
+      return;
+    }
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === 'accepted') setAppInstalled(true);
+      setInstallPrompt(null);
+    } catch {
+      notify('Install Hesabu', 'Use your browser menu to add Hesabu to your home screen.');
+    }
+  };
   const cloudMutationLock = useRef(false);
   const runCloudMutation = async (
     operation: () => Promise<unknown>,
     successTitle: string,
     successDetail: string,
   ) => {
+    if (cloudAccount && !navigator.onLine) {
+      notify('Offline — changes are paused', 'Reconnect to the internet before recording financial or stock changes. Your last saved workspace remains available to view.');
+      return;
+    }
     if (cloudMutationLock.current) return;
     cloudMutationLock.current = true;
     try {
@@ -2540,6 +2749,14 @@ function App() {
       cloudMutationLock.current = false;
     }
   };
+  useEffect(() => {
+    const online = () => { setOfflineMode(false); if (cloudAccount) void reloadCloudWorkspace(); };
+    const offline = () => setOfflineMode(true);
+    window.addEventListener('online', online);
+    window.addEventListener('offline', offline);
+    return () => { window.removeEventListener('online', online); window.removeEventListener('offline', offline); };
+  }, [cloudAccount?.business.id]);
+
   const navigate = (section: ModuleKey) => {
     if (!allowedModules.includes(section)) {
       notify('This area is not included in this role', 'Switch to an authorised business role to continue.');
@@ -2555,6 +2772,10 @@ function App() {
   };
 
   const createInvoice = (input: NewInvoiceInput) => {
+    if (cloudAccount && !navigator.onLine) {
+      notify('Offline — sale not recorded', 'Reconnect before recording a sale. No invoice or stock movement has been created.');
+      return;
+    }
     if (cloudAccount) {
       const saleTotal = Math.round((sum(input.items.map(item => {
         const product = data.products.find(candidate => candidate.id === item.productId);
@@ -2731,8 +2952,11 @@ function App() {
 
   const addUnmatchedReceipt = (input: NewUnmatchedReceiptInput) => {
     if (cloudAccount) {
-      notify('Receipt import is not connected', 'Record a payment directly against its customer invoice. M-Pesa statement imports and matching are not enabled yet.');
-      setDialog(null);
+      void runCloudMutation(
+        () => postCloudUnmatchedReceipt(cloudAccount.business.id, input),
+        'Receipt recorded',
+        'The receipt is saved in the cloud queue. It has not changed an invoice balance until you allocate it.',
+      );
       return;
     }
     const reference = input.reference.trim().toUpperCase();
@@ -2761,8 +2985,11 @@ function App() {
 
   const matchUnmatchedReceipt = (receiptId: string, invoiceId: string) => {
     if (cloudAccount) {
-      notify('Receipt matching is not connected', 'Record payments against their invoice until statement imports and reconciliation are enabled.');
-      setDialog(null);
+      void runCloudMutation(
+        () => matchCloudUnmatchedReceipt(cloudAccount.business.id, receiptId, invoiceId),
+        'Receipt allocated',
+        'The customer payment, invoice balance and accounting entries were updated together. Any excess remains as customer credit.',
+      );
       return;
     }
     const receipt = data.unmatchedReceipts.find(item => item.id === receiptId);
@@ -3218,12 +3445,15 @@ function App() {
   if (!showAuthScreen && !cloudAccount) return <PublicLandingPage
     onSignIn={() => { setAuthInitialMode('signin'); setShowAuthScreen(true); }}
     onCreateAccount={() => { setAuthInitialMode('signup'); setShowAuthScreen(true); }}
+    onInstall={handleInstallApp}
+    appInstalled={appInstalled}
   />;
   if (!cloudAccount) return <AuthPage
     onSignIn={handleCloudSignIn}
     onSignUp={handleCloudSignUp}
     initialMessage={authNotice}
     initialMode={authInitialMode}
+    initialEmail=""
     onBack={() => { if (pendingInviteToken) { clearPendingTeamInvitation(); setPendingInviteToken(null); } setShowAuthScreen(false); }}
     inviteMode={Boolean(pendingInviteToken)}
   />;
@@ -3268,6 +3498,7 @@ function App() {
           <div className="breadcrumb"><ChevronRight size={13} /><strong>{activeMeta.title}</strong></div>
         </div>
         <div className="topbar-right">
+          {!appInstalled && <button type="button" className="app-install-button" onClick={handleInstallApp}><Download size={15} /><span>Install</span></button>}
           <div className={'global-search ' + (searchOpen ? 'global-search-open' : '')}><Search size={15} /><input value={search} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)} onChange={event => setSearch(event.target.value)} placeholder="Search this register…" /></div>
           <span className="topbar-divider" />
           <button className="topbar-date" onClick={() => notify('Workspace date', dateLabel(today()))}><CalendarDays size={15} /> <span>{dateLabel(today())}</span></button>
@@ -3288,13 +3519,14 @@ function App() {
       </header>
 
       <div className="page-container">
-        {active === 'overview' && <OverviewPage data={data} metrics={metrics} onCreateSale={() => setDialog({ kind: 'sale' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
+        {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>Saved workspace · Read only</strong> · This device is showing its last synced records. Reconnect to post sales, payments and stock changes safely.</span></div>}
+        {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} cloudMode={Boolean(cloudAccount)} />}
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} onAddSupplier={() => setDialog({ kind: 'supplier' })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
-        {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} />}
+        {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} role={activeMember?.role ?? 'Owner'} />}
         {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} />}
         {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} teamInvitations={data.teamInvitations ?? []} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onRevokeInvitation={revokeTeamInvitation} onCopyInvitation={copyTeamInvitation} canManageTeam={activeMember?.role === 'Owner' || activeMember?.role === 'Manager'} canAssignManager={activeMember?.role === 'Owner'} onReset={() => {}} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
@@ -3303,13 +3535,18 @@ function App() {
     </main>
 
     <nav className="mobile-bottom-nav" aria-label="Primary navigation">
-      {[
+      {(activeMember?.role === 'Inventory' ? [
+        { id: 'overview' as ModuleKey, label: 'Home', icon: 'home' },
+        { id: 'inventory' as ModuleKey, label: 'Stock', icon: 'inventory_2' },
+        { id: 'procurement' as ModuleKey, label: 'Orders', icon: 'shopping_cart' },
+        { id: 'more' as ModuleKey, label: 'More', icon: 'grid_view' },
+      ] : [
         { id: 'overview' as ModuleKey, label: 'Home', icon: 'home' },
         { id: 'sales' as ModuleKey, label: 'Sales', icon: 'receipt_long' },
         { id: 'reports' as ModuleKey, label: 'Analytics', icon: 'monitoring' },
         { id: 'payments' as ModuleKey, label: 'Payments', icon: 'account_balance_wallet' },
         { id: 'more' as ModuleKey, label: 'More', icon: 'grid_view' },
-      ].filter(item => allowedModules.includes(item.id)).map(item =>
+      ]).filter(item => allowedModules.includes(item.id)).map(item =>
         <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)} aria-current={active === item.id ? 'page' : undefined}>
           <span className="material-symbols-rounded" aria-hidden="true">{item.icon}</span><span>{item.label}</span>
         </button>

@@ -1,11 +1,13 @@
 import type {
   AppData, BusinessProfile, CashMovement, Expense, IntegrationEvent, Invoice, JournalLine,
-  Payment, PaymentChannel, PurchaseOrder, Supplier, TeamInvitation, TeamMember, TeamRole, UnmatchedReceipt,
+  InventoryMovement, Payment, PaymentChannel, PurchaseOrder, ReceiptRail, Supplier, TeamInvitation, TeamMember, TeamRole, UnmatchedReceipt,
 } from '../types';
+import { getWorkspaceReadPlan } from '../workspace-access';
 
 export interface SupabaseUser {
   id: string;
   email?: string;
+  identities?: Array<Record<string, unknown>> | null;
   user_metadata?: Record<string, unknown>;
 }
 
@@ -54,8 +56,9 @@ export class SupabaseRequestError extends Error {
   status: number;
   code?: string;
 
-  constructor(message: string, status: number, code?: string) {
-    super(message);
+  constructor(_message: string, status: number, code?: string) {
+    // Keep database, provider and infrastructure details out of the product UI.
+    super('We could not complete that request. Please try again.');
     this.name = 'SupabaseRequestError';
     this.status = status;
     this.code = code;
@@ -141,13 +144,14 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    const detail = typeof payload === 'object' && payload !== null
-      ? String((payload as Record<string, unknown>).msg ?? (payload as Record<string, unknown>).message ?? (payload as Record<string, unknown>).error_description ?? '')
+    const rawCode = typeof payload === 'object' && payload !== null
+      ? String((payload as Record<string, unknown>).code ?? (payload as Record<string, unknown>).error_code ?? '')
       : '';
-    const code = typeof payload === 'object' && payload !== null
-      ? String((payload as Record<string, unknown>).code ?? '')
-      : undefined;
-    throw new SupabaseRequestError(detail || 'Cloud request failed (' + response.status + ').', response.status, code);
+    const safeCode = /invalid.*credential/i.test(rawCode) ? 'invalid_credentials'
+      : /email.*not.*confirmed/i.test(rawCode) ? 'email_not_confirmed'
+      : rawCode;
+    // Never pass provider or database response text to the UI.
+    throw new SupabaseRequestError('The request could not be completed.', response.status, safeCode);
   }
 
   return payload as T;
@@ -188,34 +192,89 @@ export async function signInWithPassword(email: string, password: string): Promi
 }
 
 export async function signUpWithPassword(input: SignUpInput): Promise<{ session: SupabaseSession | null; user: SupabaseUser | null }> {
-  const payload = await request<Partial<SupabaseSession> & { user?: SupabaseUser }>(
-    'auth/v1/signup?redirect_to=' + encodeURIComponent(window.location.origin),
-    {
-    method: 'POST',
-    body: {
-      email: input.email.trim(),
-      password: input.password,
-      // This metadata contains only user-entered onboarding information. It is
-      // never used to authorize access; business roles are assigned in the DB.
-      data: {
-        display_name: input.fullName.trim(),
-        business_onboarding: {
-          business_name: input.businessName.trim(),
-          industry: input.industry.trim() || null,
-          phone: input.phone.trim() || null,
+  let payload: Partial<SupabaseSession> & { user?: SupabaseUser };
+  try {
+    payload = await request<Partial<SupabaseSession> & { user?: SupabaseUser }>(
+      'auth/v1/signup',
+      {
+        method: 'POST',
+        body: {
           email: input.email.trim(),
-          ai_assistant_enabled: input.aiAssistantEnabled,
-          whatsapp_digest_enabled: input.whatsappDigestEnabled,
-          whatsapp_recipient_phone: input.whatsappDigestEnabled ? input.whatsappRecipientPhone.trim() : null,
+          password: input.password,
+          // This metadata contains only user-entered onboarding information. It is
+          // never used to authorize access; business roles are assigned in the DB.
+          data: {
+            display_name: input.fullName.trim(),
+            business_onboarding: {
+              business_name: input.businessName.trim(),
+              industry: input.industry.trim() || null,
+              phone: input.phone.trim() || null,
+              email: input.email.trim(),
+              ai_assistant_enabled: input.aiAssistantEnabled,
+              whatsapp_digest_enabled: input.whatsappDigestEnabled,
+              whatsapp_recipient_phone: input.whatsappDigestEnabled ? input.whatsappRecipientPhone.trim() : null,
+            },
+          },
         },
+        accessToken: publishableKey,
       },
-    },
-    accessToken: publishableKey,
-  });
+    );
+  } catch (error) {
+    // A previous attempt may have created the Auth user before workspace setup
+    // failed. Resume that account when the supplied password is valid.
+    if (!(error instanceof SupabaseRequestError) || error.code !== 'user_already_exists') throw error;
+    try {
+      const session = await signInWithPassword(input.email, input.password);
+      return { session, user: session.user };
+    } catch (signInError) {
+      // Preserve the duplicate-account guidance for a wrong password; surface
+      // real network/server failures so the user can retry those safely.
+      if (
+        signInError instanceof SupabaseRequestError &&
+        (signInError.status === 400 || signInError.code === 'invalid_credentials')
+      ) throw error;
+      throw signInError;
+    }
+  }
 
-  const session = payload.access_token ? normaliseSession(payload) : null;
-  if (session) writeSession(session);
-  return { session, user: payload.user ?? session?.user ?? null };
+  // Supabase returns a session immediately when email confirmation is disabled.
+  // Some Auth configurations return only a user object; in that case, exchange
+  // the just-created credentials for a session instead of stranding the owner.
+  let session: SupabaseSession | null = payload.access_token ? normaliseSession(payload) : null;
+  const user = payload.user ?? session?.user ?? null;
+
+  if (!session && user) {
+    if (Array.isArray(user.identities) && user.identities.length === 0) {
+      throw new SupabaseRequestError(
+        'An account already exists for this email address. Sign in with your existing password instead.',
+        409,
+        'user_already_exists',
+      );
+    }
+    try {
+      session = await signInWithPassword(input.email, input.password);
+    } catch (error) {
+      if (error instanceof SupabaseRequestError && /email not confirmed|email_not_confirmed/i.test(error.message + ' ' + (error.code ?? ''))) {
+        throw new SupabaseRequestError(
+          'Account setup could not be completed.',
+          403,
+          'email_not_confirmed',
+        );
+      }
+      throw error;
+    }
+  }
+
+  if (!session) {
+    throw new SupabaseRequestError(
+      'Account setup could not be completed.',
+      409,
+      'session_not_created',
+    );
+  }
+
+  writeSession(session);
+  return { session, user: user ?? session.user };
 }
 
 export async function signOut(): Promise<void> {
@@ -349,74 +408,19 @@ export async function listMyBusinesses(): Promise<BusinessMembership[]> {
   });
 }
 
-export async function completeAuthCallback(): Promise<boolean> {
-  if (!supabaseConfigured) return false;
-  const url = new URL(window.location.href);
-  const query = new URLSearchParams(url.search);
-  const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
-  const errorDescription = query.get('error_description') || fragment.get('error_description');
-  const callbackType = query.get('type') || fragment.get('type') || 'signup';
-
-  const cleanCallbackUrl = () => {
-    ['token_hash', 'type', 'code', 'error', 'error_code', 'error_description', 'provider_token', 'provider_refresh_token']
-      .forEach(key => query.delete(key));
-    const search = query.toString();
-    window.history.replaceState({}, document.title, url.pathname + (search ? '?' + search : ''));
-  };
-
-  if (errorDescription) {
-    cleanCallbackUrl();
-    throw new SupabaseRequestError(decodeURIComponent(errorDescription.replace(/\+/g, ' ')), 401);
-  }
-
-  const tokenHash = query.get('token_hash');
-  if (tokenHash) {
-    const payload = await request<Partial<SupabaseSession>>('auth/v1/verify', {
-      method: 'POST',
-      accessToken: publishableKey,
-      body: { token_hash: tokenHash, type: callbackType },
-    });
-    const session = normaliseSession(payload);
-    writeSession(session);
-    cleanCallbackUrl();
-    return true;
-  }
-
-  const accessToken = fragment.get('access_token');
-  const refreshToken = fragment.get('refresh_token');
-  if (accessToken && refreshToken) {
-    const user = await request<SupabaseUser>('auth/v1/user', { accessToken });
-    const expiresIn = Number(fragment.get('expires_in') ?? 3600);
-    const session = normaliseSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      token_type: fragment.get('token_type') || 'bearer',
-      expires_in: expiresIn,
-      expires_at: fragment.get('expires_at')
-        ? Number(fragment.get('expires_at'))
-        : Math.floor(Date.now() / 1000) + expiresIn,
-      user,
-    });
-    writeSession(session);
-    cleanCallbackUrl();
-    return true;
-  }
-
-  if (query.has('code')) {
-    cleanCallbackUrl();
-    throw new SupabaseRequestError(
-      'This email link used a PKCE callback that the current browser client cannot complete. Request a new verification email and use the confirmation link generated for Hesabu.',
-      400,
-    );
-  }
-
-  return false;
-}
-
 export async function restoreCloudSession(): Promise<{ user: SupabaseUser; memberships: BusinessMembership[] } | null> {
+  if (!navigator.onLine) {
+    const cachedSession = readSession();
+    if (!cachedSession?.user?.id) return null;
+    try {
+      const memberships = JSON.parse(localStorage.getItem('hesabu:memberships-cache:v1:' + cachedSession.user.id) || '[]') as BusinessMembership[];
+      return memberships.length ? { user: cachedSession.user, memberships } : null;
+    } catch { return null; }
+  }
   const user = await getCurrentUser();
   if (!user) return null;
   const memberships = await listMyBusinesses();
+  try { localStorage.setItem('hesabu:memberships-cache:v1:' + user.id, JSON.stringify(memberships)); } catch { /* Cache is optional. */ }
   return { user, memberships };
 }
 
@@ -429,6 +433,14 @@ const asNumber = (value: unknown) => {
 };
 
 const asText = (value: unknown, fallback = '') => typeof value === 'string' ? value : fallback;
+
+const receiptRailLabels: Record<string, ReceiptRail> = {
+  till_paybill: 'Till / PayBill',
+  pochi: 'Pochi la Biashara',
+  send_money: 'Send Money to business',
+  bank_transfer: 'Bank transfer',
+  manual_mpesa: 'Manual M-Pesa receipt',
+};
 
 async function businessRows<T extends DbRow>(
   table: string,
@@ -529,6 +541,34 @@ export async function postCloudPayment(businessId: string, input: {
   });
 }
 
+const receiptRailToDatabase: Record<ReceiptRail, string> = {
+  'Till / PayBill': 'till_paybill',
+  'Pochi la Biashara': 'pochi',
+  'Send Money to business': 'send_money',
+  'Bank transfer': 'bank_transfer',
+  'Manual M-Pesa receipt': 'manual_mpesa',
+};
+
+export async function postCloudUnmatchedReceipt(businessId: string, input: {
+  reference: string; payer: string; phone: string; amount: number; rail: ReceiptRail;
+}): Promise<string> {
+  return rpc<string>('post_unmatched_receipt', {
+    p_business_id: businessId,
+    p_reference: input.reference.trim().toUpperCase(),
+    p_payer_name: input.payer.trim() || null,
+    p_payer_phone: input.phone.trim() || null,
+    p_amount: input.amount,
+    p_rail: receiptRailToDatabase[input.rail],
+  });
+}
+
+export async function matchCloudUnmatchedReceipt(businessId: string, receiptId: string, invoiceId: string): Promise<string> {
+  return rpc<string>('match_unmatched_receipt', {
+    p_business_id: businessId,
+    p_receipt_id: receiptId,
+    p_invoice_id: invoiceId,
+  });
+}
 export async function postCloudExpense(businessId: string, input: {
   category: string; description: string; amount: number; channel: Exclude<PaymentChannel, 'credit'>;
   date?: string;
@@ -650,36 +690,83 @@ export async function saveCloudBusinessProfile(
 export async function getCloudWorkspace(businessId: string, user: SupabaseUser): Promise<AppData> {
   const current = await validSession();
   if (!current) throw new SupabaseRequestError('Your session has expired. Sign in again to load this business.', 401);
-  const [
-    businesses, productsRows, suppliersRows, invoiceRows, invoiceItemRows, paymentRows,
-    receiptRows, expenseRows, purchaseRows, purchaseItemRows, movementRows,
-    journalEntryRows, journalLineRows, eventRows, teamRows, invitationRows, profileRows,
-  ] = await Promise.all([
+
+  // Resolve the caller's role before reading operational tables. The RLS policies
+  // intentionally hide other teams' records; querying every table and hoping RLS
+  // returns [] would make valid Sales/Inventory/Finance accounts fail Promise.all.
+  const [businesses, selfRows, profileRows] = await Promise.all([
     request<DbRow[]>('rest/v1/businesses?select=id,name,legal_name,industry,phone,email,county,currency,next_invoice_number,next_purchase_order_number&id=eq.' + businessId, {
       accessToken: current.access_token,
     }),
-    businessRows('products', businessId, 'id,sku,name,category,unit,quantity_on_hand,reorder_level,cost_price,selling_price,supplier_id,updated_at,created_at', 'name.asc'),
-    businessRows('suppliers', businessId, 'id,name,phone,email,payment_terms,opening_balance,current_balance,is_active', 'name.asc'),
-    businessRows('invoices', businessId, 'id,invoice_number,customer_name,customer_phone,issue_date,due_date,subtotal,discount_amount,total_amount,amount_paid,payment_channel,status,source', 'issue_date.desc'),
-    businessRows('invoice_items', businessId, 'id,invoice_id,product_id,product_name,sku_snapshot,quantity,unit_price,unit_cost,line_total'),
-    businessRows('payments', businessId, 'id,invoice_id,amount,applied_amount,unapplied_amount,channel,status,origin,provider_reference,phone,note,received_at,confirmed_at', 'received_at.desc'),
-    businessRows('unmatched_receipts', businessId, 'id,reference,payer_name,payer_phone,amount,rail,source,status,received_at,matched_invoice_id', 'received_at.desc'),
-    businessRows('expenses', businessId, 'id,expense_date,category,description,amount,channel,reference', 'expense_date.desc'),
-    businessRows('purchase_orders', businessId, 'id,supplier_id,order_number,order_date,expected_date,status,subtotal,note', 'order_date.desc'),
-    businessRows('purchase_order_items', businessId, 'id,purchase_order_id,product_id,product_name,quantity_ordered,quantity_received,unit_cost,line_total'),
-    businessRows('cash_movements', businessId, 'id,movement_date,channel,direction,amount,description,reference,source_type', 'movement_date.desc'),
-    businessRows('journal_entries', businessId, 'id,journal_number,entry_date,description,reference,status', 'entry_date.desc'),
-    businessRows('journal_lines', businessId, 'id,journal_entry_id,account_name,debit,credit,description'),
-    businessRows('integration_events', businessId, 'id,event_type,source,status,reference,detail,occurred_at', 'occurred_at.desc'),
-    request<DbRow[]>('rest/v1/rpc/get_business_team', {
-      method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
-    }),
-    request<DbRow[]>('rest/v1/rpc/list_business_invitations', {
-      method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
+    request<DbRow[]>('rest/v1/business_members?select=user_id,role,status,created_at&business_id=eq.' + businessId + '&user_id=eq.' + user.id, {
+      accessToken: current.access_token,
     }),
     request<DbRow[]>('rest/v1/profiles?select=id,display_name&id=eq.' + user.id, {
       accessToken: current.access_token,
     }),
+  ]);
+
+  const self = selfRows.find(row => asText(row.user_id) === user.id && asText(row.status) === 'active');
+  if (!self) {
+    throw new SupabaseRequestError('This account is not an active member of the selected business.', 403);
+  }
+  const readPlan = getWorkspaceReadPlan(asText(self.role));
+
+  const [
+    productsRows, suppliersRows, invoiceRows, invoiceItemRows, paymentRows,
+    receiptRows, expenseRows, purchaseRows, purchaseItemRows, movementRows,
+    inventoryMovementRows, journalEntryRows, journalLineRows, eventRows, teamRows, invitationRows,
+  ] = await Promise.all([
+    businessRows('products', businessId, 'id,sku,name,category,unit,quantity_on_hand,reorder_level,cost_price,selling_price,supplier_id,updated_at,created_at', 'name.asc'),
+    readPlan.purchasing
+      ? businessRows('suppliers', businessId, 'id,name,phone,email,payment_terms,opening_balance,current_balance,is_active', 'name.asc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.sales
+      ? businessRows('invoices', businessId, 'id,invoice_number,customer_name,customer_phone,issue_date,due_date,subtotal,discount_amount,total_amount,amount_paid,payment_channel,status,source', 'issue_date.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.sales
+      ? businessRows('invoice_items', businessId, 'id,invoice_id,product_id,product_name,sku_snapshot,quantity,unit_price,unit_cost,line_total')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.sales
+      ? businessRows('payments', businessId, 'id,invoice_id,amount,applied_amount,unapplied_amount,channel,status,origin,provider_reference,phone,note,received_at,confirmed_at', 'received_at.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.sales
+      ? businessRows('unmatched_receipts', businessId, 'id,reference,payer_name,payer_phone,amount,rail,source,status,received_at,matched_invoice_id', 'received_at.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.finance
+      ? businessRows('expenses', businessId, 'id,expense_date,category,description,amount,channel,reference', 'expense_date.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.purchasing
+      ? businessRows('purchase_orders', businessId, 'id,supplier_id,order_number,order_date,expected_date,status,subtotal,note', 'order_date.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.purchasing
+      ? businessRows('purchase_order_items', businessId, 'id,purchase_order_id,product_id,product_name,quantity_ordered,quantity_received,unit_cost,line_total')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.finance
+      ? businessRows('cash_movements', businessId, 'id,movement_date,channel,direction,amount,description,reference,source_type', 'movement_date.desc')
+      : Promise.resolve([] as DbRow[]),
+    (readPlan.inventory || readPlan.management)
+      ? businessRows('inventory_movements', businessId, 'id,product_id,movement_type,quantity_delta,unit_cost,total_cost,source_type,reference,note,movement_at', 'movement_at.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.finance
+      ? businessRows('journal_entries', businessId, 'id,journal_number,entry_date,description,reference,status', 'entry_date.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.finance
+      ? businessRows('journal_lines', businessId, 'id,journal_entry_id,account_name,debit,credit,description')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.management
+      ? businessRows('integration_events', businessId, 'id,event_type,source,status,reference,detail,occurred_at', 'occurred_at.desc')
+      : Promise.resolve([] as DbRow[]),
+    readPlan.management
+      ? request<DbRow[]>('rest/v1/rpc/get_business_team', {
+          method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
+        })
+      : Promise.resolve([] as DbRow[]),
+    readPlan.management
+      ? request<DbRow[]>('rest/v1/rpc/list_business_invitations', {
+          method: 'POST', accessToken: current.access_token, body: { p_business_id: businessId },
+        })
+      : Promise.resolve([] as DbRow[]),
   ]);
 
   const business = businesses[0];
@@ -704,6 +791,15 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
     costPrice: asNumber(row.cost_price), sellingPrice: asNumber(row.selling_price),
     supplierId: asText(row.supplier_id) || undefined,
     updatedAt: asText(row.updated_at, asText(row.created_at)).slice(0, 10),
+  }));
+  const productNames = new Map(products.map(product => [product.id, product.name]));
+  const inventoryMovements: InventoryMovement[] = inventoryMovementRows.map(row => ({
+    id: asText(row.id), productId: asText(row.product_id),
+    productName: productNames.get(asText(row.product_id)) ?? 'Product',
+    type: asText(row.movement_type, 'adjustment') as InventoryMovement['type'],
+    quantityDelta: asNumber(row.quantity_delta), unitCost: asNumber(row.unit_cost),
+    totalCost: asNumber(row.total_cost), source: asText(row.source_type),
+    reference: asText(row.reference), note: asText(row.note), occurredAt: asText(row.movement_at),
   }));
 
   const suppliers: Supplier[] = suppliersRows.filter(row => row.is_active !== false).map(row => ({
@@ -759,7 +855,7 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
     .map(row => ({
       id: asText(row.id), reference: asText(row.reference),
       payer: asText(row.payer_name), phone: asText(row.payer_phone),
-      amount: asNumber(row.amount), rail: asText(row.rail, 'Manual M-Pesa receipt') as UnmatchedReceipt['rail'],
+      amount: asNumber(row.amount), rail: receiptRailLabels[asText(row.rail)] ?? 'Manual M-Pesa receipt',
       receivedAt: asText(row.received_at), source: asText(row.source, 'manual') as UnmatchedReceipt['source'],
     }));
 
@@ -811,11 +907,19 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
   const memberRoles: Record<string, TeamRole> = {
     owner: 'Owner', manager: 'Manager', sales: 'Sales', inventory: 'Inventory', finance: 'Finance',
   };
-  const teamMembers: TeamMember[] = teamRows.map(row => ({
-    id: asText(row.user_id), name: asText(row.display_name, 'Team member'),
-    email: asText(row.email), role: memberRoles[asText(row.role)] ?? 'Sales',
-    status: asText(row.status) === 'active' ? 'active' : 'suspended',
-  }));
+  const teamMembers: TeamMember[] = readPlan.management
+    ? teamRows.map(row => ({
+        id: asText(row.user_id), name: asText(row.display_name, 'Team member'),
+        email: asText(row.email), role: memberRoles[asText(row.role)] ?? 'Sales',
+        status: asText(row.status) === 'active' ? 'active' : 'suspended',
+      }))
+    : [{
+        id: user.id,
+        name: asText(profileRow?.display_name, asText(user.user_metadata?.display_name, 'Team member')),
+        email: user.email ?? '',
+        role: memberRoles[asText(self.role)] ?? 'Sales',
+        status: 'active',
+      }];
   const teamInvitations: TeamInvitation[] = invitationRows.map(row => ({
     id: asText(row.id), name: asText(row.invitee_name, 'Team member'),
     email: asText(row.invitee_email),
@@ -836,7 +940,7 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
 
   return {
     profile, products, invoices, payments, unmatchedReceipts, expenses, suppliers,
-    purchaseOrders, teamMembers, teamInvitations, journal, events, cashMovements,
+    purchaseOrders, teamMembers, teamInvitations, journal, events, cashMovements, inventoryMovements,
     openingBalances: { cash: 0, mpesa: 0, bank: 0, inventory: 0 },
     nextInvoice: asNumber(business.next_invoice_number) || 1001,
     nextPurchaseOrder: asNumber(business.next_purchase_order_number) || 1,

@@ -128,3 +128,24 @@ test('team invitation foreign keys are indexed for business growth', () => {
   assert.ok(invitationIndexes.includes('business_invitations_accepted_user_id_idx'));
   assert.ok(invitationIndexes.includes('business_invitations_created_by_idx'));
 });
+
+const receipt = await readFile(resolve(root, 'MVP/supabase/migrations/202611170004_cloud_receipt_reconciliation.sql'), 'utf8');
+
+test('cloud receipt recording and allocation use restricted atomic ledger functions', () => {
+  assert.ok(receipt.includes('create or replace function app_private.post_unmatched_receipt('));
+  assert.ok(receipt.includes('create or replace function app_private.match_unmatched_receipt('));
+  assert.ok(receipt.includes('app_private.post_payment('));
+  assert.ok(receipt.includes("set status = 'matched', matched_invoice_id = p_invoice_id"));
+  assert.ok(receipt.includes("v_receipt.rail = 'bank_transfer'"));
+  assert.ok(receipt.includes('pg_advisory_xact_lock'));
+  assert.ok(receipt.includes('unmatched_receipts_select_finance_sales'));
+  assert.ok(receipt.includes('create or replace function public.match_unmatched_receipt('));
+  assert.ok(receipt.includes('security invoker'));
+  assert.ok(receipt.includes('revoke all on function public.match_unmatched_receipt(uuid,uuid,uuid) from public, anon'));
+});
+
+const workspaceAccessMigration = await readFile(resolve(root, 'MVP/supabase/migrations/202611170005_workspace_access_inventory_history.sql'), 'utf8');
+test('the team roster RPC restricts email visibility to business management', () => {
+  assert.ok(workspaceAccessMigration.includes("has_business_role(p_business_id, array['owner','manager']::text[])"));
+  assert.ok(workspaceAccessMigration.includes('Only an owner or manager can view the business team'));
+});

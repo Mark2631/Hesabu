@@ -246,6 +246,30 @@ begin
 end;
 $$;
 
+-- Create a credit invoice and manually capture the payment reference.
+select public.post_sale(
+  :'alpha_business_id'::uuid,
+  'Receipt matching customer',
+  '0711000004',
+  (now() at time zone 'Africa/Nairobi')::date + 7,
+  0,
+  'credit',
+  'manual',
+  jsonb_build_array(jsonb_build_object(
+    'product_id', :'alpha_product_id'::uuid,
+    'quantity', 1
+  ))
+) as alpha_receipt_invoice_id \gset
+
+select public.post_unmatched_receipt(
+  :'alpha_business_id'::uuid,
+  'RCPT-CLOUD-TEST-001',
+  'Receipt matching customer',
+  '0711000004',
+  100,
+  'till_paybill'
+) as alpha_unmatched_receipt_id \gset
+
 -- Clients cannot write membership rows directly; all changes go through RPCs.
 DO $membership_access$
 DECLARE
@@ -280,6 +304,66 @@ $membership_access$;
 select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', false);
 
 select public.accept_business_invitation(:'alpha_invite_token'::uuid) as accepted_alpha_business_id \gset
+
+-- A Sales member can read their own role, but not enumerate all team email addresses.
+select 1 / case
+  when exists (
+    select 1 from public.business_members
+    where business_id = :'alpha_business_id'::uuid
+      and user_id = auth.uid() and role = 'sales' and status = 'active'
+  ) then 1 else 0
+end;
+
+select set_config('hesabu.test_alpha_business_id', :'alpha_business_id', false);
+do $team_privacy$
+begin
+  begin
+    perform 1 from public.get_business_team(current_setting('hesabu.test_alpha_business_id')::uuid);
+    raise exception 'A Sales member unexpectedly listed business staff emails';
+  exception when insufficient_privilege then
+    null;
+  end;
+end;
+$team_privacy$;
+
+-- Sales can see and allocate a receipt. Retrying the same allocation is safe.
+select 1 / case
+  when exists (
+    select 1 from public.unmatched_receipts
+    where id = :'alpha_unmatched_receipt_id'::uuid
+      and business_id = :'alpha_business_id'::uuid
+      and status = 'unmatched'
+  ) then 1 else 0
+end;
+
+select public.match_unmatched_receipt(
+  :'alpha_business_id'::uuid,
+  :'alpha_unmatched_receipt_id'::uuid,
+  :'alpha_receipt_invoice_id'::uuid
+) as alpha_receipt_payment_id \gset
+
+select public.match_unmatched_receipt(
+  :'alpha_business_id'::uuid,
+  :'alpha_unmatched_receipt_id'::uuid,
+  :'alpha_receipt_invoice_id'::uuid
+) as alpha_receipt_payment_retry_id \gset
+
+select 1 / case
+  when :'alpha_receipt_payment_id' = :'alpha_receipt_payment_retry_id'
+   and exists (
+     select 1 from public.unmatched_receipts
+     where id = :'alpha_unmatched_receipt_id'::uuid
+       and status = 'matched'
+       and matched_invoice_id = :'alpha_receipt_invoice_id'::uuid
+   )
+   and exists (
+     select 1 from public.payments
+     where id = :'alpha_receipt_payment_id'::uuid
+       and amount = 100 and applied_amount = 100
+       and origin = 'reconciliation' and channel = 'mpesa'
+   )
+  then 1 else 0
+end;
 
 select 1 / case
   when exists (
