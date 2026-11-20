@@ -192,30 +192,50 @@ export async function signInWithPassword(email: string, password: string): Promi
 }
 
 export async function signUpWithPassword(input: SignUpInput): Promise<{ session: SupabaseSession | null; user: SupabaseUser | null }> {
-  const payload = await request<Partial<SupabaseSession> & { user?: SupabaseUser }>(
-    'auth/v1/signup',
-    {
-    method: 'POST',
-    body: {
-      email: input.email.trim(),
-      password: input.password,
-      // This metadata contains only user-entered onboarding information. It is
-      // never used to authorize access; business roles are assigned in the DB.
-      data: {
-        display_name: input.fullName.trim(),
-        business_onboarding: {
-          business_name: input.businessName.trim(),
-          industry: input.industry.trim() || null,
-          phone: input.phone.trim() || null,
+  let payload: Partial<SupabaseSession> & { user?: SupabaseUser };
+  try {
+    payload = await request<Partial<SupabaseSession> & { user?: SupabaseUser }>(
+      'auth/v1/signup',
+      {
+        method: 'POST',
+        body: {
           email: input.email.trim(),
-          ai_assistant_enabled: input.aiAssistantEnabled,
-          whatsapp_digest_enabled: input.whatsappDigestEnabled,
-          whatsapp_recipient_phone: input.whatsappDigestEnabled ? input.whatsappRecipientPhone.trim() : null,
+          password: input.password,
+          // This metadata contains only user-entered onboarding information. It is
+          // never used to authorize access; business roles are assigned in the DB.
+          data: {
+            display_name: input.fullName.trim(),
+            business_onboarding: {
+              business_name: input.businessName.trim(),
+              industry: input.industry.trim() || null,
+              phone: input.phone.trim() || null,
+              email: input.email.trim(),
+              ai_assistant_enabled: input.aiAssistantEnabled,
+              whatsapp_digest_enabled: input.whatsappDigestEnabled,
+              whatsapp_recipient_phone: input.whatsappDigestEnabled ? input.whatsappRecipientPhone.trim() : null,
+            },
+          },
         },
+        accessToken: publishableKey,
       },
-    },
-    accessToken: publishableKey,
-  });
+    );
+  } catch (error) {
+    // A previous attempt may have created the Auth user before workspace setup
+    // failed. Resume that account when the supplied password is valid.
+    if (!(error instanceof SupabaseRequestError) || error.code !== 'user_already_exists') throw error;
+    try {
+      const session = await signInWithPassword(input.email, input.password);
+      return { session, user: session.user };
+    } catch (signInError) {
+      // Preserve the duplicate-account guidance for a wrong password; surface
+      // real network/server failures so the user can retry those safely.
+      if (
+        signInError instanceof SupabaseRequestError &&
+        (signInError.status === 400 || signInError.code === 'invalid_credentials')
+      ) throw error;
+      throw signInError;
+    }
+  }
 
   // Supabase returns a session immediately when email confirmation is disabled.
   // Some Auth configurations return only a user object; in that case, exchange
