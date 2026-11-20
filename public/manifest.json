@@ -2,7 +2,7 @@
   "name": "Hesabu — Business workspace",
   "short_name": "Hesabu",
   "id": "/",
-  "description": "Manage sales, payments, stock, expenses and business performance in one secure workspace.",
+  "description": "A simpler way to keep track of sales, money, stock and expenses.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -19,18 +19,6 @@
     "productivity"
   ],
   "icons": [
-    {
-      "src": "/app-icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/app-icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
     {
       "src": "/app-icon.svg",
       "sizes": "any",
