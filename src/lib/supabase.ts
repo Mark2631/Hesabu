@@ -56,8 +56,9 @@ export class SupabaseRequestError extends Error {
   status: number;
   code?: string;
 
-  constructor(message: string, status: number, code?: string) {
-    super(message);
+  constructor(_message: string, status: number, code?: string) {
+    // Keep database, provider and infrastructure details out of the product UI.
+    super('We could not complete that request. Please try again.');
     this.name = 'SupabaseRequestError';
     this.status = status;
     this.code = code;
