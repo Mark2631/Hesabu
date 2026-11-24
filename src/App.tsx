@@ -525,7 +525,7 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }:
         {invoice && <div className="balance-hint"><span>Unpaid invoice balance</span><strong>{money(invoiceBalance(invoice))}</strong></div>}
         {cloudMode && invoice && <div className="stk-demo-panel">
           <div className="stk-demo-heading"><Smartphone size={17} /><span><strong>STK push training simulator</strong><small>Simulates the customer prompt. It never contacts Safaricom or updates this invoice.</small></span></div>
-          {demoStep === 'ready' && <Button variant="outline" block onClick={() => setDemoStep('prompted')} disabled={!phone.trim() || Number(amount) <= 0}>Preview simulated STK prompt</Button>}
+          {demoStep === 'ready' && <Button variant="outline" block onClick={() => setDemoStep('prompted')} disabled={!phone.trim() || Number(amount) <= 0 || !invoice || Number(amount) > invoiceBalance(invoice)}>Preview simulated STK prompt</Button>}
           {demoStep === 'prompted' && <div className="stk-demo-phone">
             <span>HESABU TRAINING SIMULATION</span>
             <strong>Pay {money(Number(amount) || 0)}?</strong>
@@ -766,9 +766,9 @@ function InvoiceDialog({ invoice, onClose, onRequestPayment, cloudMode }: {
       <div className="invoice-total-box">
         <div><span>Subtotal</span><strong>{money(invoice.subtotal)}</strong></div>
         <div><span>Discount</span><strong>−{money(invoice.discount)}</strong></div>
-        <div className="grand-total"><span>Invoice total</span><strong>{money(invoice.total)}</strong></div>
-        <div><span>Paid to date</span><strong>{money(invoice.paid)}</strong></div>
-        <div className="grand-total balance-total"><span>Balance due</span><strong>{money(invoiceBalance(invoice))}</strong></div>
+        <div className="grand-total"><span>{invoice.status === 'draft' ? 'Quote total' : 'Invoice total'}</span><strong>{money(invoice.total)}</strong></div>
+        {invoice.status !== 'draft' && <><div><span>Paid to date</span><strong>{money(invoice.paid)}</strong></div>
+        <div className="grand-total balance-total"><span>Balance due</span><strong>{money(invoiceBalance(invoice))}</strong></div></>}
       </div>
       <div className="invoice-detail-meta">
         <span>Transaction <strong>{saleTypeLabel(invoice.saleType)}</strong></span>
@@ -852,7 +852,7 @@ function ReceiptDialog({ onClose, onCreate }: {
 function MatchReceiptDialog({ receipt, invoices, onClose, onMatch }: {
   receipt: UnmatchedReceipt; invoices: Invoice[]; onClose: () => void; onMatch: (invoiceId: string) => void;
 }) {
-  const eligible = invoices.filter(invoice => invoiceBalance(invoice) > 0);
+  const eligible = invoices.filter(invoice => invoice.status !== 'draft' && invoiceBalance(invoice) > 0);
   const likely = eligible.find(invoice => invoice.customer.toLowerCase() === receipt.payer.toLowerCase());
   const [invoiceId, setInvoiceId] = useState(likely?.id || eligible[0]?.id || '');
   const invoice = eligible.find(item => item.id === invoiceId);
@@ -1436,20 +1436,21 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
   onRecordExpense: () => void; onRecordPayment: () => void; onRecordReceipt: () => void;
   onCreatePurchase: () => void; onQuickStock: () => void;
 }) {
+  const postedInvoices = data.invoices.filter(invoice => invoice.status !== 'draft');
   const chartDays = Array.from({ length: 7 }, (_, index) => addDays(today(), index - 6));
   const stockProducts = [...data.products].sort((a, b) => b.quantity - a.quantity).slice(0, 7);
   const chartValues = role === 'Inventory'
     ? stockProducts.map(product => product.quantity)
-    : chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
+    : chartDays.map(day => sum(postedInvoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
   const chartLabels = role === 'Inventory'
     ? stockProducts.map(product => product.name.length > 9 ? product.name.slice(0, 8) + '…' : product.name)
     : chartDays.map(day => formatBusinessDay(day, { weekday: 'short' }));
   const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
   const zeroStock = data.products.filter(product => product.quantity === 0);
-  const slowStock = data.products.filter(product => product.quantity > 0 && !data.invoices.some(invoice =>
+  const slowStock = data.products.filter(product => product.quantity > 0 && !postedInvoices.some(invoice =>
     invoice.date >= addDays(today(), -30) && invoice.lines.some(line => line.productId === product.id),
   ));
-  const unsettled = data.invoices.filter(invoice => invoiceBalance(invoice) > 0)
+  const unsettled = postedInvoices.filter(invoice => invoiceBalance(invoice) > 0)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
 
   type RecentActivity = {
@@ -1475,7 +1476,7 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
       detail: movement.source === 'supplier_payment' ? 'Supplier payment · ' + (movement.reference || channelLabel(movement.channel)) : channelLabel(movement.channel),
       time: movement.date + 'T12:00:00', amount: movement.amount, direction: 'out' as const,
     })),
-    ...data.invoices.filter(invoice => invoice.total > 0 && invoice.paid === 0).map(invoice => ({
+    ...postedInvoices.filter(invoice => invoice.total > 0 && invoice.paid === 0).map(invoice => ({
       id: 'credit-' + invoice.id, title: invoice.customer || 'Credit sale',
       detail: invoice.number + ' · Sale on credit', time: invoice.date + 'T12:00:00',
       amount: invoice.total, direction: 'neutral' as const, invoiceId: invoice.id, label: 'On credit',
@@ -1989,7 +1990,7 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
 
 function getDailyDigest(data: AppData) {
   const date = today();
-  const sales = data.invoices.filter(invoice => invoice.date === date);
+  const sales = data.invoices.filter(invoice => invoice.status !== 'draft' && invoice.date === date);
   const payments = data.payments.filter(payment => payment.status === 'succeeded' && dateKey(new Date(payment.createdAt)) === date);
   const unmatchedReceipts = data.unmatchedReceipts.filter(receipt => dateKey(new Date(receipt.receivedAt)) === date);
   const expenses = data.expenses.filter(expense => expense.date === date);
@@ -2113,10 +2114,11 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
   const startDate = period === 'week' ? addDays(todayDate, -6) : period === 'month' ? currentMonthStart : yearStart;
   const elapsedDays = Math.max(1, Math.floor((Date.parse(todayDate + 'T12:00:00Z') - Date.parse(startDate + 'T12:00:00Z')) / 86400000) + 1);
   const periodLabel = period === 'week' ? 'Weekly' : period === 'month' ? 'Monthly' : 'Yearly';
+  const postedInvoices = data.invoices.filter(invoice => invoice.status !== 'draft');
 
   const weeklyRows = Array.from({ length: 7 }, (_, index) => {
     const date = addDays(todayDate, index - 6);
-    const invoices = data.invoices.filter(invoice => invoice.date === date && invoice.date <= todayDate);
+    const invoices = postedInvoices.filter(invoice => invoice.date === date && invoice.date <= todayDate);
     return {
       key: date,
       label: formatBusinessDay(date, { weekday: 'short' }),
@@ -2133,7 +2135,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
     const lastDay = Math.min(monthDayCount, firstDay + 6);
     const bucketStart = todayDate.slice(0, 7) + '-' + String(firstDay).padStart(2, '0');
     const bucketEnd = todayDate.slice(0, 7) + '-' + String(lastDay).padStart(2, '0');
-    const invoices = data.invoices.filter(invoice => invoice.date >= bucketStart && invoice.date <= bucketEnd && invoice.date <= todayDate);
+    const invoices = postedInvoices.filter(invoice => invoice.date >= bucketStart && invoice.date <= bucketEnd && invoice.date <= todayDate);
     return {
       key: bucketStart,
       label: firstDay + '–' + lastDay,
@@ -2145,7 +2147,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
   const monthlyRows = Array.from({ length: 12 }, (_, index) => {
     const month = String(index + 1).padStart(2, '0');
     const key = todayDate.slice(0, 4) + '-' + month;
-    const invoices = data.invoices.filter(invoice => invoice.date.slice(0, 7) === key && invoice.date <= todayDate);
+    const invoices = postedInvoices.filter(invoice => invoice.date.slice(0, 7) === key && invoice.date <= todayDate);
     return {
       key,
       label: formatBusinessDay(key + '-01', { month: 'short' }),
@@ -2155,7 +2157,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
     };
   });
   const dayRows = period === 'week' ? weeklyRows : period === 'month' ? monthlyWeekRows : monthlyRows;
-  const filteredInvoices = data.invoices.filter(invoice => invoice.date >= startDate && invoice.date <= todayDate);
+  const filteredInvoices = postedInvoices.filter(invoice => invoice.date >= startDate && invoice.date <= todayDate);
   const sales = sum(filteredInvoices.map(invoice => invoice.total));
   const averageDailySales = sales / elapsedDays;
   const averageOrderValue = filteredInvoices.length ? sales / filteredInvoices.length : 0;
