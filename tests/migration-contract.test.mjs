@@ -149,3 +149,25 @@ test('the team roster RPC restricts email visibility to business management', ()
   assert.ok(workspaceAccessMigration.includes("has_business_role(p_business_id, array['owner','manager']::text[])"));
   assert.ok(workspaceAccessMigration.includes('Only an owner or manager can view the business team'));
 });
+
+
+const saleTypesMigration = await readFile(resolve(root, 'MVP/supabase/migrations/20261124084011_sales_types_and_enquiries.sql'), 'utf8');
+
+test('sale intent is persisted and enquiries remain drafts outside the financial ledger', () => {
+  assert.ok(saleTypesMigration.includes("add column if not exists sale_type text not null default 'walk_in'"));
+  assert.ok(saleTypesMigration.includes("check (sale_type in ('walk_in', 'pay_on_delivery', 'credit', 'enquiry'))"));
+  assert.ok(saleTypesMigration.includes("status, source, sale_type, created_by"));
+  assert.ok(saleTypesMigration.includes("'draft', p_source, 'enquiry', v_user_id"));
+  assert.ok(saleTypesMigration.includes('create or replace function app_private.save_sale_enquiry('));
+  assert.ok(saleTypesMigration.includes('create or replace function public.post_sale_with_type('));
+  assert.ok(saleTypesMigration.includes('app_private.post_sale_with_payment('));
+  assert.ok(saleTypesMigration.includes("p_payment_channel <> 'credit'"));
+  const enquiry = saleTypesMigration.slice(
+    saleTypesMigration.indexOf('create or replace function app_private.save_sale_enquiry('),
+    saleTypesMigration.indexOf('-- One entry point for counter sales'),
+  );
+  assert.ok(enquiry.includes('insert into public.invoice_items'));
+  assert.ok(!enquiry.includes('update public.products'));
+  assert.ok(!enquiry.includes('insert into public.payments'));
+  assert.ok(!enquiry.includes('insert into public.journal_entries'));
+});

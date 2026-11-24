@@ -4,7 +4,7 @@ import {
   Bell, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown,
   ChevronRight, CircleDollarSign, Clock3, Download,
   FileCheck2, FileSpreadsheet, FileText, Filter, LayoutDashboard, Link2, MessageCircle, Moon, Sun,
-  Menu, MoreHorizontal, Mic, Package, PanelLeftClose, Plus, Receipt,
+  Menu, MoreHorizontal, Mic, Minus, Package, PanelLeftClose, Plus, Receipt,
   Search, Send, Settings, ShieldCheck, ShoppingCart, Smartphone,
   Store, TrendingDown, TrendingUp, Truck, Wallet, X, LogOut,
   type LucideIcon,
@@ -24,14 +24,14 @@ const EMPTY_WORKSPACE_DATA: AppData = {
 import {
   acceptCloudBusinessInvitation, adjustCloudStock, createBusiness, createCloudProduct, createCloudSupplier, createCloudBusinessInvitation,
   createCloudPurchaseOrder, getBusinessSettings, getCloudWorkspace,
-  listMyBusinesses, postCloudExpense, postCloudPayment, postCloudSale,
+  listMyBusinesses, postCloudExpense, postCloudPayment, postCloudSaleWithType,
   postCloudSupplierPayment, postCloudUnmatchedReceipt, matchCloudUnmatchedReceipt, receiveCloudPurchaseOrder, restoreCloudSession,
   saveBusinessPreferences, saveCloudBusinessProfile, saveCloudWhatsAppDestination, updateCloudBusinessMember, revokeCloudBusinessInvitation,
   sendPasswordRecoveryEmail, signInWithPassword, signOut, signUpWithPassword, updatePasswordFromRecovery,
   type SignUpInput, type SupabaseUser,
 } from './lib/supabase';
 import type {
-  AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput,
+  AppData, BusinessProfile, Invoice, InvoiceStatus, ModuleKey, NewInvoiceInput, SaleType,
   NewPaymentInput, NewPurchaseInput, NewUnmatchedReceiptInput, Payment, PaymentChannel, Product,
   PurchaseOrder, ReceiptRail, Supplier, TeamInvitation, TeamMember, TeamRole, UnmatchedReceipt,
 } from './types';
@@ -43,14 +43,17 @@ type DialogState =
   | { kind: 'receipt' }
   | { kind: 'match-receipt'; receiptId: string }
   | { kind: 'expense' }
-  | { kind: 'product' }
-  | { kind: 'supplier' }
+  | { kind: 'product'; returnToPurchase?: boolean }
+  | { kind: 'supplier'; returnToPurchase?: boolean }
   | { kind: 'purchase'; productId?: string; quantity?: number }
   | { kind: 'receive-purchase'; purchaseOrderId: string }
   | { kind: 'invoice'; invoiceId: string }
   | { kind: 'supplier-payment'; supplierId: string }
   | { kind: 'adjust'; productId: string }
   | { kind: 'stock-picker' }
+  | { kind: 'stock-actions' }
+  | { kind: 'stock-add' }
+  | { kind: 'stock-remove' }
   | { kind: 'profile' }
   | null;
 
@@ -100,6 +103,7 @@ const makeId = (prefix: string) => prefix + '-' + Math.random().toString(36).sli
 const channelLabel = (channel: PaymentChannel) => ({
   mpesa: 'M-Pesa', cash: 'Cash', bank: 'Bank transfer', card: 'Card', credit: 'On credit',
 }[channel]);
+const saleTypeLabel = (saleType: SaleType = 'walk_in') => ({ walk_in: 'Walk-in', pay_on_delivery: 'Pay on delivery', credit: 'Customer credit', enquiry: 'Enquiry / quote' }[saleType]);
 const statusLabel = (status: InvoiceStatus) => ({
   draft: 'Draft', sent: 'Awaiting payment', partial: 'Part paid', paid: 'Paid', overdue: 'Overdue',
 }[status]);
@@ -267,89 +271,203 @@ function Initials({ name }: { name: string }) {
   return <span className="avatar">{letters || 'H'}</span>;
 }
 
-function SaleDialog({ products, onClose, onCreate, cloudMode }: {
-  products: Product[]; onClose: () => void; onCreate: (input: NewInvoiceInput) => void; cloudMode: boolean;
+function SaleDialog({ products, onClose, onCreate, onAddProduct, cloudMode }: {
+  products: Product[]; onClose: () => void; onCreate: (input: NewInvoiceInput) => void;
+  onAddProduct: () => void; cloudMode: boolean;
 }) {
   const [customer, setCustomer] = useState('Walk-in customer');
-  const [phone, setPhone] = useState('');
   const [dueDate, setDueDate] = useState(addDays(today(), 7));
   const [discount, setDiscount] = useState('0');
   const [channel, setChannel] = useState<PaymentChannel>('mpesa');
+  const [saleType, setSaleType] = useState<SaleType>('walk_in');
   const [source, setSource] = useState<Invoice['source']>('pos');
-  const [items, setItems] = useState([{ productId: products[0]?.id || '', quantity: 1 }]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [items, setItems] = useState<Array<{ productId: string; quantity: string }>>([]);
+  const [formError, setFormError] = useState('');
   const productFor = (id: string) => products.find(product => product.id === id);
-  const subtotal = sum(items.map(item => (productFor(item.productId)?.sellingPrice || 0) * item.quantity));
-  const total = Math.max(0, subtotal - Math.max(0, Number(discount) || 0));
-  const addItem = () => setItems(current => [...current, { productId: products[0]?.id || '', quantity: 1 }]);
-  const updateItem = (index: number, patch: Partial<{ productId: string; quantity: number }>) => {
-    setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  const subtotal = sum(items.map(item => (productFor(item.productId)?.sellingPrice || 0) * (Number(item.quantity) || 0)));
+  const discountValue = Math.max(0, Number(discount) || 0);
+  const total = Math.max(0, subtotal - discountValue);
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const productResults = products
+    .filter(product => !normalizedSearch || (product.name + ' ' + product.sku + ' ' + product.category).toLowerCase().includes(normalizedSearch))
+    .slice(0, normalizedSearch ? 12 : 6);
+  const itemCount = items.reduce((count, item) => count + (Number(item.quantity) || 0), 0);
+
+  const addProduct = (product: Product) => {
+    if (saleType !== 'enquiry' && product.quantity <= 0) return;
+    setItems(current => {
+      const existing = current.find(item => item.productId === product.id);
+      if (!existing) return [...current, { productId: product.id, quantity: '1' }];
+      return current.map(item => {
+        if (item.productId !== product.id) return item;
+        const nextQuantity = (Number(item.quantity) || 0) + 1;
+        return { ...item, quantity: String(saleType === 'enquiry' ? nextQuantity : Math.min(product.quantity, nextQuantity)) };
+      });
+    });
+    setSearchTerm('');
+    setFormError('');
   };
-  const removeItem = (index: number) => setItems(current => current.filter((_, itemIndex) => itemIndex !== index));
+  const updateQuantity = (productId: string, quantity: string) => {
+    setItems(current => current.map(item => item.productId === productId ? { ...item, quantity } : item));
+    setFormError('');
+  };
+  const stepQuantity = (productId: string, change: number) => {
+    const product = productFor(productId);
+    if (!product) return;
+    setItems(current => current.map(item => {
+      if (item.productId !== productId) return item;
+      const next = Math.max(1, (Number(item.quantity) || 0) + change);
+      return { ...item, quantity: String(saleType === 'enquiry' ? next : Math.min(product.quantity, next)) };
+    }));
+    setFormError('');
+  };
+  const removeProduct = (productId: string) => setItems(current => current.filter(item => item.productId !== productId));
+
+  const changeSaleType = (value: string) => {
+    const nextType = value as SaleType;
+    setSaleType(nextType);
+    if (nextType === 'walk_in') setChannel(current => current === 'credit' ? 'mpesa' : current);
+    else setChannel('credit');
+    setFormError('');
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const validItems = items.filter(item => item.productId && item.quantity > 0);
-    if (!validItems.length) return;
-    for (const item of validItems) {
-      const product = productFor(item.productId);
-      if (!product || item.quantity > product.quantity) return;
+    const validItems = items.map(item => ({ productId: item.productId, quantity: Number(item.quantity) }));
+    if (!validItems.length) {
+      setFormError('Search for a product and add it to the sale first.');
+      return;
+    }
+    if (validItems.some(item => !Number.isFinite(item.quantity) || item.quantity <= 0)) {
+      setFormError('Enter a quantity of at least 1 for every item.');
+      return;
+    }
+    if (discountValue > subtotal) {
+      setFormError('Discount cannot be greater than the sale subtotal.');
+      return;
+    }
+    if (saleType !== 'enquiry') {
+      for (const item of validItems) {
+        const product = productFor(item.productId);
+        if (!product || item.quantity > product.quantity) {
+          setFormError(product
+            ? 'Only ' + numberText(product.quantity) + ' ' + product.unit + ' of ' + product.name + ' are available.'
+            : 'One of the selected products is no longer available.');
+          return;
+        }
+      }
+    }
+    if (saleType === 'walk_in' && total <= 0) {
+      setFormError('Enter a sale amount greater than zero.');
+      return;
     }
     onCreate({
-      customer: customer.trim() || 'Walk-in customer', phone, dueDate,
-      discount: Math.max(0, Number(discount) || 0), channel, items: validItems, source,
+      customer: customer.trim() || 'Walk-in customer',
+      phone: '',
+      dueDate: saleType === 'enquiry' ? '' : dueDate,
+      discount: discountValue,
+      channel: saleType === 'walk_in' ? channel : 'credit',
+      saleType,
+      items: validItems,
+      source,
     });
   };
 
-  return <Modal title="Record a sale" detail="Post one sale and update the invoice, payment record and stock ledger together." onClose={onClose} size="lg">
-    <form className="modal-body" onSubmit={submit}>
-      <div className="form-grid form-grid-two">
-        <Field label="Customer or account" value={customer} onChange={setCustomer} placeholder="Walk-in customer" />
-        <Field label="Customer phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
+  return <Modal title={saleType === 'enquiry' ? 'Save an enquiry' : 'Record a sale'} detail={saleType === 'enquiry'
+    ? 'Prepare a quote without recording income, deducting stock or changing customer balances.'
+    : 'Find products, build the basket and record the payment or outstanding balance in one step.'} onClose={onClose} size="lg">
+    <form className="modal-body sale-entry-form" onSubmit={submit}>
+      <Field label="Customer or account (optional)" value={customer} onChange={setCustomer} placeholder="Walk-in customer" />
+      <div className="field-hint">A phone number is not needed to record a sale. Only collect contact details later if a customer-requested service requires them.</div>
+
+      <div className="sale-type-row">
+        <SelectField label="Transaction type" value={saleType} onChange={changeSaleType} options={[
+          { value: 'walk_in', label: 'Walk-in sale' },
+          { value: 'pay_on_delivery', label: 'Pay on delivery' },
+          { value: 'credit', label: 'Customer credit / debt' },
+          { value: 'enquiry', label: 'Enquiry / quote only' },
+        ]} />
+        <div className="sale-type-explainer">
+          {saleType === 'walk_in' && 'Payment is recorded now using the method selected below.'}
+          {saleType === 'pay_on_delivery' && 'The sale and stock are recorded now. Payment remains outstanding until delivery.'}
+          {saleType === 'credit' && 'Record the sale and stock now. The customer balance remains unpaid.'}
+          {saleType === 'enquiry' && 'Saves a draft quote only. No income, stock movement or receivable is recorded.'}
+        </div>
       </div>
-      <div className="subsection-label">Items sold</div>
-      <div className="sale-items">
-        {items.map((item, index) => {
+
+      {products.length === 0 ? <div className="sale-inventory-required">
+        <span className="sale-inventory-icon"><Package size={22} /></span>
+        <strong>Your product list is empty</strong>
+        <p>Add the products you sell and enter the quantity you have. Hesabu will then use those stock levels when you record sales.</p>
+        <Button onClick={onAddProduct}><Plus size={15} /> Add your first product</Button>
+        <small>You can save a product with zero stock, but it cannot be sold until stock is added.</small>
+      </div> : <>
+      <div className="sale-picker-heading">
+        <div><strong>Find items</strong><small>{products.length} products in your catalogue</small></div>
+        <span>{itemCount} {itemCount === 1 ? 'unit' : 'units'} in basket</span>
+      </div>
+      <label className="field sale-product-search">
+        <span className="field-label">Search by product name, SKU or category</span>
+        <span className="sale-search-input-wrap"><Search size={16} /><input autoFocus className="field-input" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="e.g. bread, sugar, BAK-003…" /></span>
+      </label>
+      <div className="sale-product-results" aria-label="Matching products">
+        {productResults.length ? productResults.map(product => {
+          const alreadyAdded = items.some(item => item.productId === product.id);
+          const unavailable = saleType !== 'enquiry' && product.quantity <= 0;
+          return <button type="button" className="sale-product-result" key={product.id} onClick={() => addProduct(product)} disabled={unavailable}>
+            <span className="sale-product-result-main"><strong>{product.name}</strong><small>{product.sku || product.category} · {numberText(product.quantity)} {product.unit} available</small></span>
+            <span className="sale-product-result-price">{money(product.sellingPrice)}</span>
+            <span className="sale-product-result-add" aria-hidden="true">{alreadyAdded ? '+' : 'Add'}</span>
+          </button>;
+        }) : <div className="sale-product-empty">No matching products. Check the spelling or SKU.</div>}
+      </div>
+      </>}
+
+      <div className="sale-cart-heading"><strong>Sale basket</strong><span>{items.length} {items.length === 1 ? 'item' : 'items'}</span></div>
+      {items.length ? <div className="sale-cart-list">
+        {items.map(item => {
           const product = productFor(item.productId);
-          return <div className="sale-item-row" key={index}>
-            <label className="field sale-product-field">
-              <span className="field-label">Product</span>
-              <select className="field-input" value={item.productId} onChange={event => updateItem(index, { productId: event.target.value })}>
-                {products.map(option => <option key={option.id} value={option.id}>{option.name} · {money(option.sellingPrice)}</option>)}
-              </select>
-            </label>
-            <Field label="Qty" type="number" min={1} step={1} value={item.quantity} onChange={value => updateItem(index, { quantity: Math.max(1, Number(value) || 1) })} />
-            <div className="sale-line-total"><span>Line total</span><strong>{money((product?.sellingPrice || 0) * item.quantity)}</strong></div>
-            {items.length > 1 && <IconButton label="Remove item" onClick={() => removeItem(index)}><X size={15} /></IconButton>}
+          if (!product) return null;
+          const quantity = Number(item.quantity) || 0;
+          return <div className="sale-cart-row" key={item.productId}>
+            <div className="sale-cart-product"><strong>{product.name}</strong><small>{money(product.sellingPrice)} per {product.unit} · {numberText(product.quantity)} in stock</small></div>
+            <div className="sale-quantity-control">
+              <button type="button" className="sale-quantity-step" aria-label={'Reduce ' + product.name + ' quantity'} onClick={() => stepQuantity(product.id, -1)} disabled={quantity <= 1}><Minus size={13} /></button>
+              <input className="sale-quantity-input" type="number" min={1} step={1} inputMode="numeric" aria-label={product.name + ' quantity'} value={item.quantity} onChange={event => updateQuantity(product.id, event.target.value)} />
+              <button type="button" className="sale-quantity-step" aria-label={'Increase ' + product.name + ' quantity'} onClick={() => stepQuantity(product.id, 1)} disabled={saleType !== 'enquiry' && quantity >= product.quantity}><Plus size={13} /></button>
+            </div>
+            <strong className="sale-cart-line-total">{money(product.sellingPrice * quantity)}</strong>
+            <button type="button" className="sale-cart-remove" aria-label={'Remove ' + product.name} onClick={() => removeProduct(product.id)}><X size={15} /></button>
           </div>;
         })}
-      </div>
-      <div className="inline-form-actions">
-        <Button variant="outline" size="sm" onClick={addItem}><Plus size={14} /> Add another item</Button>
-        <span className="field-hint">Available quantity is checked before the sale is posted.</span>
-      </div>
-      <div className="form-grid form-grid-three">
-        <Field label="Discount (KSh)" type="number" min={0} value={discount} onChange={setDiscount} />
-        <SelectField label="Payment method" value={channel} onChange={value => setChannel(value as PaymentChannel)} options={[
-          { value: 'mpesa', label: 'M-Pesa received' }, { value: 'cash', label: 'Cash received' },
-          { value: 'bank', label: 'Bank transfer' }, { value: 'card', label: 'Card payment' },
-          { value: 'credit', label: 'On credit' },
-        ]} />
-        <SelectField label="Sales source" value={source} onChange={value => setSource(value as Invoice['source'])} options={cloudMode
-          ? [{ value: 'pos', label: 'Point of sale' }, { value: 'manual', label: 'Manual entry' }]
-          : [
-            { value: 'pos', label: 'Point of sale' }, { value: 'website', label: 'Website' },
-            { value: 'hesabu', label: 'Hesabu checkout' }, { value: 'manual', label: 'Manual entry' },
+      </div> : <div className="sale-cart-empty">Search the catalogue and tap an item to add it here. Selecting an item again increases its quantity.</div>}
+
+      {formError && <div className="sale-form-error" role="alert">{formError}</div>}
+      <div className="form-grid form-grid-two">
+        <Field label="Discount (KSh)" type="number" min={0} value={discount} onChange={value => { setDiscount(value); setFormError(''); }} />
+        {saleType === 'walk_in'
+          ? <SelectField label="Payment received through" value={channel} onChange={value => setChannel(value as PaymentChannel)} options={[
+            { value: 'mpesa', label: 'M-Pesa received' }, { value: 'cash', label: 'Cash received' },
+            { value: 'bank', label: 'Bank transfer received' }, { value: 'card', label: 'Card payment received' },
           ]} />
+          : saleType !== 'enquiry'
+            ? <Field label="Expected payment date" type="date" value={dueDate} onChange={setDueDate} />
+            : <div className="sale-enquiry-note">No payment is requested or recorded for an enquiry.</div>}
       </div>
-      {channel === 'credit' && <Field label="Payment due date" type="date" value={dueDate} onChange={setDueDate} />}
+      <SelectField label="Recorded through" value={source} onChange={value => setSource(value as Invoice['source'])} options={cloudMode
+        ? [{ value: 'pos', label: 'Shop counter / POS' }, { value: 'manual', label: 'Manual entry' }]
+        : [{ value: 'pos', label: 'Shop counter / POS' }, { value: 'website', label: 'Website' }, { value: 'hesabu', label: 'Hesabu checkout' }, { value: 'manual', label: 'Manual entry' }]} />
+
       <div className="dialog-total">
+        <span><span>Items</span><strong>{items.length}</strong></span>
         <span><span>Subtotal</span><strong>{money(subtotal)}</strong></span>
-        <span><span>Discount</span><strong>−{money(Number(discount) || 0)}</strong></span>
-        <span className="dialog-total-final"><span>Total to record</span><strong>{money(total)}</strong></span>
+        <span><span>Discount</span><strong>−{money(discountValue)}</strong></span>
+        <span className="dialog-total-final"><span>{saleType === 'enquiry' ? 'Quote total' : saleType === 'walk_in' ? 'Paid now' : 'Amount outstanding'}</span><strong>{money(total)}</strong></span>
       </div>
       <div className="modal-footer">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button type="submit" disabled={!items.length || total <= 0}><Check size={16} /> Post sale</Button>
+        <Button type="submit" disabled={!items.length || total <= 0}><Check size={16} /> {saleType === 'enquiry' ? 'Save enquiry' : 'Post sale'}</Button>
       </div>
     </form>
   </Modal>;
@@ -359,7 +477,7 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }:
   invoices: Invoice[]; initialInvoiceId?: string; onClose: () => void;
   onCreate: (input: NewPaymentInput) => void; cloudMode: boolean;
 }) {
-  const outstandingInvoices = invoices.filter(invoice => invoiceBalance(invoice) > 0);
+  const outstandingInvoices = invoices.filter(invoice => invoice.status !== 'draft' && invoiceBalance(invoice) > 0);
   const [invoiceId, setInvoiceId] = useState(initialInvoiceId || outstandingInvoices[0]?.id || '');
   const invoice = outstandingInvoices.find(item => item.id === invoiceId);
   const [phone, setPhone] = useState(invoice?.phone || '');
@@ -367,11 +485,13 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }:
   const [channel, setChannel] = useState<Exclude<PaymentChannel, 'credit'>>('mpesa');
   const [reference, setReference] = useState('');
   const [idempotencyKey] = useState(() => 'manual-payment:' + makeId('IDEM'));
+  const [demoStep, setDemoStep] = useState<'ready' | 'prompted' | 'approved' | 'declined'>('ready');
   useEffect(() => {
     const selected = outstandingInvoices.find(item => item.id === invoiceId);
     if (selected) {
       setAmount(String(invoiceBalance(selected)));
       setPhone(selected.phone || '');
+      setDemoStep('ready');
     }
   }, [invoiceId]);
   const submit = (event: FormEvent) => {
@@ -412,6 +532,19 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }:
           <Field label="Transaction / receipt reference (optional)" value={reference} onChange={setReference} placeholder="e.g. QTX8AB12CD" />
         </>}
         {invoice && <div className="balance-hint"><span>Unpaid invoice balance</span><strong>{money(invoiceBalance(invoice))}</strong></div>}
+        {!cloudMode && invoice && <div className="stk-demo-panel">
+          <div className="stk-demo-heading"><Smartphone size={17} /><span><strong>STK push training simulator</strong><small>Simulates the customer prompt. It never contacts Safaricom or updates this invoice.</small></span></div>
+          {demoStep === 'ready' && <Button variant="outline" block onClick={() => setDemoStep('prompted')} disabled={!phone.trim() || Number(amount) <= 0 || !invoice || Number(amount) > invoiceBalance(invoice)}>Preview simulated STK prompt</Button>}
+          {demoStep === 'prompted' && <div className="stk-demo-phone">
+            <span>HESABU TRAINING SIMULATION</span>
+            <strong>Pay {money(Number(amount) || 0)}?</strong>
+            <small>Simulated request to {phone}. No message was sent to this number.</small>
+            <div><Button size="sm" onClick={() => setDemoStep('approved')}>Simulate approval</Button><Button size="sm" variant="outline" onClick={() => setDemoStep('declined')}>Simulate decline</Button></div>
+          </div>}
+          {demoStep === 'approved' && <div className="stk-demo-result stk-demo-approved"><CheckCircle2 size={16} /><span><strong>Demo payment approved</strong><small>Training result only. No payment, cash balance or invoice was changed.</small></span></div>}
+          {demoStep === 'declined' && <div className="stk-demo-result stk-demo-declined"><AlertTriangle size={16} /><span><strong>Demo payment declined</strong><small>Training result only. No payment record was created.</small></span></div>}
+          {demoStep !== 'ready' && <Button size="sm" variant="ghost" onClick={() => setDemoStep('ready')}>Reset simulation</Button>}
+        </div>}
         {!cloudMode && <div className="payment-flow-note">
           <span className="flow-step flow-step-active">1 <small>Request</small></span><span className="flow-line" />
           <span className="flow-step">2 <small>Customer PIN</small></span><span className="flow-line" />
@@ -499,32 +632,40 @@ function ProductDialog({ onClose, onCreate }: {
   </Modal>;
 }
 
-function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity, onClose, onCreate }: {
+function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity, onClose, onCreate, onAddSupplier, onAddProduct }: {
   suppliers: Supplier[]; products: Product[]; initialProductId?: string; initialQuantity?: number;
   onClose: () => void; onCreate: (input: NewPurchaseInput) => void;
+  onAddSupplier: () => void; onAddProduct: () => void;
 }) {
   const initialProduct = products.find(product => product.id === initialProductId) || products[0];
   const [supplierId, setSupplierId] = useState(suppliers.find(item => item.id === initialProduct?.supplierId)?.id || suppliers[0]?.id || '');
   const [expectedAt, setExpectedAt] = useState(addDays(today(), 2));
   const [items, setItems] = useState(() => initialProduct ? [{
-    productId: initialProduct.id, quantity: Math.max(1, initialQuantity || 10), unitCost: initialProduct.costPrice,
+    productId: initialProduct.id, quantity: String(Math.max(1, initialQuantity || 10)), unitCost: initialProduct.costPrice,
   }] : []);
   const updateItem = (index: number, patch: Partial<(typeof items)[number]>) => {
     setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
   };
   const addItem = () => {
     const product = products.find(candidate => !items.some(item => item.productId === candidate.id));
-    if (product) setItems(current => [...current, { productId: product.id, quantity: 1, unitCost: product.costPrice }]);
+    if (product) setItems(current => [...current, { productId: product.id, quantity: '1', unitCost: product.costPrice }]);
   };
-  const total = sum(items.map(item => item.quantity * item.unitCost));
+  const total = sum(items.map(item => (Number(item.quantity) || 0) * item.unitCost));
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const valid = items.filter(item => item.productId && item.quantity > 0 && item.unitCost > 0);
+    const valid = items.map(item => ({ ...item, quantity: Number(item.quantity) })).filter(item => item.productId && Number.isFinite(item.quantity) && item.quantity > 0 && item.unitCost > 0);
     if (supplierId && valid.length) onCreate({ supplierId, expectedAt, items: valid });
   };
   return <Modal title="Create purchase order" detail="Build a supplier order with multiple lines. Inventory and accounts payable update when goods are received." onClose={onClose} size="lg">
     <form className="modal-body" onSubmit={submit}>
-      <SelectField label="Supplier" value={supplierId} onChange={setSupplierId} options={suppliers.map(item => ({ value: item.id, label: item.name }))} />
+      {suppliers.length ? <SelectField label="Supplier" value={supplierId} onChange={setSupplierId} options={suppliers.map(item => ({ value: item.id, label: item.name }))} /> :
+        <div className="sale-inventory-required">
+          <span className="sale-inventory-icon"><Store size={21} /></span>
+          <strong>Add a supplier to continue</strong>
+          <p>Hesabu needs a supplier record to track who supplied these goods and any amount you owe.</p>
+          <Button type="button" onClick={onAddSupplier}><Plus size={15} /> Add supplier</Button>
+        </div>}
+      {products.length ? <>
       <div className="subsection-label">Order items</div>
       <div className="sale-items">
         {items.map((item, index) => {
@@ -540,20 +681,26 @@ function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity
                 {available.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}
               </select>
             </label>
-            <Field label="Qty" type="number" min={1} value={item.quantity} onChange={value => updateItem(index, { quantity: Math.max(1, Number(value) || 1) })} />
+            <Field label="Qty" type="number" min={1} step={1} value={item.quantity} onChange={value => updateItem(index, { quantity: value })} />
             <Field label="Unit cost" type="number" min={1} value={item.unitCost} onChange={value => updateItem(index, { unitCost: Math.max(0, Number(value) || 0) })} />
-            <div className="sale-line-total"><span>Line total</span><strong>{money(selected ? item.quantity * item.unitCost : 0)}</strong></div>
+            <div className="sale-line-total"><span>Line total</span><strong>{money(selected ? (Number(item.quantity) || 0) * item.unitCost : 0)}</strong></div>
             {items.length > 1 && <IconButton label="Remove item" onClick={() => setItems(current => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></IconButton>}
           </div>;
         })}
       </div>
       <div className="inline-form-actions">
-        <Button variant="outline" size="sm" onClick={addItem} disabled={items.length >= products.length}><Plus size={14} /> Add another item</Button>
+        <Button type="button" variant="outline" size="sm" onClick={addItem} disabled={items.length >= products.length}><Plus size={14} /> Add another item</Button>
         <span className="field-hint">Each line retains its purchase cost for stock valuation.</span>
       </div>
       <Field label="Expected delivery date" type="date" value={expectedAt} onChange={setExpectedAt} />
-      <div className="dialog-total"><span className="dialog-total-final"><span>Purchase order total</span><strong>{money(total)}</strong></span></div>
-      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!supplierId || !items.length || total <= 0}>Create purchase order</Button></div>
+      </> : <div className="sale-inventory-required">
+        <span className="sale-inventory-icon"><Package size={21} /></span>
+        <strong>Add products before ordering stock</strong>
+        <p>Create the item first, including its unit, cost price and selling price. Then return here to order it.</p>
+        <Button type="button" onClick={onAddProduct}><Plus size={15} /> Add product</Button>
+      </div>}
+      {products.length > 0 && <div className="dialog-total"><span className="dialog-total-final"><span>Purchase order total</span><strong>{money(total)}</strong></span></div>}
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!suppliers.length || !supplierId || !products.length || !items.length || total <= 0}>Create purchase order</Button></div>
     </form>
   </Modal>;
 }
@@ -627,11 +774,11 @@ function ReceivePurchaseDialog({ order, onClose, onReceive }: {
 function InvoiceDialog({ invoice, onClose, onRequestPayment, cloudMode }: {
   invoice: Invoice; onClose: () => void; onRequestPayment: () => void; cloudMode: boolean;
 }) {
-  return <Modal title={invoice.number} detail="Invoice record and settlement history." onClose={onClose} size="lg">
+  return <Modal title={invoice.number} detail={invoice.status === 'draft' ? 'Quote draft. This record does not create a debt or payment.' : 'Invoice record and settlement history.'} onClose={onClose} size="lg">
     <div className="modal-body">
       <div className="invoice-detail-top">
-        <div><span className="field-label">Bill to</span><strong>{invoice.customer}</strong><small>{invoice.phone || 'No phone recorded'}</small></div>
-        <div className="invoice-detail-status"><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill><small>Issued {dateLabel(invoice.date)}</small></div>
+        <div><span className="field-label">{invoice.status === 'draft' ? 'Prepared for' : 'Bill to'}</span><strong>{invoice.customer}</strong><small>{invoice.phone || 'No phone recorded'}</small></div>
+        <div className="invoice-detail-status"><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill><small>{invoice.status === 'draft' ? 'Prepared' : 'Issued'} {dateLabel(invoice.date)}</small></div>
       </div>
       <DataTable headers={['Item', 'Qty', 'Unit price', 'Amount']}>
         {invoice.lines.map(line => <tr key={line.productId}>
@@ -642,18 +789,19 @@ function InvoiceDialog({ invoice, onClose, onRequestPayment, cloudMode }: {
       <div className="invoice-total-box">
         <div><span>Subtotal</span><strong>{money(invoice.subtotal)}</strong></div>
         <div><span>Discount</span><strong>−{money(invoice.discount)}</strong></div>
-        <div className="grand-total"><span>Invoice total</span><strong>{money(invoice.total)}</strong></div>
-        <div><span>Paid to date</span><strong>{money(invoice.paid)}</strong></div>
-        <div className="grand-total balance-total"><span>Balance due</span><strong>{money(invoiceBalance(invoice))}</strong></div>
+        <div className="grand-total"><span>{invoice.status === 'draft' ? 'Quote total' : 'Invoice total'}</span><strong>{money(invoice.total)}</strong></div>
+        {invoice.status !== 'draft' && <><div><span>Paid to date</span><strong>{money(invoice.paid)}</strong></div>
+        <div className="grand-total balance-total"><span>Balance due</span><strong>{money(invoiceBalance(invoice))}</strong></div></>}
       </div>
       <div className="invoice-detail-meta">
+        <span>Transaction <strong>{saleTypeLabel(invoice.saleType)}</strong></span>
         <span>Source <strong>{sourceLabel(invoice.source)}</strong></span>
-        <span>Payment terms <strong>{dateLabel(invoice.dueDate)}</strong></span>
-        <span>Preferred channel <strong>{channelLabel(invoice.channel)}</strong></span>
+        {invoice.status !== 'draft' && <span>Payment terms <strong>{dateLabel(invoice.dueDate)}</strong></span>}
+        {invoice.status !== 'draft' && <span>Preferred channel <strong>{channelLabel(invoice.channel)}</strong></span>}
       </div>
       <div className="modal-footer">
         <Button variant="ghost" onClick={onClose}>Close</Button>
-        {invoiceBalance(invoice) > 0 && <Button onClick={onRequestPayment}><Send size={15} /> {cloudMode ? 'Record payment' : 'Request balance'}</Button>}
+        {invoice.status !== 'draft' && invoiceBalance(invoice) > 0 && <Button onClick={onRequestPayment}><Send size={15} /> {cloudMode ? 'Record payment' : 'Request balance'}</Button>}
       </div>
     </div>
   </Modal>;
@@ -727,7 +875,7 @@ function ReceiptDialog({ onClose, onCreate }: {
 function MatchReceiptDialog({ receipt, invoices, onClose, onMatch }: {
   receipt: UnmatchedReceipt; invoices: Invoice[]; onClose: () => void; onMatch: (invoiceId: string) => void;
 }) {
-  const eligible = invoices.filter(invoice => invoiceBalance(invoice) > 0);
+  const eligible = invoices.filter(invoice => invoice.status !== 'draft' && invoiceBalance(invoice) > 0);
   const likely = eligible.find(invoice => invoice.customer.toLowerCase() === receipt.payer.toLowerCase());
   const [invoiceId, setInvoiceId] = useState(likely?.id || eligible[0]?.id || '');
   const invoice = eligible.find(item => item.id === invoiceId);
@@ -834,6 +982,72 @@ function StockPickerDialog({ products, onClose, onAdjust }: {
         { value: 'Other stock movement', label: 'Other stock movement' },
       ]} />
       <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!product || !Number.isFinite(Number(quantity)) || Number(quantity) < 0}>Save stock update</Button></div>
+    </form>
+  </Modal>;
+}
+
+function StockActionsDialog({ products, onClose, onAddProduct, onAddStock, onUpdateStock, onRemoveStock }: {
+  products: Product[]; onClose: () => void; onAddProduct: () => void;
+  onAddStock: () => void; onUpdateStock: () => void; onRemoveStock: () => void;
+}) {
+  return <Modal title="Manage stock" detail="Choose what you want to do with the products in your shop." onClose={onClose}>
+    <div className="modal-body stock-actions-menu">
+      <button type="button" className="stock-action-option" onClick={onAddProduct}>
+        <span><Plus size={18} /></span><div><strong>Add a product</strong><small>Create a new item in your inventory</small></div><ChevronRight size={16} />
+      </button>
+      <button type="button" className="stock-action-option" onClick={onAddStock} disabled={!products.length}>
+        <span><Package size={18} /></span><div><strong>Receive stock</strong><small>Record supplier goods and update inventory value</small></div><ChevronRight size={16} />
+      </button>
+      <button type="button" className="stock-action-option" onClick={onUpdateStock} disabled={!products.length}>
+        <span><Boxes size={18} /></span><div><strong>Count stock</strong><small>Set the quantity you physically have</small></div><ChevronRight size={16} />
+      </button>
+      <button type="button" className="stock-action-option" onClick={onRemoveStock} disabled={!products.length}>
+        <span><Minus size={18} /></span><div><strong>Remove stock</strong><small>Record damaged, expired, missing or used items</small></div><ChevronRight size={16} />
+      </button>
+      {!products.length && <p className="muted-copy">Add your first product to enable stock movements.</p>}
+    </div>
+  </Modal>;
+}
+
+function StockMovementDialog({ products, mode, onClose, onSave }: {
+  products: Product[]; mode: 'add' | 'remove'; onClose: () => void;
+  onSave: (productId: string, nextQuantity: number, reason: string) => void;
+}) {
+  const [productId, setProductId] = useState(products[0]?.id || '');
+  const product = products.find(item => item.id === productId);
+  const [quantity, setQuantity] = useState('');
+  const [reason, setReason] = useState(mode === 'add' ? 'New stock received' : 'Damaged or expired');
+  const amount = Number(quantity);
+  const valid = Boolean(product && Number.isFinite(amount) && amount > 0 && (mode === 'add' || amount <= product.quantity));
+  return <Modal title={mode === 'add' ? 'Add stock' : 'Remove stock'} detail={mode === 'add'
+    ? 'Enter the quantity received. This will be added to the current stock balance.'
+    : 'Enter the quantity being removed. This will reduce the current stock balance.'} onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      if (!product || !valid) return;
+      onSave(product.id, product.quantity + (mode === 'add' ? amount : -amount), reason);
+    }}>
+      <SelectField label="Product" value={productId} onChange={setProductId} options={products.map(item => ({
+        value: item.id, label: item.name + ' · ' + numberText(item.quantity) + ' ' + item.unit + ' available',
+      }))} />
+      {product && <div className="stock-count-summary">
+        <div><span>Current stock</span><strong>{numberText(product.quantity)} {product.unit}</strong></div>
+        <div><span>After this movement</span><strong>{numberText(product.quantity + (mode === 'add' ? (Number.isFinite(amount) ? amount : 0) : -(Number.isFinite(amount) ? amount : 0)))} {product.unit}</strong></div>
+      </div>}
+      <Field label={mode === 'add' ? 'Quantity received' : 'Quantity to remove'} type="number" min={0.01} step={0.01} value={quantity} onChange={setQuantity} placeholder="Enter quantity" required />
+      <SelectField label="Reason" value={reason} onChange={setReason} options={mode === 'add' ? [
+        { value: 'New stock received', label: 'New stock received' },
+        { value: 'Customer return', label: 'Customer return' },
+        { value: 'Opening balance correction', label: 'Opening stock correction' },
+        { value: 'Other stock movement', label: 'Other' },
+      ] : [
+        { value: 'Damaged or expired', label: 'Damaged or expired' },
+        { value: 'Missing stock', label: 'Missing stock' },
+        { value: 'Internal use', label: 'Used by the business' },
+        { value: 'Other stock movement', label: 'Other' },
+      ]} />
+      {mode === 'remove' && product && Number.isFinite(amount) && amount > product.quantity && <div className="sale-form-error" role="alert">You cannot remove more than the {numberText(product.quantity)} {product.unit} currently in stock.</div>}
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!valid}>{mode === 'add' ? 'Add stock' : 'Remove stock'}</Button></div>
     </form>
   </Modal>;
 }
@@ -1311,20 +1525,21 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
   onRecordExpense: () => void; onRecordPayment: () => void; onRecordReceipt: () => void;
   onCreatePurchase: () => void; onQuickStock: () => void;
 }) {
+  const postedInvoices = data.invoices.filter(invoice => invoice.status !== 'draft');
   const chartDays = Array.from({ length: 7 }, (_, index) => addDays(today(), index - 6));
   const stockProducts = [...data.products].sort((a, b) => b.quantity - a.quantity).slice(0, 7);
   const chartValues = role === 'Inventory'
     ? stockProducts.map(product => product.quantity)
-    : chartDays.map(day => sum(data.invoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
+    : chartDays.map(day => sum(postedInvoices.filter(invoice => invoice.date === day).map(invoice => invoice.total)));
   const chartLabels = role === 'Inventory'
     ? stockProducts.map(product => product.name.length > 9 ? product.name.slice(0, 8) + '…' : product.name)
     : chartDays.map(day => formatBusinessDay(day, { weekday: 'short' }));
   const lowStock = data.products.filter(product => product.quantity <= product.reorderLevel);
   const zeroStock = data.products.filter(product => product.quantity === 0);
-  const slowStock = data.products.filter(product => product.quantity > 0 && !data.invoices.some(invoice =>
+  const slowStock = data.products.filter(product => product.quantity > 0 && !postedInvoices.some(invoice =>
     invoice.date >= addDays(today(), -30) && invoice.lines.some(line => line.productId === product.id),
   ));
-  const unsettled = data.invoices.filter(invoice => invoiceBalance(invoice) > 0)
+  const unsettled = postedInvoices.filter(invoice => invoiceBalance(invoice) > 0)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
 
   type RecentActivity = {
@@ -1350,7 +1565,7 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
       detail: movement.source === 'supplier_payment' ? 'Supplier payment · ' + (movement.reference || channelLabel(movement.channel)) : channelLabel(movement.channel),
       time: movement.date + 'T12:00:00', amount: movement.amount, direction: 'out' as const,
     })),
-    ...data.invoices.filter(invoice => invoice.total > 0 && invoice.paid === 0).map(invoice => ({
+    ...postedInvoices.filter(invoice => invoice.total > 0 && invoice.paid === 0).map(invoice => ({
       id: 'credit-' + invoice.id, title: invoice.customer || 'Credit sale',
       detail: invoice.number + ' · Sale on credit', time: invoice.date + 'T12:00:00',
       amount: invoice.total, direction: 'neutral' as const, invoiceId: invoice.id, label: 'On credit',
@@ -1394,7 +1609,7 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
 
   return <div className="page-stack">
     <div className="overview-welcome">
-      <div><div className="eyebrow">BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Your business, at a glance.</p></div>
+      <div><div className="eyebrow">HESABU · BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Your business, at a glance.</p></div>
       <div className="overview-welcome-actions"><span className="date-chip"><CalendarDays size={14} /> {dateLabel(today())}</span></div>
     </div>
     <section className="finance-balance-hero" aria-label={heroTitle}>
@@ -1476,12 +1691,13 @@ function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
 }) {
   const [filter, setFilter] = useState('all');
   const list = data.invoices.filter(invoice => {
-    const text = (invoice.number + ' ' + invoice.customer + ' ' + sourceLabel(invoice.source)).toLowerCase();
+    const text = (invoice.number + ' ' + invoice.customer + ' ' + sourceLabel(invoice.source) + ' ' + saleTypeLabel(invoice.saleType)).toLowerCase();
     const matchesSearch = text.includes(search.toLowerCase());
     const matchesFilter = filter === 'all' || invoice.status === filter;
     return matchesSearch && matchesFilter;
   }).sort((a, b) => b.date.localeCompare(a.date));
-  const totalInvoiced = sum(data.invoices.map(invoice => invoice.total));
+  const postedInvoices = data.invoices.filter(invoice => invoice.status !== 'draft');
+  const totalInvoiced = sum(postedInvoices.map(invoice => invoice.total));
   const totalCollected = sum(data.invoices.map(invoice => invoice.paid));
   return <div className="page-stack">
     <PageHeader title="Sales & invoices" description="Keep every sale traceable, whether it starts at the counter, on your website or in Hesabu." actions={<Button onClick={onCreateSale}><Plus size={16} /> Record sale</Button>} />
@@ -1489,22 +1705,22 @@ function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
       <MetricCard label="Invoiced" value={money(totalInvoiced)} note="All recorded invoices" icon={Receipt} tone="blue" />
       <MetricCard label="Collected" value={money(totalCollected)} note="Payments confirmed" icon={CheckCircle2} tone="green" />
       <MetricCard label="Outstanding" value={money(totalInvoiced - totalCollected)} note="Customer balances" icon={Clock3} tone="amber" />
-      <MetricCard label="Invoices" value={numberText(data.invoices.length)} note="Across all sales sources" icon={FileText} tone="slate" />
+      <MetricCard label="Invoices" value={numberText(postedInvoices.length)} note={data.invoices.filter(invoice => invoice.status === 'draft').length + ' saved enquiries'} icon={FileText} tone="slate" />
     </div>
     <SectionCard title="Invoice register" detail="Search by invoice number, customer or source.">
       <div className="table-toolbar">
         <div className="table-search"><Search size={15} /><input value={search} onChange={event => onSearch(event.target.value)} placeholder="Search invoices…" /></div>
         <div className="filter-control"><Filter size={14} /><select value={filter} onChange={event => setFilter(event.target.value)}>
-          <option value="all">All statuses</option><option value="paid">Paid</option><option value="partial">Part paid</option><option value="sent">Awaiting payment</option>
+          <option value="all">All records</option><option value="draft">Enquiries / quotes</option><option value="paid">Paid</option><option value="partial">Part paid</option><option value="sent">Awaiting payment</option>
         </select></div>
         <span className="table-count">{list.length} records</span>
       </div>
       {list.length ? <DataTable headers={['Invoice', 'Customer', 'Issue date', 'Source', 'Payment channel', 'Status', 'Total', 'Balance']}>
         {list.map(invoice => <tr key={invoice.id} className="clickable-row" onClick={() => onSelectInvoice(invoice.id)}>
-          <td><strong>{invoice.number}</strong></td><td>{invoice.customer}<small className="cell-sub">{invoice.phone || 'No phone recorded'}</small></td>
-          <td>{dateLabel(invoice.date)}</td><td>{sourceLabel(invoice.source)}</td><td><span className={channelClass(invoice.channel)}>{channelLabel(invoice.channel)}</span></td>
+          <td><strong>{invoice.number}</strong><small className="cell-sub">{saleTypeLabel(invoice.saleType)}</small></td><td>{invoice.customer}<small className="cell-sub">{invoice.phone || 'No phone recorded'}</small></td>
+          <td>{dateLabel(invoice.date)}</td><td>{sourceLabel(invoice.source)}</td><td>{invoice.status === 'draft' ? '—' : <span className={channelClass(invoice.channel)}>{channelLabel(invoice.channel)}</span>}</td>
           <td><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill></td>
-          <td className="amount-cell">{money(invoice.total)}</td><td className="amount-cell">{money(invoiceBalance(invoice))}</td>
+          <td className="amount-cell">{money(invoice.total)}</td><td className="amount-cell">{invoice.status === 'draft' ? '—' : money(invoiceBalance(invoice))}</td>
         </tr>)}
       </DataTable> : <EmptyState title="No matching invoices" body="Change the search or status filter, or record a sale to create an invoice." action={<Button onClick={onCreateSale}><Plus size={15} /> Record sale</Button>} />}
     </SectionCard>
@@ -1621,7 +1837,7 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
   const riskItems = [...low].sort((a, b) => (a.daysCover ?? 0) - (b.daysCover ?? 0)).slice(0, 5);
   const slowItems = [...slow].sort((a, b) => productValue(b.product) - productValue(a.product)).slice(0, 4);
   return <div className="page-stack">
-    <PageHeader title="Inventory" description="Protect sales from stockouts and free cash trapped in products that are not moving." actions={<Button onClick={onAddProduct}><Plus size={15} /> Add product</Button>} />
+    <PageHeader title="Inventory" description="Your product list and the stock available to sell. Add products here, then record new stock as it arrives." actions={<Button onClick={onAddProduct}><Plus size={15} /> Add product</Button>} />
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Stock at cost" value={money(stockValue)} note="Current stock value" icon={Boxes} tone="slate" />
       <MetricCard label="Units sold · 30 days" value={numberText(unitsSold30)} note="Recorded product movement" icon={TrendingUp} tone="blue" />
@@ -1863,7 +2079,7 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
 
 function getDailyDigest(data: AppData) {
   const date = today();
-  const sales = data.invoices.filter(invoice => invoice.date === date);
+  const sales = data.invoices.filter(invoice => invoice.status !== 'draft' && invoice.date === date);
   const payments = data.payments.filter(payment => payment.status === 'succeeded' && dateKey(new Date(payment.createdAt)) === date);
   const unmatchedReceipts = data.unmatchedReceipts.filter(receipt => dateKey(new Date(receipt.receivedAt)) === date);
   const expenses = data.expenses.filter(expense => expense.date === date);
@@ -1987,10 +2203,11 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
   const startDate = period === 'week' ? addDays(todayDate, -6) : period === 'month' ? currentMonthStart : yearStart;
   const elapsedDays = Math.max(1, Math.floor((Date.parse(todayDate + 'T12:00:00Z') - Date.parse(startDate + 'T12:00:00Z')) / 86400000) + 1);
   const periodLabel = period === 'week' ? 'Weekly' : period === 'month' ? 'Monthly' : 'Yearly';
+  const postedInvoices = data.invoices.filter(invoice => invoice.status !== 'draft');
 
   const weeklyRows = Array.from({ length: 7 }, (_, index) => {
     const date = addDays(todayDate, index - 6);
-    const invoices = data.invoices.filter(invoice => invoice.date === date && invoice.date <= todayDate);
+    const invoices = postedInvoices.filter(invoice => invoice.date === date && invoice.date <= todayDate);
     return {
       key: date,
       label: formatBusinessDay(date, { weekday: 'short' }),
@@ -2007,7 +2224,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
     const lastDay = Math.min(monthDayCount, firstDay + 6);
     const bucketStart = todayDate.slice(0, 7) + '-' + String(firstDay).padStart(2, '0');
     const bucketEnd = todayDate.slice(0, 7) + '-' + String(lastDay).padStart(2, '0');
-    const invoices = data.invoices.filter(invoice => invoice.date >= bucketStart && invoice.date <= bucketEnd && invoice.date <= todayDate);
+    const invoices = postedInvoices.filter(invoice => invoice.date >= bucketStart && invoice.date <= bucketEnd && invoice.date <= todayDate);
     return {
       key: bucketStart,
       label: firstDay + '–' + lastDay,
@@ -2019,7 +2236,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
   const monthlyRows = Array.from({ length: 12 }, (_, index) => {
     const month = String(index + 1).padStart(2, '0');
     const key = todayDate.slice(0, 4) + '-' + month;
-    const invoices = data.invoices.filter(invoice => invoice.date.slice(0, 7) === key && invoice.date <= todayDate);
+    const invoices = postedInvoices.filter(invoice => invoice.date.slice(0, 7) === key && invoice.date <= todayDate);
     return {
       key,
       label: formatBusinessDay(key + '-01', { month: 'short' }),
@@ -2029,7 +2246,7 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
     };
   });
   const dayRows = period === 'week' ? weeklyRows : period === 'month' ? monthlyWeekRows : monthlyRows;
-  const filteredInvoices = data.invoices.filter(invoice => invoice.date >= startDate && invoice.date <= todayDate);
+  const filteredInvoices = postedInvoices.filter(invoice => invoice.date >= startDate && invoice.date <= todayDate);
   const sales = sum(filteredInvoices.map(invoice => invoice.total));
   const averageDailySales = sales / elapsedDays;
   const averageOrderValue = filteredInvoices.length ? sales / filteredInvoices.length : 0;
@@ -2388,14 +2605,15 @@ function SettingsPage({ profile, teamMembers, teamInvitations, onSave, onAddMemb
 
 function getMetrics(data: AppData) {
   const currentMonth = today().slice(0, 7);
-  const monthInvoices = data.invoices.filter(invoice => invoice.date.slice(0, 7) === currentMonth);
-  const salesToday = sum(data.invoices.filter(invoice => invoice.date === today()).map(invoice => invoice.total));
+  const postedInvoices = data.invoices.filter(invoice => invoice.status !== 'draft');
+  const monthInvoices = postedInvoices.filter(invoice => invoice.date.slice(0, 7) === currentMonth);
+  const salesToday = sum(postedInvoices.filter(invoice => invoice.date === today()).map(invoice => invoice.total));
   const collectedToday = sum(data.payments.filter(payment =>
     payment.status === 'succeeded' && dateKey(new Date(payment.createdAt)) === today(),
   ).map(payment => payment.amount));
-  const totalRevenue = sum(data.invoices.map(invoice => invoice.total));
+  const totalRevenue = sum(postedInvoices.map(invoice => invoice.total));
   const grossProfitMonth = sum(monthInvoices.map(marginValue));
-  const receivables = sum(data.invoices.map(invoiceBalance));
+  const receivables = sum(postedInvoices.map(invoiceBalance));
   const payables = sum(data.suppliers.map(supplier => supplier.balance));
   const customerAdvances = sum(data.payments.filter(payment => payment.status === 'succeeded').map(payment => payment.unappliedAmount ?? 0));
   const inventoryValue = sum(data.products.map(productValue));
@@ -2410,11 +2628,11 @@ function getMetrics(data: AppData) {
     card: sum(data.payments.filter(payment => payment.status === 'succeeded' && payment.channel === 'card').map(payment => payment.amount)) - channelOutflow('card'),
   };
   const cashPosition = channelBalances.cash + channelBalances.mpesa + channelBalances.bank + channelBalances.card;
-  const costOfGoodsSold = sum(data.invoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity))));
+  const costOfGoodsSold = sum(postedInvoices.map(invoice => sum(invoice.lines.map(line => line.unitCost * line.quantity))));
   return {
     salesToday, collectedToday, grossProfitMonth, cashPosition, receivables, payables, customerAdvances,
     inventoryValue, expenses: totalExpenses, totalRevenue, costOfGoodsSold,
-    channelBalances, unpaidInvoices: data.invoices.filter(invoice => invoiceBalance(invoice) > 0).length,
+    channelBalances, unpaidInvoices: postedInvoices.filter(invoice => invoiceBalance(invoice) > 0).length,
   };
 }
 
@@ -2530,6 +2748,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }) | null>(null);
   const [appInstalled, setAppInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
 
@@ -2809,6 +3028,7 @@ function App() {
     operation: () => Promise<unknown>,
     successTitle: string,
     successDetail: string,
+    nextDialog: DialogState = null,
   ) => {
     if (cloudAccount && !navigator.onLine) {
       notify('Offline — changes are paused', 'Reconnect to the internet before recording financial or stock changes. Your last saved workspace remains available to view.');
@@ -2819,7 +3039,7 @@ function App() {
     try {
       await operation();
       const refreshed = await reloadCloudWorkspace();
-      setDialog(null);
+      setDialog(nextDialog);
       notify(successTitle, refreshed
         ? successDetail
         : 'The record was submitted, but the latest workspace data could not be reloaded. Refresh the page to verify it.');
@@ -2869,21 +3089,24 @@ function App() {
       cloudMutationLock.current = true;
       void (async () => {
         try {
-          await postCloudSale(cloudAccount.business.id, {
+          await postCloudSaleWithType(cloudAccount.business.id, {
             customer: input.customer,
             phone: input.phone,
             dueDate: input.dueDate,
             discount: input.discount,
             channel: input.channel,
             source: input.source,
+            saleType: input.saleType,
             items: input.items,
           });
           const refreshed = await reloadCloudWorkspace();
           setDialog(null);
-          notify('Sale recorded', refreshed
-            ? input.channel === 'credit'
-              ? 'The invoice, stock movement and accounting entries are saved to your business.'
-              : 'The sale, payment, stock movement and accounting entries are saved to your business.'
+          notify(input.saleType === 'enquiry' ? 'Enquiry saved' : 'Sale recorded', refreshed
+            ? input.saleType === 'enquiry'
+              ? 'The draft quote is saved. Stock, payment and financial balances have not changed.'
+              : input.channel === 'credit'
+                ? 'The sale, stock movement and outstanding customer balance are saved to your business.'
+                : 'The sale, payment, stock movement and accounting entries are saved to your business.'
             : 'The transaction was submitted. Refresh the workspace to verify the latest invoice and stock balances.');
         } catch (error) {
           notify('Sale could not be recorded', error instanceof Error ? error.message : 'The cloud operation failed. No sale success was reported.');
@@ -2899,7 +3122,7 @@ function App() {
     }
     for (const [productId, requested] of requestedQuantities) {
       const product = data.products.find(candidate => candidate.id === productId);
-      if (!product || requested > product.quantity) {
+      if (input.saleType !== 'enquiry' && (!product || requested > product.quantity)) {
         notify('Sale could not be posted', product
           ? 'Only ' + numberText(product.quantity) + ' ' + product.unit + ' of ' + product.name + ' are currently recorded.'
           : 'One of the selected products is no longer available.');
@@ -2920,19 +3143,20 @@ function App() {
     const total = Math.max(0, subtotal - input.discount);
     const number = 'HS-' + String(data.nextInvoice).padStart(4, '0');
     const invoiceId = makeId('INV');
-    const paid = input.channel === 'credit' ? 0 : total;
+    const isEnquiry = input.saleType === 'enquiry';
+    const paid = isEnquiry || input.channel === 'credit' ? 0 : total;
     const invoice: Invoice = {
-      id: invoiceId, number, customer: input.customer, phone: input.phone,
+      id: invoiceId, number, customer: input.customer, phone: input.phone, saleType: input.saleType,
       date: today(), dueDate: input.dueDate, lines, subtotal, discount: input.discount,
       total, paid, channel: input.channel,
-      status: paid >= total ? 'paid' : paid > 0 ? 'partial' : 'sent',
+      status: isEnquiry ? 'draft' : paid >= total ? 'paid' : paid > 0 ? 'partial' : 'sent',
       source: input.source,
     };
     let next: AppData = {
       ...data,
       nextInvoice: data.nextInvoice + 1,
       invoices: [invoice, ...data.invoices],
-      products: data.products.map(product => {
+      products: isEnquiry ? data.products : data.products.map(product => {
         const sold = sum(lines.filter(line => line.productId === product.id).map(line => line.quantity));
         return sold ? { ...product, quantity: Math.max(0, product.quantity - sold), updatedAt: today() } : product;
       }),
@@ -2957,24 +3181,31 @@ function App() {
           detail: 'Sale payment recorded and stock adjusted',
         }, ...next.events],
       };
-    } else {
+    } else if (!isEnquiry) {
       next = {
         ...next,
         journal: recordJournal(next, 'Accounts receivable', 'Sales revenue', total, 'Credit sale · ' + number, number),
         events: [{
           id: makeId('EVT'), time: new Date().toISOString(), type: 'invoice.created',
           source: sourceLabel(input.source), status: 'delivered', reference: number,
-          detail: 'Credit invoice posted to accounts receivable',
+          detail: input.saleType === 'pay_on_delivery' ? 'Pay-on-delivery sale posted; payment remains outstanding' : 'Credit invoice posted to accounts receivable',
         }, ...next.events],
       };
     }
-    next = {
-      ...next,
-      journal: recordJournal(next, 'Cost of goods sold', 'Inventory', sum(lines.map(line => line.unitCost * line.quantity)), 'Cost of sale · ' + number, number),
-    };
+    if (!isEnquiry) {
+      next = {
+        ...next,
+        journal: recordJournal(next, 'Cost of goods sold', 'Inventory', sum(lines.map(line => line.unitCost * line.quantity)), 'Cost of sale · ' + number, number),
+      };
+    } else {
+      next = {
+        ...next,
+        events: [{ id: makeId('EVT'), time: new Date().toISOString(), type: 'enquiry.saved', source: sourceLabel(input.source), status: 'pending', reference: number, detail: 'Quote saved without a stock, payment or accounting posting' }, ...next.events],
+      };
+    }
     setData(next);
     setDialog(null);
-    notify('Sale posted', number + ' has been recorded and inventory has been updated.');
+    notify(isEnquiry ? 'Enquiry saved' : 'Sale posted', isEnquiry ? number + ' is saved as a quote. Stock and account balances have not changed.' : number + ' has been recorded and inventory has been updated.');
     return invoiceId;
   };
 
@@ -2986,6 +3217,7 @@ function App() {
       dueDate: addDays(today(), 7),
       discount: 0,
       channel: 'credit',
+      saleType: 'pay_on_delivery',
       items: [{ productId: input.productId, quantity: input.quantity }],
       source: 'website',
     });
@@ -3007,7 +3239,7 @@ function App() {
       return;
     }
     const invoice = data.invoices.find(item => item.id === input.invoiceId);
-    if (!invoice) return;
+    if (!invoice || invoice.status === 'draft') return;
     const payment: Payment = {
       id: makeId('PAY'), invoiceId: invoice.id, invoiceNumber: invoice.number,
       customer: invoice.customer, phone: input.phone, amount: input.amount,
@@ -3074,7 +3306,7 @@ function App() {
     }
     const receipt = data.unmatchedReceipts.find(item => item.id === receiptId);
     const invoice = data.invoices.find(item => item.id === invoiceId);
-    if (!receipt || !invoice || receipt.amount <= 0 || invoiceBalance(invoice) <= 0) return;
+    if (!receipt || !invoice || invoice.status === 'draft' || receipt.amount <= 0 || invoiceBalance(invoice) <= 0) return;
     const now = new Date().toISOString();
     const channel: PaymentChannel = receipt.rail === 'Bank transfer' ? 'bank' : 'mpesa';
     const allocation = allocateIncomingPayment(invoice.total, invoice.paid, receipt.amount);
@@ -3213,6 +3445,7 @@ function App() {
   };
 
   const createProduct = (input: Omit<Product, 'id' | 'updatedAt'>) => {
+    const returnToPurchase = dialog?.kind === 'product' && Boolean(dialog.returnToPurchase);
     if (cloudAccount) {
       const sku = input.sku.trim().toUpperCase() || makeId('SKU');
       void runCloudMutation(() => createCloudProduct(cloudAccount.business.id, {
@@ -3220,7 +3453,8 @@ function App() {
         quantity: input.quantity, reorderLevel: input.reorderLevel,
         costPrice: input.costPrice, sellingPrice: input.sellingPrice,
         supplierId: input.supplierId,
-      }), 'Product added', 'The product and opening stock valuation are saved to your business.');
+      }), 'Product added', 'The product and opening stock valuation are saved to your business.',
+        returnToPurchase ? { kind: 'purchase' } : null);
       return;
     }
     const sku = input.sku.trim().toUpperCase() || makeId('SKU');
@@ -3242,7 +3476,7 @@ function App() {
         detail: product.name + ' added with ' + numberText(product.quantity) + ' ' + product.unit + ' on hand',
       }, ...current.events],
     }));
-    setDialog(null);
+    setDialog(returnToPurchase ? { kind: 'purchase' } : null);
     notify('Product added', openingValue > 0
       ? product.name + ' and ' + money(openingValue) + ' of opening stock have been recorded.'
       : product.name + ' is now in the inventory register.');
@@ -3417,9 +3651,11 @@ function App() {
   };
 
   const addSupplier = (input: { name: string; phone: string; email: string; terms: string }) => {
+    const returnToPurchase = dialog?.kind === 'supplier' && Boolean(dialog.returnToPurchase);
     if (cloudAccount) {
       void runCloudMutation(() => createCloudSupplier(cloudAccount.business.id, input),
-        'Supplier added', 'The supplier has been saved to your business records.');
+        'Supplier added', 'The supplier has been saved to your business records.',
+        returnToPurchase ? { kind: 'purchase' } : null);
       return;
     }
     const supplier: Supplier = {
@@ -3427,7 +3663,7 @@ function App() {
       email: input.email, terms: input.terms, balance: 0,
     };
     setData(current => ({ ...current, suppliers: [...current.suppliers, supplier] }));
-    setDialog(null);
+    setDialog(returnToPurchase ? { kind: 'purchase' } : null);
     notify('Supplier added', input.name + ' has been added to the supplier register.');
   };
 
@@ -3574,7 +3810,7 @@ function App() {
     <main className="main-shell">
       <header className="topbar">
         <div className="topbar-left">
-          <div className="topbar-brand-lockup"><span className="brand-mark topbar-brand-mark"><HesabuMark /></span><span className="topbar-brand-name">Hesabu<small>BUSINESS</small></span></div>
+          <div className="topbar-brand-lockup"><span className="brand-mark topbar-brand-mark"><HesabuMark /></span><span className="topbar-brand-name">Hesabu</span></div>
           <IconButton label="Open navigation" className="mobile-menu-button" onClick={() => setMobileMenuOpen(value => !value)}><Menu size={19} /></IconButton>
           <div className="breadcrumb"><ChevronRight size={13} /><strong>{activeMeta.title}</strong></div>
         </div>
@@ -3595,13 +3831,25 @@ function App() {
             <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
           </button>
           <button className="notification-button" onClick={() => notify('Operational attention', data.products.filter(product => product.quantity <= product.reorderLevel).length + ' stock items are at or below reorder level.')}><Bell size={17} /><i /></button>
-          <span className="topbar-avatar" aria-label="Signed-in user"><Initials name={activeMember?.name || data.profile.name} /></span>
+          <div className="topbar-account">
+            <button type="button" className="topbar-avatar" aria-label="Open account details" aria-haspopup="menu" aria-expanded={profileMenuOpen} title="Account details" onClick={() => setProfileMenuOpen(open => !open)}><Initials name={activeMember?.name || data.profile.name} /></button>
+            {profileMenuOpen && <div className="user-switcher-panel" role="menu" aria-label="Account details">
+              <div className="user-switcher-heading">
+                <strong>{activeMember?.name || data.profile.owner || 'Your account'}</strong>
+                <small>{cloudAccount.user.email || 'Signed-in Hesabu account'}</small>
+              </div>
+              <div className="account-detail-row"><span>Business</span><strong>{data.profile.name || cloudAccount.business.name}</strong></div>
+              <div className="account-detail-row"><span>Access</span><strong>{activeMember?.role || 'Owner'}</strong></div>
+              <button type="button" role="menuitem" onClick={() => { setProfileMenuOpen(false); navigate('settings'); }}><Settings size={15} /><span><strong>Business settings</strong><small>Profile, team and preferences</small></span><ChevronRight size={14} /></button>
+              <button type="button" role="menuitem" onClick={() => { setProfileMenuOpen(false); void handleCloudSignOut(); }}><LogOut size={15} /><span><strong>Sign out</strong><small>Sign out of this account</small></span></button>
+            </div>}
+          </div>
         </div>
       </header>
 
       <div className="page-container">
         {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>You’re offline.</strong> You can still view your saved records. Connect to the internet to record new sales, payments or stock changes.</span></div>}
-        {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
+        {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-actions' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} cloudMode={Boolean(cloudAccount)} />}
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
@@ -3644,17 +3892,26 @@ function App() {
       onUpdateStock={() => setDialog({ kind: 'stock-picker' })}
     />
 
-    {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} cloudMode={Boolean(cloudAccount)} />}
+    {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} onAddProduct={() => setDialog({ kind: 'product' })} cloudMode={Boolean(cloudAccount)} />}
     {dialog?.kind === 'stk' && <StkDialog invoices={data.invoices} initialInvoiceId={dialog.invoiceId} onClose={() => setDialog(null)} onCreate={createPaymentRequest} cloudMode={Boolean(cloudAccount)} />}
     {dialog?.kind === 'receipt' && <ReceiptDialog onClose={() => setDialog(null)} onCreate={addUnmatchedReceipt} />}
     {dialog?.kind === 'match-receipt' && selectedReceipt && <MatchReceiptDialog receipt={selectedReceipt} invoices={data.invoices} onClose={() => setDialog(null)} onMatch={invoiceId => matchUnmatchedReceipt(selectedReceipt.id, invoiceId)} />}
     {dialog?.kind === 'expense' && <ExpenseDialog onClose={() => setDialog(null)} onCreate={createExpense} />}
     {dialog?.kind === 'product' && <ProductDialog onClose={() => setDialog(null)} onCreate={createProduct} />}
     {dialog?.kind === 'supplier' && <SupplierDialog onClose={() => setDialog(null)} onCreate={addSupplier} />}
-    {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} initialProductId={dialog.productId} initialQuantity={dialog.quantity} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
+    {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} initialProductId={dialog.productId} initialQuantity={dialog.quantity} onClose={() => setDialog(null)} onCreate={createPurchaseOrder}
+      onAddSupplier={() => setDialog({ kind: 'supplier', returnToPurchase: true })}
+      onAddProduct={() => setDialog({ kind: 'product', returnToPurchase: true })} />}
     {dialog?.kind === 'receive-purchase' && selectedPurchaseOrder && <ReceivePurchaseDialog order={selectedPurchaseOrder} onClose={() => setDialog(null)} onReceive={items => receivePurchaseOrder(selectedPurchaseOrder.id, items)} />}
     {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={(amount, channel) => paySupplier(selectedSupplier.id, amount, channel)} />}
     {dialog?.kind === 'stock-picker' && <StockPickerDialog products={data.products} onClose={() => setDialog(null)} onAdjust={adjustStock} />}
+    {dialog?.kind === 'stock-actions' && <StockActionsDialog products={data.products} onClose={() => setDialog(null)}
+      onAddProduct={() => setDialog({ kind: 'product' })}
+      onAddStock={() => setDialog({ kind: 'purchase' })}
+      onUpdateStock={() => setDialog({ kind: 'stock-picker' })}
+      onRemoveStock={() => setDialog({ kind: 'stock-remove' })} />}
+    {dialog?.kind === 'stock-remove' && <StockMovementDialog products={data.products} mode="remove" onClose={() => setDialog(null)}
+      onSave={(productId, nextQuantity, reason) => adjustStock(productId, nextQuantity, reason)} />}
     {dialog?.kind === 'adjust' && selectedProduct && <AdjustStockDialog product={selectedProduct} onClose={() => setDialog(null)} onAdjust={(quantity, reason) => adjustStock(selectedProduct.id, quantity, reason)} />}
     {selectedInvoice && <InvoiceDialog invoice={selectedInvoice} onClose={() => setSelectedInvoiceId(null)} onRequestPayment={() => {
       setSelectedInvoiceId(null);

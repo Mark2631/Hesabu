@@ -1,5 +1,6 @@
 export type ModuleKey = 'overview' | 'sales' | 'payments' | 'inventory' | 'procurement' | 'accounts' | 'reports' | 'integrations' | 'settings' | 'more';
 export type PaymentChannel = 'mpesa' | 'cash' | 'bank' | 'card' | 'credit';
+export type SaleType = 'walk_in' | 'pay_on_delivery' | 'credit' | 'enquiry';
 export type PaymentStatus = 'pending' | 'succeeded' | 'failed' | 'reversed';
 export type InvoiceStatus = 'draft' | 'sent' | 'partial' | 'paid' | 'overdue';
 export type PurchaseStatus = 'draft' | 'sent' | 'partially_received' | 'received' | 'cancelled';
@@ -26,7 +27,7 @@ export interface InvoiceLine {
 export interface Invoice {
   id: string; number: string; customer: string; phone: string; date: string; dueDate: string;
   lines: InvoiceLine[]; subtotal: number; discount: number; total: number; paid: number;
-  channel: PaymentChannel; status: InvoiceStatus; source: 'hesabu' | 'website' | 'pos' | 'manual';
+  channel: PaymentChannel; status: InvoiceStatus; source: 'hesabu' | 'website' | 'pos' | 'manual'; saleType?: SaleType;
 }
 export interface Payment {
   id: string; invoiceId: string; invoiceNumber: string; customer: string; phone: string;
@@ -93,7 +94,7 @@ export interface AppData {
   nextInvoice: number; nextPurchaseOrder: number;
 }
 export interface NewInvoiceInput {
-  customer: string; phone: string; dueDate: string; discount: number; channel: PaymentChannel;
+  customer: string; phone: string; dueDate: string; discount: number; channel: PaymentChannel; saleType: SaleType;
   items: Array<{ productId: string; quantity: number }>; source: Invoice['source'];
 }
 export interface NewPaymentInput {

@@ -549,6 +549,25 @@ export async function postCloudSale(businessId: string, input: {
   });
 }
 
+
+export async function postCloudSaleWithType(businessId: string, input: {
+  customer: string; phone: string; dueDate: string; discount: number;
+  channel: PaymentChannel; source: Invoice['source']; saleType: Invoice['saleType'];
+  items: Array<{ productId: string; quantity: number }>;
+}): Promise<string> {
+  return rpc<string>('post_sale_with_type', {
+    p_business_id: businessId,
+    p_customer_name: input.customer.trim(),
+    p_customer_phone: input.phone.trim() || null,
+    p_due_date: input.channel === 'credit' ? input.dueDate || null : null,
+    p_discount: input.discount,
+    p_payment_channel: input.channel,
+    p_source: input.source === 'website' || input.source === 'hesabu' ? 'manual' : input.source,
+    p_items: input.items.map(item => ({ product_id: item.productId, quantity: item.quantity })),
+    p_sale_type: input.saleType || 'walk_in',
+  });
+}
+
 export async function postCloudPayment(businessId: string, input: {
   invoiceId: string; amount: number; channel: Exclude<PaymentChannel, 'credit'>;
   phone: string; reference: string; idempotencyKey: string; note: string;
@@ -747,7 +766,7 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
       ? businessRows('suppliers', businessId, 'id,name,phone,email,payment_terms,opening_balance,current_balance,is_active', 'name.asc')
       : Promise.resolve([] as DbRow[]),
     readPlan.sales
-      ? businessRows('invoices', businessId, 'id,invoice_number,customer_name,customer_phone,issue_date,due_date,subtotal,discount_amount,total_amount,amount_paid,payment_channel,status,source', 'issue_date.desc')
+      ? businessRows('invoices', businessId, 'id,invoice_number,customer_name,customer_phone,issue_date,due_date,subtotal,discount_amount,total_amount,amount_paid,payment_channel,status,source,sale_type', 'issue_date.desc')
       : Promise.resolve([] as DbRow[]),
     readPlan.sales
       ? businessRows('invoice_items', businessId, 'id,invoice_id,product_id,product_name,sku_snapshot,quantity,unit_price,unit_cost,line_total')
@@ -854,6 +873,7 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
     status: asText(row.status, 'sent') as Invoice['status'],
     source: (['website', 'pos', 'hesabu', 'manual'].includes(asText(row.source))
       ? asText(row.source) : 'manual') as Invoice['source'],
+    saleType: asText(row.sale_type, 'walk_in') as Invoice['saleType'],
   }));
 
   const invoiceById = new Map(invoices.map(item => [item.id, item]));
