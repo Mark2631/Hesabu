@@ -274,74 +274,115 @@ function SaleDialog({ products, onClose, onCreate, cloudMode }: {
   const [phone, setPhone] = useState('');
   const [dueDate, setDueDate] = useState(addDays(today(), 7));
   const [discount, setDiscount] = useState('0');
-  const [channel, setChannel] = useState<PaymentChannel>('mpesa');
+  const [channel, setChannel] = useState<PaymentChannel>('cash');
   const [source, setSource] = useState<Invoice['source']>('pos');
-  const [items, setItems] = useState([{ productId: products[0]?.id || '', quantity: 1 }]);
+  const [query, setQuery] = useState('');
+  const [items, setItems] = useState<Array<{ productId: string; quantity: string }>>([]);
   const productFor = (id: string) => products.find(product => product.id === id);
-  const subtotal = sum(items.map(item => (productFor(item.productId)?.sellingPrice || 0) * item.quantity));
+  const quantityFor = (id: string) => Number(items.find(item => item.productId === id)?.quantity || 0);
+  const subtotal = sum(items.map(item => (productFor(item.productId)?.sellingPrice || 0) * Math.max(0, Number(item.quantity) || 0)));
   const total = Math.max(0, subtotal - Math.max(0, Number(discount) || 0));
-  const addItem = () => setItems(current => [...current, { productId: products[0]?.id || '', quantity: 1 }]);
-  const updateItem = (index: number, patch: Partial<{ productId: string; quantity: number }>) => {
-    setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  const results = products
+    .filter(product => (product.name + ' ' + product.sku + ' ' + product.category).toLowerCase().includes(query.trim().toLowerCase()))
+    .sort((a, b) => Number(b.quantity > 0) - Number(a.quantity > 0) || a.name.localeCompare(b.name))
+    .slice(0, 8);
+  const addProduct = (product: Product) => {
+    if (product.quantity <= 0) return;
+    setItems(current => {
+      const existing = current.find(item => item.productId === product.id);
+      if (existing) return current.map(item => item.productId === product.id
+        ? { ...item, quantity: String(Math.min(product.quantity, Math.max(0, Number(item.quantity) || 0) + 1)) }
+        : item);
+      return [...current, { productId: product.id, quantity: '1' }];
+    });
+    setQuery('');
   };
-  const removeItem = (index: number) => setItems(current => current.filter((_, itemIndex) => itemIndex !== index));
+  const updateItem = (index: number, quantity: string) => {
+    setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity } : item));
+  };
+  const changeQuantity = (index: number, delta: number) => {
+    setItems(current => current.map((item, itemIndex) => {
+      if (itemIndex !== index) return item;
+      const product = productFor(item.productId);
+      const next = Math.max(1, Math.min(product?.quantity ?? 1, (Number(item.quantity) || 0) + delta));
+      return { ...item, quantity: String(next) };
+    }));
+  };
+  const removeItem = (productId: string) => setItems(current => current.filter(item => item.productId !== productId));
+  const validItems = items.map(item => ({ productId: item.productId, quantity: Number(item.quantity) }))
+    .filter(item => item.productId && Number.isInteger(item.quantity) && item.quantity > 0);
+  const invalidQuantity = items.some(item => !Number.isInteger(Number(item.quantity)) || Number(item.quantity) < 1);
+  const stockIssue = items.some(item => {
+    const product = productFor(item.productId);
+    return !product || Number(item.quantity) > product.quantity;
+  });
+  const needsNamedCustomer = channel === 'credit' && (!customer.trim() || customer.trim() === 'Walk-in customer');
+  const canPost = validItems.length > 0 && validItems.length === items.length && !invalidQuantity && !stockIssue && !needsNamedCustomer && total > 0;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const validItems = items.filter(item => item.productId && item.quantity > 0);
-    if (!validItems.length) return;
-    for (const item of validItems) {
-      const product = productFor(item.productId);
-      if (!product || item.quantity > product.quantity) return;
-    }
+    if (!canPost) return;
     onCreate({
       customer: customer.trim() || 'Walk-in customer', phone, dueDate,
       discount: Math.max(0, Number(discount) || 0), channel, items: validItems, source,
     });
   };
 
-  return <Modal title="Record a sale" detail="Post one sale and update the invoice, payment record and stock ledger together." onClose={onClose} size="lg">
-    <form className="modal-body" onSubmit={submit}>
+  return <Modal title="Record a sale" detail="Search your catalogue, add items once and adjust quantities without reopening the product list." onClose={onClose} size="lg">
+    <form className="modal-body sale-dialog" onSubmit={submit}>
       <div className="form-grid form-grid-two">
         <Field label="Customer or account" value={customer} onChange={setCustomer} placeholder="Walk-in customer" />
         <Field label="Customer phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
       </div>
-      <div className="subsection-label">Items sold</div>
-      <div className="sale-items">
+      <div className="sale-catalogue">
+        <label className="field">
+          <span className="field-label">Find an item</span>
+          <span className="sale-search-input"><Search size={17} /><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Search name, SKU or category…" /></span>
+        </label>
+        {query.trim() && <div className="sale-search-results" role="listbox" aria-label="Matching stock items">
+          {results.length ? results.map(product => <button type="button" key={product.id} disabled={product.quantity <= 0} onClick={() => addProduct(product)}>
+            <span><strong>{product.name}</strong><small>{product.sku || product.category} · {numberText(product.quantity)} {product.unit} available</small></span>
+            <span className="sale-search-price">{money(product.sellingPrice)} <Plus size={15} /></span>
+          </button>) : <p>No items match that search.</p>}
+        </div>}
+        {!query.trim() && <p className="field-hint">Start typing to find an item. Select it once; use the quantity controls below for multiples.</p>}
+      </div>
+      <div className="subsection-label">Sale items <span>{items.length} {items.length === 1 ? 'item' : 'items'}</span></div>
+      {items.length ? <div className="sale-items">
         {items.map((item, index) => {
           const product = productFor(item.productId);
-          return <div className="sale-item-row" key={index}>
-            <label className="field sale-product-field">
-              <span className="field-label">Product</span>
-              <select className="field-input" value={item.productId} onChange={event => updateItem(index, { productId: event.target.value })}>
-                {products.map(option => <option key={option.id} value={option.id}>{option.name} · {money(option.sellingPrice)}</option>)}
-              </select>
-            </label>
-            <Field label="Qty" type="number" min={1} step={1} value={item.quantity} onChange={value => updateItem(index, { quantity: Math.max(1, Number(value) || 1) })} />
-            <div className="sale-line-total"><span>Line total</span><strong>{money((product?.sellingPrice || 0) * item.quantity)}</strong></div>
-            {items.length > 1 && <IconButton label="Remove item" onClick={() => removeItem(index)}><X size={15} /></IconButton>}
+          const quantity = Number(item.quantity) || 0;
+          return <div className="sale-item-row sale-item-row-cart" key={item.productId}>
+            <div className="sale-cart-product"><strong>{product?.name || 'Unavailable item'}</strong><small>{money(product?.sellingPrice || 0)} per {product?.unit || 'unit'} · {numberText(product?.quantity || 0)} in stock</small></div>
+            <div className="sale-quantity-control">
+              <button type="button" aria-label={'Decrease ' + (product?.name || 'item')} disabled={quantity <= 1} onClick={() => changeQuantity(index, -1)}>−</button>
+              <input aria-label={'Quantity for ' + (product?.name || 'item')} type="number" inputMode="numeric" min="1" step="1" value={item.quantity} onChange={event => updateItem(index, event.target.value)} />
+              <button type="button" aria-label={'Increase ' + (product?.name || 'item')} disabled={quantity >= (product?.quantity || 0)} onClick={() => changeQuantity(index, 1)}>+</button>
+            </div>
+            <strong className="sale-line-total-value">{money((product?.sellingPrice || 0) * quantity)}</strong>
+            <IconButton label={'Remove ' + (product?.name || 'item')} onClick={() => removeItem(item.productId)}><X size={15} /></IconButton>
+            {product && quantity > product.quantity && <small className="sale-stock-warning">Only {numberText(product.quantity)} {product.unit} available.</small>}
           </div>;
         })}
-      </div>
-      <div className="inline-form-actions">
-        <Button variant="outline" size="sm" onClick={addItem}><Plus size={14} /> Add another item</Button>
-        <span className="field-hint">Available quantity is checked before the sale is posted.</span>
-      </div>
+      </div> : <div className="sale-cart-empty"><ShoppingCart size={19} /><span><strong>Your sale is empty</strong><small>Search for the first item above to add it.</small></span></div>}
+      {needsNamedCustomer && <div className="validation-note"><AlertTriangle size={14} /> Add the customer's name for a credit or pay-on-delivery sale.</div>}
+      {stockIssue && <div className="validation-note"><AlertTriangle size={14} /> Check the quantities against available stock before posting.</div>}
       <div className="form-grid form-grid-three">
         <Field label="Discount (KSh)" type="number" min={0} value={discount} onChange={setDiscount} />
         <SelectField label="Payment method" value={channel} onChange={value => setChannel(value as PaymentChannel)} options={[
-          { value: 'mpesa', label: 'M-Pesa received' }, { value: 'cash', label: 'Cash received' },
+          { value: 'cash', label: 'Cash received' }, { value: 'mpesa', label: 'M-Pesa received' },
           { value: 'bank', label: 'Bank transfer' }, { value: 'card', label: 'Card payment' },
-          { value: 'credit', label: 'On credit' },
+          { value: 'credit', label: 'Pay later / on delivery' },
         ]} />
         <SelectField label="Sales source" value={source} onChange={value => setSource(value as Invoice['source'])} options={cloudMode
-          ? [{ value: 'pos', label: 'Point of sale' }, { value: 'manual', label: 'Manual entry' }]
+          ? [{ value: 'pos', label: 'Walk-in / counter' }, { value: 'manual', label: 'Phone / manual order' }]
           : [
-            { value: 'pos', label: 'Point of sale' }, { value: 'website', label: 'Website' },
-            { value: 'hesabu', label: 'Hesabu checkout' }, { value: 'manual', label: 'Manual entry' },
+            { value: 'pos', label: 'Walk-in / counter' }, { value: 'website', label: 'Website' },
+            { value: 'hesabu', label: 'Hesabu checkout' }, { value: 'manual', label: 'Phone / manual order' },
           ]} />
       </div>
       {channel === 'credit' && <Field label="Payment due date" type="date" value={dueDate} onChange={setDueDate} />}
+      {channel === 'mpesa' && <div className="sale-payment-note"><Smartphone size={15} /><span><strong>M-Pesa recording</strong><small>This records a payment already received. It does not send an STK Push or contact Safaricom.</small></span></div>}
       <div className="dialog-total">
         <span><span>Subtotal</span><strong>{money(subtotal)}</strong></span>
         <span><span>Discount</span><strong>−{money(Number(discount) || 0)}</strong></span>
@@ -349,12 +390,11 @@ function SaleDialog({ products, onClose, onCreate, cloudMode }: {
       </div>
       <div className="modal-footer">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button type="submit" disabled={!items.length || total <= 0}><Check size={16} /> Post sale</Button>
+        <Button type="submit" disabled={!canPost}><Check size={16} /> Post sale</Button>
       </div>
     </form>
   </Modal>;
 }
-
 function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }: {
   invoices: Invoice[]; initialInvoiceId?: string; onClose: () => void;
   onCreate: (input: NewPaymentInput) => void; cloudMode: boolean;
