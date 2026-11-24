@@ -43,8 +43,8 @@ type DialogState =
   | { kind: 'receipt' }
   | { kind: 'match-receipt'; receiptId: string }
   | { kind: 'expense' }
-  | { kind: 'product' }
-  | { kind: 'supplier' }
+  | { kind: 'product'; returnToPurchase?: boolean }
+  | { kind: 'supplier'; returnToPurchase?: boolean }
   | { kind: 'purchase'; productId?: string; quantity?: number }
   | { kind: 'receive-purchase'; purchaseOrderId: string }
   | { kind: 'invoice'; invoiceId: string }
@@ -276,7 +276,6 @@ function SaleDialog({ products, onClose, onCreate, onAddProduct, cloudMode }: {
   onAddProduct: () => void; cloudMode: boolean;
 }) {
   const [customer, setCustomer] = useState('Walk-in customer');
-  const [phone, setPhone] = useState('');
   const [dueDate, setDueDate] = useState(addDays(today(), 7));
   const [discount, setDiscount] = useState('0');
   const [channel, setChannel] = useState<PaymentChannel>('mpesa');
@@ -365,7 +364,7 @@ function SaleDialog({ products, onClose, onCreate, onAddProduct, cloudMode }: {
     }
     onCreate({
       customer: customer.trim() || 'Walk-in customer',
-      phone: phone.trim(),
+      phone: '',
       dueDate: saleType === 'enquiry' ? '' : dueDate,
       discount: discountValue,
       channel: saleType === 'walk_in' ? channel : 'credit',
@@ -379,10 +378,8 @@ function SaleDialog({ products, onClose, onCreate, onAddProduct, cloudMode }: {
     ? 'Prepare a quote without recording income, deducting stock or changing customer balances.'
     : 'Find products, build the basket and record the payment or outstanding balance in one step.'} onClose={onClose} size="lg">
     <form className="modal-body sale-entry-form" onSubmit={submit}>
-      <div className="form-grid form-grid-two">
-        <Field label="Customer or account" value={customer} onChange={setCustomer} placeholder="Walk-in customer" />
-        <Field label="Customer phone" value={phone} onChange={setPhone} placeholder="07XX XXX XXX" />
-      </div>
+      <Field label="Customer or account (optional)" value={customer} onChange={setCustomer} placeholder="Walk-in customer" />
+      <div className="field-hint">A phone number is not needed to record a sale. Only collect contact details later if a customer-requested service requires them.</div>
 
       <div className="sale-type-row">
         <SelectField label="Transaction type" value={saleType} onChange={changeSaleType} options={[
@@ -635,9 +632,10 @@ function ProductDialog({ onClose, onCreate }: {
   </Modal>;
 }
 
-function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity, onClose, onCreate }: {
+function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity, onClose, onCreate, onAddSupplier, onAddProduct }: {
   suppliers: Supplier[]; products: Product[]; initialProductId?: string; initialQuantity?: number;
   onClose: () => void; onCreate: (input: NewPurchaseInput) => void;
+  onAddSupplier: () => void; onAddProduct: () => void;
 }) {
   const initialProduct = products.find(product => product.id === initialProductId) || products[0];
   const [supplierId, setSupplierId] = useState(suppliers.find(item => item.id === initialProduct?.supplierId)?.id || suppliers[0]?.id || '');
@@ -660,7 +658,14 @@ function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity
   };
   return <Modal title="Create purchase order" detail="Build a supplier order with multiple lines. Inventory and accounts payable update when goods are received." onClose={onClose} size="lg">
     <form className="modal-body" onSubmit={submit}>
-      <SelectField label="Supplier" value={supplierId} onChange={setSupplierId} options={suppliers.map(item => ({ value: item.id, label: item.name }))} />
+      {suppliers.length ? <SelectField label="Supplier" value={supplierId} onChange={setSupplierId} options={suppliers.map(item => ({ value: item.id, label: item.name }))} /> :
+        <div className="sale-inventory-required">
+          <span className="sale-inventory-icon"><Users size={21} /></span>
+          <strong>Add a supplier to continue</strong>
+          <p>Hesabu needs a supplier record to track who supplied these goods and any amount you owe.</p>
+          <Button type="button" onClick={onAddSupplier}><Plus size={15} /> Add supplier</Button>
+        </div>}
+      {products.length ? <>
       <div className="subsection-label">Order items</div>
       <div className="sale-items">
         {items.map((item, index) => {
@@ -684,12 +689,18 @@ function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity
         })}
       </div>
       <div className="inline-form-actions">
-        <Button variant="outline" size="sm" onClick={addItem} disabled={items.length >= products.length}><Plus size={14} /> Add another item</Button>
+        <Button type="button" variant="outline" size="sm" onClick={addItem} disabled={items.length >= products.length}><Plus size={14} /> Add another item</Button>
         <span className="field-hint">Each line retains its purchase cost for stock valuation.</span>
       </div>
       <Field label="Expected delivery date" type="date" value={expectedAt} onChange={setExpectedAt} />
-      <div className="dialog-total"><span className="dialog-total-final"><span>Purchase order total</span><strong>{money(total)}</strong></span></div>
-      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!supplierId || !items.length || total <= 0}>Create purchase order</Button></div>
+      </> : <div className="sale-inventory-required">
+        <span className="sale-inventory-icon"><Package size={21} /></span>
+        <strong>Add products before ordering stock</strong>
+        <p>Create the item first, including its unit, cost price and selling price. Then return here to order it.</p>
+        <Button type="button" onClick={onAddProduct}><Plus size={15} /> Add product</Button>
+      </div>}
+      {products.length > 0 && <div className="dialog-total"><span className="dialog-total-final"><span>Purchase order total</span><strong>{money(total)}</strong></span></div>}
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!suppliers.length || !supplierId || !products.length || !items.length || total <= 0}>Create purchase order</Button></div>
     </form>
   </Modal>;
 }
@@ -3017,6 +3028,7 @@ function App() {
     operation: () => Promise<unknown>,
     successTitle: string,
     successDetail: string,
+    nextDialog: DialogState = null,
   ) => {
     if (cloudAccount && !navigator.onLine) {
       notify('Offline — changes are paused', 'Reconnect to the internet before recording financial or stock changes. Your last saved workspace remains available to view.');
@@ -3027,7 +3039,7 @@ function App() {
     try {
       await operation();
       const refreshed = await reloadCloudWorkspace();
-      setDialog(null);
+      setDialog(nextDialog);
       notify(successTitle, refreshed
         ? successDetail
         : 'The record was submitted, but the latest workspace data could not be reloaded. Refresh the page to verify it.');
@@ -3433,6 +3445,7 @@ function App() {
   };
 
   const createProduct = (input: Omit<Product, 'id' | 'updatedAt'>) => {
+    const returnToPurchase = dialog?.kind === 'product' && Boolean(dialog.returnToPurchase);
     if (cloudAccount) {
       const sku = input.sku.trim().toUpperCase() || makeId('SKU');
       void runCloudMutation(() => createCloudProduct(cloudAccount.business.id, {
@@ -3440,7 +3453,8 @@ function App() {
         quantity: input.quantity, reorderLevel: input.reorderLevel,
         costPrice: input.costPrice, sellingPrice: input.sellingPrice,
         supplierId: input.supplierId,
-      }), 'Product added', 'The product and opening stock valuation are saved to your business.');
+      }), 'Product added', 'The product and opening stock valuation are saved to your business.',
+        returnToPurchase ? { kind: 'purchase' } : null);
       return;
     }
     const sku = input.sku.trim().toUpperCase() || makeId('SKU');
@@ -3462,7 +3476,7 @@ function App() {
         detail: product.name + ' added with ' + numberText(product.quantity) + ' ' + product.unit + ' on hand',
       }, ...current.events],
     }));
-    setDialog(null);
+    setDialog(returnToPurchase ? { kind: 'purchase' } : null);
     notify('Product added', openingValue > 0
       ? product.name + ' and ' + money(openingValue) + ' of opening stock have been recorded.'
       : product.name + ' is now in the inventory register.');
@@ -3637,9 +3651,11 @@ function App() {
   };
 
   const addSupplier = (input: { name: string; phone: string; email: string; terms: string }) => {
+    const returnToPurchase = dialog?.kind === 'supplier' && Boolean(dialog.returnToPurchase);
     if (cloudAccount) {
       void runCloudMutation(() => createCloudSupplier(cloudAccount.business.id, input),
-        'Supplier added', 'The supplier has been saved to your business records.');
+        'Supplier added', 'The supplier has been saved to your business records.',
+        returnToPurchase ? { kind: 'purchase' } : null);
       return;
     }
     const supplier: Supplier = {
@@ -3647,7 +3663,7 @@ function App() {
       email: input.email, terms: input.terms, balance: 0,
     };
     setData(current => ({ ...current, suppliers: [...current.suppliers, supplier] }));
-    setDialog(null);
+    setDialog(returnToPurchase ? { kind: 'purchase' } : null);
     notify('Supplier added', input.name + ' has been added to the supplier register.');
   };
 
@@ -3883,7 +3899,9 @@ function App() {
     {dialog?.kind === 'expense' && <ExpenseDialog onClose={() => setDialog(null)} onCreate={createExpense} />}
     {dialog?.kind === 'product' && <ProductDialog onClose={() => setDialog(null)} onCreate={createProduct} />}
     {dialog?.kind === 'supplier' && <SupplierDialog onClose={() => setDialog(null)} onCreate={addSupplier} />}
-    {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} initialProductId={dialog.productId} initialQuantity={dialog.quantity} onClose={() => setDialog(null)} onCreate={createPurchaseOrder} />}
+    {dialog?.kind === 'purchase' && <PurchaseDialog suppliers={data.suppliers} products={data.products} initialProductId={dialog.productId} initialQuantity={dialog.quantity} onClose={() => setDialog(null)} onCreate={createPurchaseOrder}
+      onAddSupplier={() => setDialog({ kind: 'supplier', returnToPurchase: true })}
+      onAddProduct={() => setDialog({ kind: 'product', returnToPurchase: true })} />}
     {dialog?.kind === 'receive-purchase' && selectedPurchaseOrder && <ReceivePurchaseDialog order={selectedPurchaseOrder} onClose={() => setDialog(null)} onReceive={items => receivePurchaseOrder(selectedPurchaseOrder.id, items)} />}
     {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={(amount, channel) => paySupplier(selectedSupplier.id, amount, channel)} />}
     {dialog?.kind === 'stock-picker' && <StockPickerDialog products={data.products} onClose={() => setDialog(null)} onAdjust={adjustStock} />}
