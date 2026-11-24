@@ -51,6 +51,9 @@ type DialogState =
   | { kind: 'supplier-payment'; supplierId: string }
   | { kind: 'adjust'; productId: string }
   | { kind: 'stock-picker' }
+  | { kind: 'stock-actions' }
+  | { kind: 'stock-add' }
+  | { kind: 'stock-remove' }
   | { kind: 'profile' }
   | null;
 
@@ -968,6 +971,72 @@ function StockPickerDialog({ products, onClose, onAdjust }: {
         { value: 'Other stock movement', label: 'Other stock movement' },
       ]} />
       <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!product || !Number.isFinite(Number(quantity)) || Number(quantity) < 0}>Save stock update</Button></div>
+    </form>
+  </Modal>;
+}
+
+function StockActionsDialog({ products, onClose, onAddProduct, onAddStock, onUpdateStock, onRemoveStock }: {
+  products: Product[]; onClose: () => void; onAddProduct: () => void;
+  onAddStock: () => void; onUpdateStock: () => void; onRemoveStock: () => void;
+}) {
+  return <Modal title="Manage stock" detail="Choose what you want to do with the products in your shop." onClose={onClose}>
+    <div className="modal-body stock-actions-menu">
+      <button type="button" className="stock-action-option" onClick={onAddProduct}>
+        <span><Plus size={18} /></span><div><strong>Add a product</strong><small>Create a new item in your inventory</small></div><ChevronRight size={16} />
+      </button>
+      <button type="button" className="stock-action-option" onClick={onAddStock} disabled={!products.length}>
+        <span><Package size={18} /></span><div><strong>Add stock</strong><small>Record new stock received for an existing product</small></div><ChevronRight size={16} />
+      </button>
+      <button type="button" className="stock-action-option" onClick={onUpdateStock} disabled={!products.length}>
+        <span><Boxes size={18} /></span><div><strong>Update stock count</strong><small>Correct the recorded quantity to match what you counted</small></div><ChevronRight size={16} />
+      </button>
+      <button type="button" className="stock-action-option" onClick={onRemoveStock} disabled={!products.length}>
+        <span><Minus size={18} /></span><div><strong>Remove stock</strong><small>Record damaged, expired, missing or used stock</small></div><ChevronRight size={16} />
+      </button>
+      {!products.length && <p className="muted-copy">Add your first product to enable stock movements.</p>}
+    </div>
+  </Modal>;
+}
+
+function StockMovementDialog({ products, mode, onClose, onSave }: {
+  products: Product[]; mode: 'add' | 'remove'; onClose: () => void;
+  onSave: (productId: string, nextQuantity: number, reason: string) => void;
+}) {
+  const [productId, setProductId] = useState(products[0]?.id || '');
+  const product = products.find(item => item.id === productId);
+  const [quantity, setQuantity] = useState('');
+  const [reason, setReason] = useState(mode === 'add' ? 'New stock received' : 'Damaged or expired');
+  const amount = Number(quantity);
+  const valid = Boolean(product && Number.isFinite(amount) && amount > 0 && (mode === 'add' || amount <= product.quantity));
+  return <Modal title={mode === 'add' ? 'Add stock' : 'Remove stock'} detail={mode === 'add'
+    ? 'Enter the quantity received. This will be added to the current stock balance.'
+    : 'Enter the quantity being removed. This will reduce the current stock balance.'} onClose={onClose}>
+    <form className="modal-body" onSubmit={event => {
+      event.preventDefault();
+      if (!product || !valid) return;
+      onSave(product.id, product.quantity + (mode === 'add' ? amount : -amount), reason);
+    }}>
+      <SelectField label="Product" value={productId} onChange={setProductId} options={products.map(item => ({
+        value: item.id, label: item.name + ' · ' + numberText(item.quantity) + ' ' + item.unit + ' available',
+      }))} />
+      {product && <div className="stock-count-summary">
+        <div><span>Current stock</span><strong>{numberText(product.quantity)} {product.unit}</strong></div>
+        <div><span>After this movement</span><strong>{numberText(product.quantity + (mode === 'add' ? (Number.isFinite(amount) ? amount : 0) : -(Number.isFinite(amount) ? amount : 0)))} {product.unit}</strong></div>
+      </div>}
+      <Field label={mode === 'add' ? 'Quantity received' : 'Quantity to remove'} type="number" min={0.01} step={0.01} value={quantity} onChange={setQuantity} placeholder="Enter quantity" required />
+      <SelectField label="Reason" value={reason} onChange={setReason} options={mode === 'add' ? [
+        { value: 'New stock received', label: 'New stock received' },
+        { value: 'Customer return', label: 'Customer return' },
+        { value: 'Opening balance correction', label: 'Opening stock correction' },
+        { value: 'Other stock movement', label: 'Other' },
+      ] : [
+        { value: 'Damaged or expired', label: 'Damaged or expired' },
+        { value: 'Missing stock', label: 'Missing stock' },
+        { value: 'Internal use', label: 'Used by the business' },
+        { value: 'Other stock movement', label: 'Other' },
+      ]} />
+      {mode === 'remove' && product && Number.isFinite(amount) && amount > product.quantity && <div className="sale-form-error" role="alert">You cannot remove more than the {numberText(product.quantity)} {product.unit} currently in stock.</div>}
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!valid}>{mode === 'add' ? 'Add stock' : 'Remove stock'}</Button></div>
     </form>
   </Modal>;
 }
@@ -3764,7 +3833,7 @@ function App() {
 
       <div className="page-container">
         {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>You’re offline.</strong> You can still view your saved records. Connect to the internet to record new sales, payments or stock changes.</span></div>}
-        {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-picker' })} />}
+        {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-actions' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
         {active === 'payments' && <PaymentsPage data={data} metrics={metrics} search={search} onSearch={setSearch} onRequestPayment={() => setDialog({ kind: 'stk' })} onResolvePayment={resolvePayment} onAddReceipt={() => setDialog({ kind: 'receipt' })} onMatchReceipt={receiptId => setDialog({ kind: 'match-receipt', receiptId })} cloudMode={Boolean(cloudAccount)} />}
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
@@ -3818,6 +3887,15 @@ function App() {
     {dialog?.kind === 'receive-purchase' && selectedPurchaseOrder && <ReceivePurchaseDialog order={selectedPurchaseOrder} onClose={() => setDialog(null)} onReceive={items => receivePurchaseOrder(selectedPurchaseOrder.id, items)} />}
     {dialog?.kind === 'supplier-payment' && selectedSupplier && <SupplierPaymentDialog supplier={selectedSupplier} onClose={() => setDialog(null)} onPay={(amount, channel) => paySupplier(selectedSupplier.id, amount, channel)} />}
     {dialog?.kind === 'stock-picker' && <StockPickerDialog products={data.products} onClose={() => setDialog(null)} onAdjust={adjustStock} />}
+    {dialog?.kind === 'stock-actions' && <StockActionsDialog products={data.products} onClose={() => setDialog(null)}
+      onAddProduct={() => setDialog({ kind: 'product' })}
+      onAddStock={() => setDialog({ kind: 'stock-add' })}
+      onUpdateStock={() => setDialog({ kind: 'stock-picker' })}
+      onRemoveStock={() => setDialog({ kind: 'stock-remove' })} />}
+    {dialog?.kind === 'stock-add' && <StockMovementDialog products={data.products} mode="add" onClose={() => setDialog(null)}
+      onSave={(productId, nextQuantity, reason) => adjustStock(productId, nextQuantity, reason)} />}
+    {dialog?.kind === 'stock-remove' && <StockMovementDialog products={data.products} mode="remove" onClose={() => setDialog(null)}
+      onSave={(productId, nextQuantity, reason) => adjustStock(productId, nextQuantity, reason)} />}
     {dialog?.kind === 'adjust' && selectedProduct && <AdjustStockDialog product={selectedProduct} onClose={() => setDialog(null)} onAdjust={(quantity, reason) => adjustStock(selectedProduct.id, quantity, reason)} />}
     {selectedInvoice && <InvoiceDialog invoice={selectedInvoice} onClose={() => setSelectedInvoiceId(null)} onRequestPayment={() => {
       setSelectedInvoiceId(null);
