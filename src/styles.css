@@ -320,6 +320,44 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .field-hint { color: #9ba69e; font-size: 9px; line-height: 1.45; }
 .subsection-label { color: #526157; font-size: 10px; font-weight: 800; margin: 2px 0 -3px; }
 .sale-items { display: flex; flex-direction: column; gap: 8px; }
+.sale-dialog { gap: 13px; }
+.sale-catalogue { position: relative; }
+.sale-search-input { display:flex; align-items:center; gap:9px; border:1px solid #dfe7e1; background:#fff; border-radius:9px; padding:0 11px; color:#7d8a80; }
+.sale-search-input:focus-within { border-color:#7d9d85; box-shadow:0 0 0 3px rgba(23,107,69,.08); }
+.sale-search-input input { width:100%; min-width:0; border:0; outline:0; background:transparent; padding:11px 0; color:#26382c; font:inherit; font-size:12px; }
+.sale-search-results { position:absolute; z-index:5; top:100%; left:0; right:0; max-height:260px; overflow:auto; margin-top:4px; padding:4px; border:1px solid #e3eae4; border-radius:10px; background:#fff; box-shadow:0 12px 28px rgba(25,43,31,.12); }
+.sale-search-results button { display:flex; width:100%; align-items:center; justify-content:space-between; gap:12px; padding:9px 10px; border:0; border-radius:7px; background:#fff; text-align:left; cursor:pointer; }
+.sale-search-results button:hover:not(:disabled) { background:#f4f8f4; }
+.sale-search-results button:disabled { opacity:.45; cursor:not-allowed; }
+.sale-search-results button > span:first-child,.sale-cart-product { display:flex; min-width:0; flex-direction:column; gap:3px; }
+.sale-search-results strong,.sale-cart-product strong { color:#2e4034; font-size:11px; }
+.sale-search-results small,.sale-cart-product small { color:#87938b; font-size:9px; }
+.sale-search-results p { margin:8px; color:#87938b; font-size:11px; }
+.sale-search-price { display:flex; align-items:center; gap:7px; white-space:nowrap; color:#176b45; font-size:11px; font-weight:800; }
+.sale-dialog .subsection-label { display:flex; align-items:center; justify-content:space-between; }
+.sale-dialog .subsection-label span { color:#8a968d; font-size:9px; font-weight:600; }
+.sale-cart-empty { display:flex; align-items:center; gap:10px; padding:14px; border:1px dashed #dce5de; border-radius:9px; color:#829087; }
+.sale-cart-empty span { display:flex; flex-direction:column; gap:3px; }
+.sale-cart-empty strong { color:#45564a; font-size:11px; }
+.sale-cart-empty small { color:#929d95; font-size:9px; }
+.sale-item-row-cart { grid-template-columns:minmax(0,1fr) 112px auto 30px; align-items:center; }
+.sale-quantity-control { display:flex; align-items:center; gap:3px; border:1px solid #e2e9e3; border-radius:7px; padding:2px; background:#fff; }
+.sale-quantity-control button { width:27px; height:27px; border:0; border-radius:5px; background:#f4f7f4; color:#405548; font-size:17px; cursor:pointer; }
+.sale-quantity-control button:disabled { opacity:.35; cursor:not-allowed; }
+.sale-quantity-control input { width:36px; border:0; outline:0; text-align:center; color:#26382c; font:inherit; font-size:11px; background:transparent; }
+.sale-line-total-value { color:#304237; font-size:11px; white-space:nowrap; }
+.sale-stock-warning { grid-column:1/-1; color:#a45a43; font-size:9px; }
+.sale-payment-note { display:flex; align-items:flex-start; gap:8px; padding:9px 10px; border:1px solid #e4ebf0; border-radius:8px; background:#f6f9fb; color:#627c91; }
+.sale-payment-note span { display:flex; flex-direction:column; gap:3px; }
+.sale-payment-note strong { font-size:10px; color:#47647c; }
+.sale-payment-note small { font-size:9px; line-height:1.45; color:#8194a3; }
+@media (max-width:620px) {
+  .sale-item-row-cart { grid-template-columns:minmax(0,1fr) 108px 30px; gap:7px; }
+  .sale-line-total-value { grid-column:1; grid-row:2; }
+  .sale-item-row-cart > .icon-button { grid-column:3; grid-row:1; }
+  .sale-stock-warning { grid-column:1/-1; }
+}
+
 .sale-item-row { display: grid; grid-template-columns: minmax(0, 1.7fr) 90px minmax(100px, .7fr) 30px; align-items: end; gap: 9px; padding: 9px; background: #f8faf8; border: 1px solid #edf1ed; border-radius: 9px; }
 .purchase-item-row { display: grid; grid-template-columns: minmax(0, 1.7fr) 76px 108px minmax(100px, .7fr) 30px; align-items: end; gap: 8px; padding: 9px; background: #f8faf8; border: 1px solid #edf1ed; border-radius: 9px; }
 .purchase-product-field { min-width: 0; }
