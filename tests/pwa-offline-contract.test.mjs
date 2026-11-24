@@ -12,9 +12,8 @@ const main = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8')
 test('PWA manifest uses the Hesabu identity and standalone display mode', () => {
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.start_url, '/');
-  assert.equal(manifest.theme_color, '#075b4c');
-  assert.ok(manifest.icons.some(icon => icon.src === '/app-icon-192.png' && icon.sizes === '192x192'));
-  assert.ok(manifest.icons.some(icon => icon.src === '/app-icon-512.png' && icon.sizes === '512x512' && icon.purpose.includes('maskable')));
+  assert.equal(manifest.theme_color, '#171717');
+  assert.ok(manifest.icons.some(icon => icon.src === '/app-icon.svg' && icon.sizes === 'any' && icon.type === 'image/svg+xml'));
 });
 
 test('the app exposes the native install prompt and handles completed installation', () => {
@@ -26,7 +25,7 @@ test('the app exposes the native install prompt and handles completed installati
 });
 
 test('service worker caches the application shell, generated hero image and offline navigation', () => {
-  assert.match(serviceWorker, /hesabu-shell-v9/);
+  assert.match(serviceWorker, /hesabu-shell-v10/);
   assert.match(serviceWorker, /hesabu-shop-owner\.webp/);
   assert.match(serviceWorker, /request\.mode === 'navigate'/);
   assert.match(serviceWorker, /caches\.match\('\/'\)/);
