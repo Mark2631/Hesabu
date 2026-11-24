@@ -468,7 +468,7 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }:
   invoices: Invoice[]; initialInvoiceId?: string; onClose: () => void;
   onCreate: (input: NewPaymentInput) => void; cloudMode: boolean;
 }) {
-  const outstandingInvoices = invoices.filter(invoice => invoiceBalance(invoice) > 0);
+  const outstandingInvoices = invoices.filter(invoice => invoice.status !== 'draft' && invoiceBalance(invoice) > 0);
   const [invoiceId, setInvoiceId] = useState(initialInvoiceId || outstandingInvoices[0]?.id || '');
   const invoice = outstandingInvoices.find(item => item.id === invoiceId);
   const [phone, setPhone] = useState(invoice?.phone || '');
@@ -476,11 +476,13 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }:
   const [channel, setChannel] = useState<Exclude<PaymentChannel, 'credit'>>('mpesa');
   const [reference, setReference] = useState('');
   const [idempotencyKey] = useState(() => 'manual-payment:' + makeId('IDEM'));
+  const [demoStep, setDemoStep] = useState<'ready' | 'prompted' | 'approved' | 'declined'>('ready');
   useEffect(() => {
     const selected = outstandingInvoices.find(item => item.id === invoiceId);
     if (selected) {
       setAmount(String(invoiceBalance(selected)));
       setPhone(selected.phone || '');
+      setDemoStep('ready');
     }
   }, [invoiceId]);
   const submit = (event: FormEvent) => {
@@ -521,6 +523,19 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }:
           <Field label="Transaction / receipt reference (optional)" value={reference} onChange={setReference} placeholder="e.g. QTX8AB12CD" />
         </>}
         {invoice && <div className="balance-hint"><span>Unpaid invoice balance</span><strong>{money(invoiceBalance(invoice))}</strong></div>}
+        {cloudMode && invoice && <div className="stk-demo-panel">
+          <div className="stk-demo-heading"><Smartphone size={17} /><span><strong>STK push training simulator</strong><small>Simulates the customer prompt. It never contacts Safaricom or updates this invoice.</small></span></div>
+          {demoStep === 'ready' && <Button variant="outline" block onClick={() => setDemoStep('prompted')} disabled={!phone.trim() || Number(amount) <= 0}>Preview simulated STK prompt</Button>}
+          {demoStep === 'prompted' && <div className="stk-demo-phone">
+            <span>HESABU TRAINING SIMULATION</span>
+            <strong>Pay {money(Number(amount) || 0)}?</strong>
+            <small>Simulated request to {phone}. No message was sent to this number.</small>
+            <div><Button size="sm" onClick={() => setDemoStep('approved')}>Simulate approval</Button><Button size="sm" variant="outline" onClick={() => setDemoStep('declined')}>Simulate decline</Button></div>
+          </div>}
+          {demoStep === 'approved' && <div className="stk-demo-result stk-demo-approved"><CheckCircle2 size={16} /><span><strong>Demo payment approved</strong><small>Training result only. No payment, cash balance or invoice was changed.</small></span></div>}
+          {demoStep === 'declined' && <div className="stk-demo-result stk-demo-declined"><AlertTriangle size={16} /><span><strong>Demo payment declined</strong><small>Training result only. No payment record was created.</small></span></div>}
+          {demoStep !== 'ready' && <Button size="sm" variant="ghost" onClick={() => setDemoStep('ready')}>Reset simulation</Button>}
+        </div>}
         {!cloudMode && <div className="payment-flow-note">
           <span className="flow-step flow-step-active">1 <small>Request</small></span><span className="flow-line" />
           <span className="flow-step">2 <small>Customer PIN</small></span><span className="flow-line" />
@@ -758,12 +773,12 @@ function InvoiceDialog({ invoice, onClose, onRequestPayment, cloudMode }: {
       <div className="invoice-detail-meta">
         <span>Transaction <strong>{saleTypeLabel(invoice.saleType)}</strong></span>
         <span>Source <strong>{sourceLabel(invoice.source)}</strong></span>
-        {invoice.status !== 'draft' && <span>Payment terms <strong>{dateLabel(invoice.dueDate)}</strong></span>
+        {invoice.status !== 'draft' && <span>Payment terms <strong>{dateLabel(invoice.dueDate)}</strong></span>}
         <span>Preferred channel <strong>{channelLabel(invoice.channel)}</strong></span>
       </div>
       <div className="modal-footer">
         <Button variant="ghost" onClick={onClose}>Close</Button>
-        {invoiceBalance(invoice) > 0 && <Button onClick={onRequestPayment}><Send size={15} /> {cloudMode ? 'Record payment' : 'Request balance'}</Button>}
+        {invoice.status !== 'draft' && invoiceBalance(invoice) > 0 && <Button onClick={onRequestPayment}><Send size={15} /> {cloudMode ? 'Record payment' : 'Request balance'}</Button>}
       </div>
     </div>
   </Modal>;
