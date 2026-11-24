@@ -189,3 +189,31 @@ test('low stock is measurable from quantity and reorder rules', () => {
   assert.ok(lowStock.length >= 3);
   assert.ok(lowStock.some((product) => product.sku === 'HOM-011'));
 });
+
+
+test('sales entry supports searchable products, repeat-add quantity and editable quantity input', async () => {
+  const source = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  assert.match(source, /product\.name \+ ' ' \+ product\.sku \+ ' ' \+ product\.category/);
+  assert.match(source, /const addProduct = \(product: Product\)/);
+  assert.match(source, /const existing = current\.find\(item => item\.productId === product\.id\)/);
+  assert.match(source, /quantity: String\(saleType === 'enquiry' \? nextQuantity : Math\.min\(product\.quantity, nextQuantity\)\)/);
+  assert.match(source, /onChange=\{event => updateQuantity\(product\.id, event\.target\.value\)\}/);
+  assert.doesNotMatch(source, /Math\.max\(1, Number\(value\) \|\| 1\)/);
+});
+
+test('enquiries do not post stock, payment or finance movements', async () => {
+  const source = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  assert.match(source, /saleType === 'enquiry'/);
+  assert.match(source, /products: isEnquiry \? data\.products/);
+  assert.match(source, /if \(!isEnquiry\) \{/);
+  assert.match(source, /status: isEnquiry \? 'draft'/);
+  assert.match(source, /postedInvoices = data\.invoices\.filter\(invoice => invoice\.status !== 'draft'\)/);
+});
+
+test('the cloud STK training panel is explicitly non-posting', async () => {
+  const source = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  assert.match(source, /STK push training simulator/);
+  assert.match(source, /It never contacts Safaricom or updates this invoice/);
+  assert.match(source, /Simulate approval/);
+  assert.match(source, /No payment, cash balance or invoice was changed/);
+});
