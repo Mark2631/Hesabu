@@ -535,7 +535,7 @@ function StkDialog({ invoices, initialInvoiceId, onClose, onCreate, cloudMode }:
           <Field label="Transaction / receipt reference (optional)" value={reference} onChange={setReference} placeholder="e.g. QTX8AB12CD" />
         </>}
         {invoice && <div className="balance-hint"><span>Unpaid invoice balance</span><strong>{money(invoiceBalance(invoice))}</strong></div>}
-        {cloudMode && invoice && <div className="stk-demo-panel">
+        {!cloudMode && invoice && <div className="stk-demo-panel">
           <div className="stk-demo-heading"><Smartphone size={17} /><span><strong>STK push training simulator</strong><small>Simulates the customer prompt. It never contacts Safaricom or updates this invoice.</small></span></div>
           {demoStep === 'ready' && <Button variant="outline" block onClick={() => setDemoStep('prompted')} disabled={!phone.trim() || Number(amount) <= 0 || !invoice || Number(amount) > invoiceBalance(invoice)}>Preview simulated STK prompt</Button>}
           {demoStep === 'prompted' && <div className="stk-demo-phone">
@@ -985,13 +985,13 @@ function StockActionsDialog({ products, onClose, onAddProduct, onAddStock, onUpd
         <span><Plus size={18} /></span><div><strong>Add a product</strong><small>Create a new item in your inventory</small></div><ChevronRight size={16} />
       </button>
       <button type="button" className="stock-action-option" onClick={onAddStock} disabled={!products.length}>
-        <span><Package size={18} /></span><div><strong>Add stock</strong><small>Record new stock received for an existing product</small></div><ChevronRight size={16} />
+        <span><Package size={18} /></span><div><strong>Receive stock</strong><small>Record supplier goods and update inventory value</small></div><ChevronRight size={16} />
       </button>
       <button type="button" className="stock-action-option" onClick={onUpdateStock} disabled={!products.length}>
-        <span><Boxes size={18} /></span><div><strong>Update stock count</strong><small>Correct the recorded quantity to match what you counted</small></div><ChevronRight size={16} />
+        <span><Boxes size={18} /></span><div><strong>Count stock</strong><small>Set the quantity you physically have</small></div><ChevronRight size={16} />
       </button>
       <button type="button" className="stock-action-option" onClick={onRemoveStock} disabled={!products.length}>
-        <span><Minus size={18} /></span><div><strong>Remove stock</strong><small>Record damaged, expired, missing or used stock</small></div><ChevronRight size={16} />
+        <span><Minus size={18} /></span><div><strong>Remove stock</strong><small>Record damaged, expired, missing or used items</small></div><ChevronRight size={16} />
       </button>
       {!products.length && <p className="muted-copy">Add your first product to enable stock movements.</p>}
     </div>
@@ -3889,11 +3889,9 @@ function App() {
     {dialog?.kind === 'stock-picker' && <StockPickerDialog products={data.products} onClose={() => setDialog(null)} onAdjust={adjustStock} />}
     {dialog?.kind === 'stock-actions' && <StockActionsDialog products={data.products} onClose={() => setDialog(null)}
       onAddProduct={() => setDialog({ kind: 'product' })}
-      onAddStock={() => setDialog({ kind: 'stock-add' })}
+      onAddStock={() => setDialog({ kind: 'purchase' })}
       onUpdateStock={() => setDialog({ kind: 'stock-picker' })}
       onRemoveStock={() => setDialog({ kind: 'stock-remove' })} />}
-    {dialog?.kind === 'stock-add' && <StockMovementDialog products={data.products} mode="add" onClose={() => setDialog(null)}
-      onSave={(productId, nextQuantity, reason) => adjustStock(productId, nextQuantity, reason)} />}
     {dialog?.kind === 'stock-remove' && <StockMovementDialog products={data.products} mode="remove" onClose={() => setDialog(null)}
       onSave={(productId, nextQuantity, reason) => adjustStock(productId, nextQuantity, reason)} />}
     {dialog?.kind === 'adjust' && selectedProduct && <AdjustStockDialog product={selectedProduct} onClose={() => setDialog(null)} onAdjust={(quantity, reason) => adjustStock(selectedProduct.id, quantity, reason)} />}
