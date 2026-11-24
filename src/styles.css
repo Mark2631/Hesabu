@@ -945,7 +945,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .team-role-grid { grid-template-columns:1fr 1fr; }
 }
 @media (max-width:720px) {
-  .topbar-brand-lockup > span:last-child { display:none; }
+  .topbar-brand-lockup > span:last-child { display:flex; }
   .topbar { padding:0 10px; }
   .topbar-left { gap:7px; }
   .stock-signal-row { grid-template-columns:minmax(0,1fr) auto; gap:9px; }
@@ -961,6 +961,22 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .stock-count-summary { gap:8px; }
 }
 
+
+
+.topbar-account { position:relative; display:flex; align-items:center; }
+.topbar-avatar { display:grid; place-items:center; width:36px; height:36px; border-radius:50%; cursor:pointer; }
+.topbar-avatar:hover, .topbar-avatar[aria-expanded="true"] { background:#edf3ee; }
+.user-switcher-panel { color:#202b3b; }
+.account-detail-row { display:flex; justify-content:space-between; gap:12px; padding:8px 10px; border-bottom:1px solid #edf0f4; font-size:10px; }
+.account-detail-row span { color:#8490a1; }
+.account-detail-row strong { color:#202b3b; text-align:right; overflow-wrap:anywhere; }
+.user-switcher-panel > button { cursor:pointer; }
+.theme-dark .user-switcher-panel { background:#18221d; border-color:#344239; }
+.theme-dark .user-switcher-heading strong, .theme-dark .account-detail-row strong, .theme-dark .user-switcher-panel > button strong { color:#eef4ef; }
+.theme-dark .user-switcher-heading small, .theme-dark .account-detail-row span, .theme-dark .user-switcher-panel > button small { color:#a5b2a9; }
+.theme-dark .user-switcher-panel > button { background:transparent; color:#dce6de; }
+.theme-dark .user-switcher-panel > button:hover { background:#26352b; }
+.theme-dark .account-detail-row { border-color:#344239; }
 
 /* Account role preview: compact owner/staff view switcher for the prototype. */
 .topbar-right { position:relative; }
