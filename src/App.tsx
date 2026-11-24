@@ -3034,8 +3034,8 @@ function App() {
     const total = Math.max(0, subtotal - input.discount);
     const number = 'HS-' + String(data.nextInvoice).padStart(4, '0');
     const invoiceId = makeId('INV');
-    const paid = isEnquiry || input.channel === 'credit' ? 0 : total;
     const isEnquiry = input.saleType === 'enquiry';
+    const paid = isEnquiry || input.channel === 'credit' ? 0 : total;
     const invoice: Invoice = {
       id: invoiceId, number, customer: input.customer, phone: input.phone, saleType: input.saleType,
       date: today(), dueDate: input.dueDate, lines, subtotal, discount: input.discount,
