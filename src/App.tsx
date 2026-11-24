@@ -3809,8 +3809,8 @@ function App() {
       ] : [
         { id: 'overview' as ModuleKey, label: 'Home', icon: 'home' },
         { id: 'sales' as ModuleKey, label: 'Sales', icon: 'receipt_long' },
-        { id: 'reports' as ModuleKey, label: 'Analytics', icon: 'monitoring' },
-        { id: 'payments' as ModuleKey, label: 'Payments', icon: 'account_balance_wallet' },
+        { id: 'inventory' as ModuleKey, label: 'Stock', icon: 'inventory_2' },
+        { id: 'payments' as ModuleKey, label: 'Money', icon: 'account_balance_wallet' },
         { id: 'more' as ModuleKey, label: 'More', icon: 'grid_view' },
       ]).filter(item => allowedModules.includes(item.id)).map(item =>
         <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)} aria-current={active === item.id ? 'page' : undefined}>
