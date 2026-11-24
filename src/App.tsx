@@ -3575,7 +3575,7 @@ function App() {
     <main className="main-shell">
       <header className="topbar">
         <div className="topbar-left">
-          <div className="topbar-brand-lockup"><span className="brand-mark topbar-brand-mark"><HesabuMark /></span><span className="topbar-brand-name">Hesabu<small>BUSINESS</small></span></div>
+          <div className="topbar-brand-lockup"><span className="brand-mark topbar-brand-mark"><HesabuMark /></span><span className="topbar-brand-name">Hesabu</span></div>
           <IconButton label="Open navigation" className="mobile-menu-button" onClick={() => setMobileMenuOpen(value => !value)}><Menu size={19} /></IconButton>
           <div className="breadcrumb"><ChevronRight size={13} /><strong>{activeMeta.title}</strong></div>
         </div>
