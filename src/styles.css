@@ -3948,3 +3948,30 @@ html[data-theme="light"] { color-scheme:light; }
   .sale-quantity-control { grid-column:2; grid-row:1 / span 2; }
   .sale-quantity-input { width:42px; }
 }
+
+
+/* Clearly isolated M-Pesa training preview; it never writes to the ledger. */
+.stk-demo-panel {
+  display:flex; flex-direction:column; gap:10px; padding:12px;
+  border:1px solid #e2eaf1; border-radius:9px; background:#f7fafc;
+}
+.stk-demo-heading { display:flex; align-items:flex-start; gap:9px; color:#55728d; }
+.stk-demo-heading > svg { flex:0 0 auto; margin-top:1px; }
+.stk-demo-heading > span,.stk-demo-result > span { display:flex; flex-direction:column; gap:3px; }
+.stk-demo-heading strong,.stk-demo-result strong { color:#385872; font-size:10px; }
+.stk-demo-heading small,.stk-demo-result small { color:#8295a6; font-size:9px; line-height:1.45; }
+.stk-demo-phone {
+  display:flex; flex-direction:column; gap:9px; padding:14px;
+  border:1px solid #dfe8ef; border-radius:9px; background:#fff;
+}
+.stk-demo-phone > span { color:#7291a8; font-size:8px; font-weight:800; letter-spacing:.1em; }
+.stk-demo-phone > strong { color:#263a4a; font-size:18px; }
+.stk-demo-phone > small { color:#81919d; font-size:9px; line-height:1.45; }
+.stk-demo-phone > div { display:flex; gap:8px; flex-wrap:wrap; }
+.stk-demo-result { display:flex; align-items:flex-start; gap:9px; padding:10px; border-radius:8px; }
+.stk-demo-approved { background:#f1f7f2; color:#34774a; }
+.stk-demo-approved strong { color:#34774a; }
+.stk-demo-approved small { color:#77927e; }
+.stk-demo-declined { background:#fbf5f1; color:#9a7046; }
+.stk-demo-declined strong { color:#9a7046; }
+.stk-demo-declined small { color:#a28b75; }
