@@ -616,19 +616,19 @@ function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity
   const [supplierId, setSupplierId] = useState(suppliers.find(item => item.id === initialProduct?.supplierId)?.id || suppliers[0]?.id || '');
   const [expectedAt, setExpectedAt] = useState(addDays(today(), 2));
   const [items, setItems] = useState(() => initialProduct ? [{
-    productId: initialProduct.id, quantity: Math.max(1, initialQuantity || 10), unitCost: initialProduct.costPrice,
+    productId: initialProduct.id, quantity: String(Math.max(1, initialQuantity || 10)), unitCost: initialProduct.costPrice,
   }] : []);
   const updateItem = (index: number, patch: Partial<(typeof items)[number]>) => {
     setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
   };
   const addItem = () => {
     const product = products.find(candidate => !items.some(item => item.productId === candidate.id));
-    if (product) setItems(current => [...current, { productId: product.id, quantity: 1, unitCost: product.costPrice }]);
+    if (product) setItems(current => [...current, { productId: product.id, quantity: '1', unitCost: product.costPrice }]);
   };
-  const total = sum(items.map(item => item.quantity * item.unitCost));
+  const total = sum(items.map(item => (Number(item.quantity) || 0) * item.unitCost));
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const valid = items.filter(item => item.productId && item.quantity > 0 && item.unitCost > 0);
+    const valid = items.map(item => ({ ...item, quantity: Number(item.quantity) })).filter(item => item.productId && Number.isFinite(item.quantity) && item.quantity > 0 && item.unitCost > 0);
     if (supplierId && valid.length) onCreate({ supplierId, expectedAt, items: valid });
   };
   return <Modal title="Create purchase order" detail="Build a supplier order with multiple lines. Inventory and accounts payable update when goods are received." onClose={onClose} size="lg">
@@ -649,9 +649,9 @@ function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity
                 {available.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}
               </select>
             </label>
-            <Field label="Qty" type="number" min={1} value={item.quantity} onChange={value => updateItem(index, { quantity: Math.max(1, Number(value) || 1) })} />
+            <Field label="Qty" type="number" min={1} step={1} value={item.quantity} onChange={value => updateItem(index, { quantity: value })} />
             <Field label="Unit cost" type="number" min={1} value={item.unitCost} onChange={value => updateItem(index, { unitCost: Math.max(0, Number(value) || 0) })} />
-            <div className="sale-line-total"><span>Line total</span><strong>{money(selected ? item.quantity * item.unitCost : 0)}</strong></div>
+            <div className="sale-line-total"><span>Line total</span><strong>{money(selected ? (Number(item.quantity) || 0) * item.unitCost : 0)}</strong></div>
             {items.length > 1 && <IconButton label="Remove item" onClick={() => setItems(current => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></IconButton>}
           </div>;
         })}
@@ -2994,10 +2994,12 @@ function App() {
           });
           const refreshed = await reloadCloudWorkspace();
           setDialog(null);
-          notify('Sale recorded', refreshed
-            ? input.channel === 'credit'
-              ? 'The invoice, stock movement and accounting entries are saved to your business.'
-              : 'The sale, payment, stock movement and accounting entries are saved to your business.'
+          notify(input.saleType === 'enquiry' ? 'Enquiry saved' : 'Sale recorded', refreshed
+            ? input.saleType === 'enquiry'
+              ? 'The draft quote is saved. Stock, payment and financial balances have not changed.'
+              : input.channel === 'credit'
+                ? 'The sale, stock movement and outstanding customer balance are saved to your business.'
+                : 'The sale, payment, stock movement and accounting entries are saved to your business.'
             : 'The transaction was submitted. Refresh the workspace to verify the latest invoice and stock balances.');
         } catch (error) {
           notify('Sale could not be recorded', error instanceof Error ? error.message : 'The cloud operation failed. No sale success was reported.');
@@ -3108,6 +3110,7 @@ function App() {
       dueDate: addDays(today(), 7),
       discount: 0,
       channel: 'credit',
+      saleType: 'pay_on_delivery',
       items: [{ productId: input.productId, quantity: input.quantity }],
       source: 'website',
     });
