@@ -660,7 +660,7 @@ function PurchaseDialog({ suppliers, products, initialProductId, initialQuantity
     <form className="modal-body" onSubmit={submit}>
       {suppliers.length ? <SelectField label="Supplier" value={supplierId} onChange={setSupplierId} options={suppliers.map(item => ({ value: item.id, label: item.name }))} /> :
         <div className="sale-inventory-required">
-          <span className="sale-inventory-icon"><Users size={21} /></span>
+          <span className="sale-inventory-icon"><Store size={21} /></span>
           <strong>Add a supplier to continue</strong>
           <p>Hesabu needs a supplier record to track who supplied these goods and any amount you owe.</p>
           <Button type="button" onClick={onAddSupplier}><Plus size={15} /> Add supplier</Button>
