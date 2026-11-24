@@ -151,7 +151,7 @@ test('the team roster RPC restricts email visibility to business management', ()
 });
 
 
-const saleTypesMigration = await readFile(resolve(root, 'MVP/supabase/migrations/202611240001_sales_types_and_enquiries.sql'), 'utf8');
+const saleTypesMigration = await readFile(resolve(root, 'MVP/supabase/migrations/20261124084011_sales_types_and_enquiries.sql'), 'utf8');
 
 test('sale intent is persisted and enquiries remain drafts outside the financial ledger', () => {
   assert.ok(saleTypesMigration.includes("add column if not exists sale_type text not null default 'walk_in'"));
