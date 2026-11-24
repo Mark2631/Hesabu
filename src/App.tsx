@@ -279,7 +279,6 @@ function SaleDialog({ products, onClose, onCreate, cloudMode }: {
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<Array<{ productId: string; quantity: string }>>([]);
   const productFor = (id: string) => products.find(product => product.id === id);
-  const quantityFor = (id: string) => Number(items.find(item => item.productId === id)?.quantity || 0);
   const subtotal = sum(items.map(item => (productFor(item.productId)?.sellingPrice || 0) * Math.max(0, Number(item.quantity) || 0)));
   const total = Math.max(0, subtotal - Math.max(0, Number(discount) || 0));
   const results = products
