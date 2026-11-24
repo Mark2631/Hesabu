@@ -751,11 +751,11 @@ function ReceivePurchaseDialog({ order, onClose, onReceive }: {
 function InvoiceDialog({ invoice, onClose, onRequestPayment, cloudMode }: {
   invoice: Invoice; onClose: () => void; onRequestPayment: () => void; cloudMode: boolean;
 }) {
-  return <Modal title={invoice.number} detail="Invoice record and settlement history." onClose={onClose} size="lg">
+  return <Modal title={invoice.number} detail={invoice.status === 'draft' ? 'Quote draft. This record does not create a debt or payment.' : 'Invoice record and settlement history.'} onClose={onClose} size="lg">
     <div className="modal-body">
       <div className="invoice-detail-top">
-        <div><span className="field-label">Bill to</span><strong>{invoice.customer}</strong><small>{invoice.phone || 'No phone recorded'}</small></div>
-        <div className="invoice-detail-status"><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill><small>Issued {dateLabel(invoice.date)}</small></div>
+        <div><span className="field-label">{invoice.status === 'draft' ? 'Prepared for' : 'Bill to'}</span><strong>{invoice.customer}</strong><small>{invoice.phone || 'No phone recorded'}</small></div>
+        <div className="invoice-detail-status"><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill><small>{invoice.status === 'draft' ? 'Prepared' : 'Issued'} {dateLabel(invoice.date)}</small></div>
       </div>
       <DataTable headers={['Item', 'Qty', 'Unit price', 'Amount']}>
         {invoice.lines.map(line => <tr key={line.productId}>
@@ -774,7 +774,7 @@ function InvoiceDialog({ invoice, onClose, onRequestPayment, cloudMode }: {
         <span>Transaction <strong>{saleTypeLabel(invoice.saleType)}</strong></span>
         <span>Source <strong>{sourceLabel(invoice.source)}</strong></span>
         {invoice.status !== 'draft' && <span>Payment terms <strong>{dateLabel(invoice.dueDate)}</strong></span>}
-        <span>Preferred channel <strong>{channelLabel(invoice.channel)}</strong></span>
+        {invoice.status !== 'draft' && <span>Preferred channel <strong>{channelLabel(invoice.channel)}</strong></span>}
       </div>
       <div className="modal-footer">
         <Button variant="ghost" onClick={onClose}>Close</Button>
@@ -1628,10 +1628,10 @@ function SalesPage({ data, search, onSearch, onCreateSale, onSelectInvoice }: {
       </div>
       {list.length ? <DataTable headers={['Invoice', 'Customer', 'Issue date', 'Source', 'Payment channel', 'Status', 'Total', 'Balance']}>
         {list.map(invoice => <tr key={invoice.id} className="clickable-row" onClick={() => onSelectInvoice(invoice.id)}>
-          <td><strong>{invoice.number}</strong></td><td>{invoice.customer}<small className="cell-sub">{invoice.phone || 'No phone recorded'}</small></td>
-          <td>{dateLabel(invoice.date)}</td><td>{sourceLabel(invoice.source)}</td><td><span className={channelClass(invoice.channel)}>{channelLabel(invoice.channel)}</span></td>
+          <td><strong>{invoice.number}</strong><small className="cell-sub">{saleTypeLabel(invoice.saleType)}</small></td><td>{invoice.customer}<small className="cell-sub">{invoice.phone || 'No phone recorded'}</small></td>
+          <td>{dateLabel(invoice.date)}</td><td>{sourceLabel(invoice.source)}</td><td>{invoice.status === 'draft' ? '—' : <span className={channelClass(invoice.channel)}>{channelLabel(invoice.channel)}</span>}</td>
           <td><StatusPill status={invoice.status}>{statusLabel(invoice.status)}</StatusPill></td>
-          <td className="amount-cell">{money(invoice.total)}</td><td className="amount-cell">{money(invoiceBalance(invoice))}</td>
+          <td className="amount-cell">{money(invoice.total)}</td><td className="amount-cell">{invoice.status === 'draft' ? '—' : money(invoiceBalance(invoice))}</td>
         </tr>)}
       </DataTable> : <EmptyState title="No matching invoices" body="Change the search or status filter, or record a sale to create an invoice." action={<Button onClick={onCreateSale}><Plus size={15} /> Record sale</Button>} />}
     </SectionCard>
