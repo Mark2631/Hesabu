@@ -2530,6 +2530,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }) | null>(null);
   const [appInstalled, setAppInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
 
@@ -3595,7 +3596,19 @@ function App() {
             <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
           </button>
           <button className="notification-button" onClick={() => notify('Operational attention', data.products.filter(product => product.quantity <= product.reorderLevel).length + ' stock items are at or below reorder level.')}><Bell size={17} /><i /></button>
-          <button type="button" className="topbar-avatar" aria-label="Open profile and settings" title="Profile and settings" onClick={() => navigate('settings')}><Initials name={activeMember?.name || data.profile.name} /></button>
+          <div className="topbar-account">
+            <button type="button" className="topbar-avatar" aria-label="Open account details" aria-haspopup="menu" aria-expanded={profileMenuOpen} title="Account details" onClick={() => setProfileMenuOpen(open => !open)}><Initials name={activeMember?.name || data.profile.name} /></button>
+            {profileMenuOpen && <div className="user-switcher-panel" role="menu" aria-label="Account details">
+              <div className="user-switcher-heading">
+                <strong>{activeMember?.name || cloudAccount.user.user_metadata?.full_name || data.profile.owner || 'Your account'}</strong>
+                <small>{cloudAccount.user.email || 'Signed-in Hesabu account'}</small>
+              </div>
+              <div className="account-detail-row"><span>Business</span><strong>{data.profile.name || cloudAccount.business.name}</strong></div>
+              <div className="account-detail-row"><span>Access</span><strong>{activeMember?.role || 'Owner'}</strong></div>
+              <button type="button" role="menuitem" onClick={() => { setProfileMenuOpen(false); navigate('settings'); }}><Settings size={15} /><span><strong>Business settings</strong><small>Profile, team and preferences</small></span><ChevronRight size={14} /></button>
+              <button type="button" role="menuitem" onClick={() => { setProfileMenuOpen(false); void handleCloudSignOut(); }}><LogOut size={15} /><span><strong>Sign out</strong><small>Sign out of this account</small></span></button>
+            </div>}
+          </div>
         </div>
       </header>
 
