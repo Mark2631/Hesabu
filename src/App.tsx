@@ -3600,7 +3600,7 @@ function App() {
             <button type="button" className="topbar-avatar" aria-label="Open account details" aria-haspopup="menu" aria-expanded={profileMenuOpen} title="Account details" onClick={() => setProfileMenuOpen(open => !open)}><Initials name={activeMember?.name || data.profile.name} /></button>
             {profileMenuOpen && <div className="user-switcher-panel" role="menu" aria-label="Account details">
               <div className="user-switcher-heading">
-                <strong>{activeMember?.name || cloudAccount.user.user_metadata?.full_name || data.profile.owner || 'Your account'}</strong>
+                <strong>{activeMember?.name || data.profile.owner || 'Your account'}</strong>
                 <small>{cloudAccount.user.email || 'Signed-in Hesabu account'}</small>
               </div>
               <div className="account-detail-row"><span>Business</span><strong>{data.profile.name || cloudAccount.business.name}</strong></div>
