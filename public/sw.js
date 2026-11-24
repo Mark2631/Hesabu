@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'hesabu-shell-';
-const CACHE = 'hesabu-shell-v9';
+const CACHE = 'hesabu-shell-v10';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/hesabu-mark.svg', '/app-icon.svg', '/hesabu-shop-owner.webp', OFFLINE_URL];
 
