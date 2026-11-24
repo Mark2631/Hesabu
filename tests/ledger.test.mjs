@@ -218,3 +218,14 @@ test('the cloud STK training panel is explicitly non-posting', async () => {
   assert.match(source, /Simulate approval/);
   assert.match(source, /No payment, cash balance or invoice was changed/);
 });
+
+
+test('draft quotes are visible as quotes but excluded from trading totals and allocations', async () => {
+  const source = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  assert.match(source, /const postedInvoices = data\.invoices\.filter\(invoice => invoice\.status !== 'draft'\)/);
+  assert.match(source, /const filteredInvoices = postedInvoices\.filter/);
+  assert.match(source, /const sales = data\.invoices\.filter\(invoice => invoice\.status !== 'draft' && invoice\.date === date\)/);
+  assert.match(source, /const eligible = invoices\.filter\(invoice => invoice\.status !== 'draft' && invoiceBalance\(invoice\) > 0\)/);
+  assert.match(source, /invoice\.status === 'draft' \? 'Quote total' : 'Invoice total'/);
+  assert.match(source, /invoice\.status === 'draft' \? '—' : money\(invoiceBalance\(invoice\)\)/);
+});
