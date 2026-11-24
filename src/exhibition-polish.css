@@ -1,0 +1,213 @@
+/* Hesabu exhibition polish: monochrome identity, authentic photography and calm loading states. */
+:root {
+  --ink:#171717;
+  --ink-soft:#303030;
+  --muted:#77736e;
+  --muted-light:#a6a19a;
+  --green:#171717;
+  --green-dark:#080808;
+  --green-pale:#f0efed;
+  --green-tint:#f7f6f4;
+  --blue:#565b66;
+  --blue-pale:#f0f1f3;
+  --amber:#9a6b32;
+  --amber-pale:#f7f0e6;
+  --red:#a94e45;
+  --red-pale:#f8eeec;
+  --line:#e9e6e1;
+  --surface:#fff;
+  --canvas:#f7f6f3;
+  --shadow:0 4px 18px rgba(20,18,15,.045);
+  --radius:13px;
+  color:#171717;
+  background:#f7f6f3;
+}
+html,body { background:#f7f6f3; color:#171717; }
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible {
+  outline:3px solid rgba(20,20,20,.16);
+  outline-offset:2px;
+}
+::selection { background:#242424; color:#fff; }
+
+/* Primary workspace chrome */
+.app-shell { background:#f7f6f3; }
+.sidebar { background:#fff; border-right-color:#e8e5e0; }
+.brand-mark,.auth-brand .brand-mark,.assistant-message-brand {
+  background:#171717!important; color:#fff!important; box-shadow:none!important;
+}
+.brand-text strong span,.topbar-brand-name > strong > span,
+.topbar-brand-lockup > span:last-child > strong > span,
+.public-brand > span:last-child > span { color:#171717!important; }
+.brand-text small,.topbar-brand-name small { color:#88837c; }
+.workspace-switcher { background:#faf9f7; border-color:#ece9e4; }
+.workspace-avatar { background:#efeeeb; color:#242424; }
+.nav-item { color:#66625c; }
+.nav-item svg { color:#77736e; }
+.nav-item:hover,.nav-item-active {
+  color:#111!important; background:#f0efed!important;
+}
+.nav-item-active svg { color:#111!important; }
+.nav-item-active::before { background:#171717!important; }
+.sidebar-help,.sidebar-help > div { background:#f7f6f3; color:#242424; border-color:#e9e6e1; }
+.sidebar-help button,.sidebar-help > div strong { color:#242424; }
+.avatar { background:#efeeeb; color:#242424; }
+.topbar { background:rgba(255,255,255,.96); border-bottom-color:#e9e6e1; }
+.breadcrumb strong { color:#292929; }
+.global-search { background:#faf9f7; border-color:#e9e6e1; }
+.global-search:focus-within { border-color:#aaa49b; }
+.notification-button:hover { color:#111; background:#f1f0ed; }
+.page-container { background:transparent; }
+.eyebrow { color:#77716a!important; }
+.overview-welcome h2,.page-header h1 { color:#171717!important; }
+.overview-welcome p { color:#77736e; }
+
+/* Financial overview and records */
+.finance-balance-hero {
+  background:#171717!important;
+  color:#fff!important;
+  border:1px solid #171717!important;
+  box-shadow:0 8px 22px rgba(0,0,0,.09)!important;
+}
+.finance-balance-hero:after { border-color:rgba(255,255,255,.10)!important; }
+.finance-balance-top small { color:#c5c1bb!important; }
+.finance-balance-value { color:#fff!important; }
+.finance-balance-mark { background:#2d2d2d!important; color:#fff!important; border-color:#414141!important; }
+.finance-balance-actions button { background:#fff!important; color:#171717!important; border-color:#e9e6e1!important; }
+.finance-balance-actions button > span { background:#f0efed!important; color:#171717!important; }
+.finance-balance-actions button:hover { border-color:#a9a39a!important; background:#f8f7f5!important; }
+.daily-summary-heading h3,.daily-summary-item strong,.surface-card-header h2 { color:#202020!important; }
+.daily-summary-item,.surface-card { background:#fff!important; border-color:#e9e6e1!important; box-shadow:0 3px 14px rgba(20,18,15,.025)!important; }
+.daily-summary-top > span:first-child,.daily-summary-item small,.surface-card-header p { color:#827d76!important; }
+.daily-summary-icon,.daily-summary-expenses .daily-summary-icon,.daily-summary-stock .daily-summary-icon,.daily-summary-payables .daily-summary-icon {
+  background:#f0efed!important; color:#292929!important;
+}
+.data-table th { color:#77736e!important; }
+.data-table td { color:#35322e!important; }
+.data-table .amount-cell { color:#171717!important; }
+.data-table tbody tr:hover { background:#f8f7f5!important; }
+.section-tabs { border-color:#e9e6e1!important; }
+.section-tabs button.active { color:#171717!important; border-color:#171717!important; }
+.btn-primary,.auth-form .btn,.public-get-started,.public-primary-action {
+  background:#171717!important; border-color:#171717!important; color:#fff!important;
+}
+.btn-primary:hover,.auth-form .btn:hover,.public-get-started:hover,.public-primary-action:hover {
+  background:#303030!important; border-color:#303030!important;
+}
+.btn-secondary,.btn-outline,.public-install-action,.app-install-button {
+  color:#292929!important; border-color:#e1ddd7!important; background:#fff!important;
+}
+.btn-secondary:hover,.btn-outline:hover,.public-install-action:hover,.app-install-button:hover {
+  border-color:#aaa49b!important; background:#f7f6f3!important;
+}
+.field-input,.auth-field input,.auth-field select,.auth-field textarea {
+  border-color:#e2ded8!important; color:#222!important; background:#fff!important;
+}
+.field-input:focus,.auth-field input:focus,.auth-field select:focus { border-color:#888!important; }
+
+/* Public landing page: let the real shop-owner photograph carry the story. */
+.public-site { background:#fdfcfb!important; color:#171717!important; }
+.public-header { background:rgba(253,252,251,.96)!important; border-color:#e9e6e1!important; }
+.public-brand { color:#171717!important; }
+.public-brand .brand-mark { background:#171717!important; }
+.public-nav a,.public-signin { color:#625e58!important; }
+.public-nav a:hover,.public-signin:hover { color:#111!important; }
+.public-hero-copy h1,.public-section-intro h2 { color:#171717!important; }
+.public-hero-copy p,.public-section-intro p { color:#69645e!important; }
+.public-eyebrow,.public-photo-caption span { color:#77716a!important; }
+.public-photo-visual { overflow:hidden; border:1px solid #e7e3dd; border-radius:18px; background:#fff; box-shadow:0 12px 34px rgba(20,18,15,.07); }
+.public-photo-visual img {
+  display:block; width:100%; aspect-ratio:16/8.8; object-fit:cover;
+  object-position:center 44%; filter:saturate(.88) contrast(1.02);
+}
+.public-photo-caption { background:#fff!important; }
+.public-photo-caption strong { color:#202020!important; }
+.public-value-grid article,.public-trust-section,.public-workflow > div {
+  border-color:#e9e6e1!important; background:#fff!important;
+}
+.public-value-number,.public-workflow > div > span { color:#77716a!important; }
+.public-value-grid h3,.public-workflow strong { color:#222!important; }
+.public-value-grid p,.public-workflow p { color:#77736e!important; }
+.public-explore-action { color:#292929!important; }
+.public-hero-note { color:#77736e!important; }
+
+/* Authentication and account loading */
+.auth-page { background:#f5f4f1!important; }
+.auth-shell { border-color:#e7e3dd!important; box-shadow:0 18px 55px rgba(20,18,15,.07)!important; }
+.auth-form-panel { background:#fff!important; }
+.auth-copy h1 { color:#171717!important; }
+.auth-copy p,.auth-footnote { color:#77736e!important; }
+.auth-tabs { background:#f2f1ee!important; }
+.auth-tabs button.active { background:#fff!important; color:#171717!important; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+.auth-field span { color:#4d4943!important; }
+.auth-aside { background:#f0efed!important; color:#171717!important; border-color:#e6e2dc!important; }
+.auth-aside-copy h2 { color:#171717!important; }
+.auth-aside-copy p,.auth-aside-footer { color:#6e6962!important; }
+.auth-aside-mark { background:#171717!important; color:#fff!important; }
+.auth-preview-row { background:rgba(255,255,255,.88)!important; border-color:#e4e0da!important; }
+.auth-preview-row strong { color:#292929!important; }
+.auth-password-toggle { color:#4d4943!important; }
+.auth-forgot-link { color:#292929!important; }
+
+.cloud-account-card { border-color:#e7e3dd!important; box-shadow:0 12px 38px rgba(20,18,15,.06)!important; }
+.cloud-account-card h1 { color:#171717!important; }
+.cloud-loading-card {
+  width:min(520px,calc(100% - 32px))!important;
+  gap:12px!important;
+  padding:clamp(24px,5vw,38px)!important;
+  border-radius:18px!important;
+  text-align:left!important;
+  align-items:stretch!important;
+}
+.cloud-loading-card > .brand-mark { align-self:flex-start; }
+.cloud-loading-card h1 { margin:2px 0 0!important; font-size:21px!important; }
+.cloud-loading-card > p {
+  margin:0!important; color:#77736e!important; font-size:12px!important;
+}
+.cloud-loading-card::after {
+  content:"";
+  display:block;
+  width:100%;
+  height:132px;
+  margin:8px 0 0!important;
+  border:0!important;
+  border-radius:12px!important;
+  background-color:#faf9f7;
+  background-image:
+    linear-gradient(#e9e6e1,#e9e6e1),
+    linear-gradient(#efede9,#efede9),
+    linear-gradient(#efede9,#efede9),
+    linear-gradient(#e9e6e1,#e9e6e1),
+    linear-gradient(#efede9,#efede9),
+    linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);
+  background-repeat:no-repeat;
+  background-size:34% 9px, 58% 8px, 100% 38px, 30% 8px, 54% 8px, 220% 100%;
+  background-position:0 10px,0 27px,0 50px,0 105px,0 121px,-120% 0;
+  animation:hesabu-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+@keyframes hesabu-skeleton-shimmer {
+  to { background-position:0 10px,0 27px,0 50px,0 105px,0 121px,120% 0; }
+}
+
+/* Replace leftover green semantic accents with neutral ink while preserving warning/success meaning. */
+.auth-step-indicator > span.current,.auth-step-indicator > span.complete { color:#292929!important; }
+.auth-step-indicator > i { background:#e5e1db!important; }
+.auth-step-indicator > span.complete:before { background:#292929!important; }
+.auth-password-toggle:hover,.auth-forgot-link:hover { color:#111!important; background:#f2f1ee!important; }
+.assistant-drawer-mark,.assistant-message-brand { background:#171717!important; color:#fff!important; }
+.assistant-message-user p { background:#171717!important; color:#fff!important; }
+.assistant-message-assistant p { background:#f2f1ee!important; color:#292929!important; }
+.assistant-followups button { border-color:#e5e1db!important; color:#49453f!important; }
+.assistant-followups button:hover { border-color:#171717!important; color:#171717!important; }
+.assistant-drawer-entry .assistant-voice-button { border-color:#e5e1db!important; background:#f7f6f3!important; color:#292929!important; }
+.assistant-drawer-entry .assistant-voice-button:hover,.assistant-drawer-entry .assistant-voice-active { border-color:#171717!important; background:#efeeeb!important; color:#171717!important; }
+.cloud-loading-card .brand-mark { background:#171717!important; }
+
+@media(max-width:700px) {
+  .public-photo-visual { border-radius:15px; }
+  .public-photo-visual img { aspect-ratio:5/4; object-position:center 44%; }
+  .finance-balance-hero { padding:20px!important; border-radius:17px!important; }
+  .daily-summary-item { border-radius:13px!important; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .cloud-loading-card::after { animation:none!important; }
+}
