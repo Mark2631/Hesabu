@@ -268,8 +268,9 @@ function Initials({ name }: { name: string }) {
   return <span className="avatar">{letters || 'H'}</span>;
 }
 
-function SaleDialog({ products, onClose, onCreate, cloudMode }: {
-  products: Product[]; onClose: () => void; onCreate: (input: NewInvoiceInput) => void; cloudMode: boolean;
+function SaleDialog({ products, onClose, onCreate, onAddProduct, cloudMode }: {
+  products: Product[]; onClose: () => void; onCreate: (input: NewInvoiceInput) => void;
+  onAddProduct: () => void; cloudMode: boolean;
 }) {
   const [customer, setCustomer] = useState('Walk-in customer');
   const [phone, setPhone] = useState('');
@@ -395,6 +396,13 @@ function SaleDialog({ products, onClose, onCreate, cloudMode }: {
         </div>
       </div>
 
+      {products.length === 0 ? <div className="sale-inventory-required">
+        <span className="sale-inventory-icon"><Package size={22} /></span>
+        <strong>Your product list is empty</strong>
+        <p>Add the products you sell and enter the quantity you have. Hesabu will then use those stock levels when you record sales.</p>
+        <Button onClick={onAddProduct}><Plus size={15} /> Add your first product</Button>
+        <small>You can save a product with zero stock, but it cannot be sold until stock is added.</small>
+      </div> : <>
       <div className="sale-picker-heading">
         <div><strong>Find items</strong><small>{products.length} products in your catalogue</small></div>
         <span>{itemCount} {itemCount === 1 ? 'unit' : 'units'} in basket</span>
@@ -414,6 +422,7 @@ function SaleDialog({ products, onClose, onCreate, cloudMode }: {
           </button>;
         }) : <div className="sale-product-empty">No matching products. Check the spelling or SKU.</div>}
       </div>
+      </>}
 
       <div className="sale-cart-heading"><strong>Sale basket</strong><span>{items.length} {items.length === 1 ? 'item' : 'items'}</span></div>
       {items.length ? <div className="sale-cart-list">
@@ -592,33 +601,37 @@ function ProductDialog({ onClose, onCreate }: {
   const [unit, setUnit] = useState('piece');
   const [quantity, setQuantity] = useState('0');
   const [reorder, setReorder] = useState('5');
-  const [cost, setCost] = useState('');
+  const [cost, setCost] = useState('0');
   const [price, setPrice] = useState('');
-  return <Modal title="Add inventory item" detail="Create a product record with its current quantity and unit economics." onClose={onClose}>
-    <form className="modal-body" onSubmit={event => {
+  return <Modal title="Add a product" detail="Start with the product name, selling price and how many you have today. You can add the extra details later." onClose={onClose}>
+    <form className="modal-body product-setup-form" onSubmit={event => {
       event.preventDefault();
-      if (!name.trim() || Number(price) <= 0) return;
+      if (!name.trim() || Number(price) <= 0 || !unit.trim()) return;
       onCreate({
-        name: name.trim(), sku: sku.trim() || makeId('SKU'), category, unit,
+        name: name.trim(), sku: sku.trim() || makeId('SKU'), category: category.trim() || 'General', unit: unit.trim(),
         quantity: Math.max(0, Number(quantity) || 0), reorderLevel: Math.max(0, Number(reorder) || 0),
         costPrice: Math.max(0, Number(cost) || 0), sellingPrice: Number(price),
       });
     }}>
-      <Field label="Product name" value={name} onChange={setName} placeholder="e.g. Long-grain rice 2kg" required />
+      <Field label="What are you selling?" value={name} onChange={setName} placeholder="e.g. 2kg rice, mandazi, phone charger" required />
       <div className="form-grid form-grid-two">
-        <Field label="SKU / product code" value={sku} onChange={setSku} placeholder="Assigned if empty" />
-        <Field label="Category" value={category} onChange={setCategory} placeholder="Food staples" />
-      </div>
-      <div className="form-grid form-grid-three">
-        <Field label="Unit" value={unit} onChange={setUnit} placeholder="packet" required />
-        <Field label="Opening quantity" type="number" min={0} value={quantity} onChange={setQuantity} />
-        <Field label="Reorder at" type="number" min={0} value={reorder} onChange={setReorder} />
+        <Field label="Selling price (KSh)" type="number" min={1} value={price} onChange={setPrice} placeholder="e.g. 250" required />
+        <Field label="Quantity available now" type="number" min={0} value={quantity} onChange={setQuantity} hint="This is your opening stock. Enter 0 if you have none yet." />
       </div>
       <div className="form-grid form-grid-two">
-        <Field label="Cost price (KSh)" type="number" min={0} value={cost} onChange={setCost} required />
-        <Field label="Selling price (KSh)" type="number" min={1} value={price} onChange={setPrice} required />
+        <Field label="Unit" value={unit} onChange={setUnit} placeholder="piece, kg, packet" required />
+        <Field label="Cost per unit (KSh)" type="number" min={0} value={cost} onChange={setCost} hint="Optional. Use 0 if you do not track cost yet." />
       </div>
-      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || Number(price) <= 0}>Add item</Button></div>
+      <details className="product-extra-details">
+        <summary>More product details (optional)</summary>
+        <div className="form-grid form-grid-two">
+          <Field label="SKU / product code" value={sku} onChange={setSku} placeholder="Assigned automatically if blank" />
+          <Field label="Category" value={category} onChange={setCategory} placeholder="General" />
+          <Field label="Alert me when stock reaches" type="number" min={0} value={reorder} onChange={setReorder} />
+        </div>
+      </details>
+      <div className="product-setup-note"><Package size={16} /><span>Stock is updated when you save. You can add more stock later from Inventory.</span></div>
+      <div className="modal-footer"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || Number(price) <= 0 || !unit.trim()}>Save product</Button></div>
     </form>
   </Modal>;
 }
@@ -1523,6 +1536,18 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
       <div><div className="eyebrow">HESABU · BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Your business, at a glance.</p></div>
       <div className="overview-welcome-actions"><span className="date-chip"><CalendarDays size={14} /> {dateLabel(today())}</span></div>
     </div>
+    {data.products.length === 0 && role !== 'Inventory' && <section className="first-stock-setup" aria-label="Set up your inventory">
+      <div className="first-stock-setup-copy">
+        <span className="eyebrow">FIRST STEP · INVENTORY</span>
+        <h3>Add the products you sell</h3>
+        <p>Before Hesabu can update stock and calculate sales correctly, add your products and the quantities currently on hand.</p>
+        <ol><li>Add a product name and selling price</li><li>Enter the quantity you have today</li><li>Start recording sales and payments</li></ol>
+      </div>
+      <div className="first-stock-setup-actions">
+        <Button onClick={onCreateProduct}><Plus size={15} /> Add first product</Button>
+        <button type="button" className="text-link" onClick={() => onNavigate('inventory')}>Open inventory <ArrowRight size={13} /></button>
+      </div>
+    </section>}
     <section className="finance-balance-hero" aria-label={heroTitle}>
       <div className="finance-balance-top">
         <div><span>{heroTitle}</span><small>{heroDetail}</small></div>
@@ -1748,7 +1773,13 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
   const riskItems = [...low].sort((a, b) => (a.daysCover ?? 0) - (b.daysCover ?? 0)).slice(0, 5);
   const slowItems = [...slow].sort((a, b) => productValue(b.product) - productValue(a.product)).slice(0, 4);
   return <div className="page-stack">
-    <PageHeader title="Inventory" description="Protect sales from stockouts and free cash trapped in products that are not moving." actions={<Button onClick={onAddProduct}><Plus size={15} /> Add product</Button>} />
+    <PageHeader title="Inventory" description="Your product list and the stock available to sell. Add products here, then record new stock as it arrives." actions={<Button onClick={onAddProduct}><Plus size={15} /> Add product</Button>} />
+    {data.products.length === 0 && <section className="inventory-first-run">
+      <div className="inventory-first-run-icon"><Package size={24} /></div>
+      <div><h2>No products added yet</h2><p>Start by adding one product. Enter its selling price and the quantity currently in your shop. You do not need a supplier or purchase order to get started.</p>
+      <Button onClick={onAddProduct}><Plus size={15} /> Add your first product</Button></div>
+      <div className="inventory-first-run-steps"><span><b>1</b> Product name</span><span><b>2</b> Selling price</span><span><b>3</b> Opening quantity</span></div>
+    </section>}
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Stock at cost" value={money(stockValue)} note="Current stock value" icon={Boxes} tone="slate" />
       <MetricCard label="Units sold · 30 days" value={numberText(unitsSold30)} note="Recorded product movement" icon={TrendingUp} tone="blue" />
@@ -3798,7 +3829,7 @@ function App() {
       onUpdateStock={() => setDialog({ kind: 'stock-picker' })}
     />
 
-    {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} cloudMode={Boolean(cloudAccount)} />}
+    {dialog?.kind === 'sale' && <SaleDialog products={data.products} onClose={() => setDialog(null)} onCreate={createInvoice} onAddProduct={() => setDialog({ kind: 'product' })} cloudMode={Boolean(cloudAccount)} />}
     {dialog?.kind === 'stk' && <StkDialog invoices={data.invoices} initialInvoiceId={dialog.invoiceId} onClose={() => setDialog(null)} onCreate={createPaymentRequest} cloudMode={Boolean(cloudAccount)} />}
     {dialog?.kind === 'receipt' && <ReceiptDialog onClose={() => setDialog(null)} onCreate={addUnmatchedReceipt} />}
     {dialog?.kind === 'match-receipt' && selectedReceipt && <MatchReceiptDialog receipt={selectedReceipt} invoices={data.invoices} onClose={() => setDialog(null)} onMatch={invoiceId => matchUnmatchedReceipt(selectedReceipt.id, invoiceId)} />}
