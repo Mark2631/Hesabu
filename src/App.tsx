@@ -1110,7 +1110,7 @@ function getWorkspaceAnswer(data: AppData, question: string) {
   const lowStock = data.products.filter(item => item.quantity <= item.reorderLevel);
   const outOfStock = data.products.filter(item => item.quantity <= 0);
   if (/^(hi|hello|hey|habari|sasa|good morning|good afternoon|good evening|help|what can you do)$/.test(query))
-    return 'Hello. I’m Hesabu, your business-record assistant. I can explain sales, payments, customer balances, expenses, supplier balances, stock levels, best-selling products and gross profit using records saved in this workspace. Try asking: “How much did we sell this month?”';
+    return 'Hello. I’m Hesabu-AI, your business-record assistant. I can explain sales, payments, customer balances, expenses, supplier balances, stock levels, best-selling products and gross profit using records saved in this workspace. Try asking: “How much did we sell this month?”';
   if (/stock|inventory|reorder|out of stock|product|slow mov/.test(query)) {
     const names = lowStock.slice(0, 5).map(item => item.name + ' (' + numberText(item.quantity) + ' ' + item.unit + ')');
     return 'There are ' + data.products.length + ' products recorded. ' + outOfStock.length + ' are out of stock and ' + lowStock.length + ' are at or below reorder level. ' + (names.length ? 'Needs attention: ' + names.join(', ') + '. ' : 'No products currently need restocking. ') + 'Stock value at cost is ' + money(sum(data.products.map(productValue))) + '.';
@@ -1221,10 +1221,10 @@ function FloatingAssistant({
   };
   const suggestions = ['How much did we sell today?', 'How are sales this month?', 'Which products need restocking?', 'Who still owes us?', 'What are our expenses?', 'What is our gross profit?'];
   return <>
-    {panel === 'assistant' && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu assistant">
+    {panel === 'assistant' && <section className="assistant-drawer" role="dialog" aria-modal="false" aria-label="Hesabu-AI">
       <header className="assistant-drawer-header">
         <span className="assistant-drawer-mark"><HesabuMark /></span>
-        <span><strong>Hesabu</strong><small>Business assistant · {cloudMode ? 'Your saved records' : 'This workspace'}</small></span>
+        <span><strong>Hesabu-AI</strong><small>Business assistant · {cloudMode ? 'Your saved records' : 'This workspace'}</small></span>
         <button type="button" className="icon-button" aria-label="Close assistant" onClick={() => setPanel(null)}><X size={18} /></button>
       </header>
       <div className="assistant-drawer-body">
@@ -1249,8 +1249,8 @@ function FloatingAssistant({
       </div>
       {voiceError && <p className="assistant-voice-error" role="status">{voiceError}</p>}
       <form className="assistant-drawer-entry" onSubmit={event => { event.preventDefault(); ask(question); }}>
-        <button type="button" className={'assistant-voice-button ' + (voiceListening ? 'assistant-voice-active' : '')} aria-label={voiceListening ? 'Listening for your question' : 'Ask Hesabu by voice'} title={voiceListening ? 'Listening…' : 'Speak your question'} onClick={startVoiceCapture}><Mic size={17} /></button>
-        <input aria-label="Ask Hesabu" value={question} onChange={event => setQuestion(event.target.value)} placeholder={voiceListening ? 'Listening… speak now' : 'Ask or speak to Hesabu…'} />
+        <button type="button" className={'assistant-voice-button ' + (voiceListening ? 'assistant-voice-active' : '')} aria-label={voiceListening ? 'Listening for your question' : 'Ask Hesabu-AI by voice'} title={voiceListening ? 'Listening…' : 'Speak to Hesabu-AI'} onClick={startVoiceCapture}><Mic size={17} /></button>
+        <input aria-label="Ask Hesabu" value={question} onChange={event => setQuestion(event.target.value)} placeholder={voiceListening ? 'Listening… speak now' : 'Ask or speak to Hesabu-AI…'} />
         <button type="submit" aria-label="Send question" disabled={!question.trim()}><ArrowUpRight size={18} /></button>
       </form>
       <p className="assistant-drawer-note">{cloudMode
@@ -1293,10 +1293,10 @@ function FloatingAssistant({
       <button
         type="button"
         className={'assistant-launcher ' + (panel === 'assistant' ? 'assistant-launcher-open' : '')}
-        aria-label={panel === 'assistant' ? 'Close Hesabu assistant' : 'Open Hesabu assistant'}
+        aria-label={panel === 'assistant' ? 'Close Hesabu-AI' : 'Open Hesabu-AI'}
         aria-expanded={panel === 'assistant'}
         onClick={() => togglePanel('assistant')}
-        title="Ask Hesabu"
+        title="Ask Hesabu-AI"
       >
         {panel === 'assistant' ? <X size={21} /> : <HesabuMark />}
       </button>
@@ -2647,7 +2647,23 @@ function App() {
 
   useEffect(() => {
     if (!cloudAccount) return;
-    setCloudWorkspaceReady(false);
+    // Render the last verified workspace immediately on repeat visits while
+    // the latest cloud records refresh in the background.
+    let cached: { data?: AppData; whatsappNumber?: string } | null = null;
+    try {
+      cached = JSON.parse(localStorage.getItem('hesabu:workspace-cache:v1:' + cloudAccount.business.id) || 'null');
+    } catch { cached = null; }
+    if (cached?.data) {
+      setData(cached.data);
+      setWhatsAppNumber(cached.whatsappNumber || '');
+      const member = cached.data.teamMembers.find(item => item.id === cloudAccount.user.id);
+      setActiveMemberId(member?.id || cloudAccount.user.id);
+      setCloudWorkspaceReady(true);
+      setCloudWorkspaceError('');
+      setOfflineMode(!navigator.onLine);
+    } else {
+      setCloudWorkspaceReady(false);
+    }
     void reloadCloudWorkspace();
     // The business ID changes only when a user enters a different cloud workspace.
   }, [cloudAccount?.business.id]);
