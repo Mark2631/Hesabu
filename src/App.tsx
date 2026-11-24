@@ -3149,7 +3149,7 @@ function App() {
       return;
     }
     const invoice = data.invoices.find(item => item.id === input.invoiceId);
-    if (!invoice) return;
+    if (!invoice || invoice.status === 'draft') return;
     const payment: Payment = {
       id: makeId('PAY'), invoiceId: invoice.id, invoiceNumber: invoice.number,
       customer: invoice.customer, phone: input.phone, amount: input.amount,
@@ -3216,7 +3216,7 @@ function App() {
     }
     const receipt = data.unmatchedReceipts.find(item => item.id === receiptId);
     const invoice = data.invoices.find(item => item.id === invoiceId);
-    if (!receipt || !invoice || receipt.amount <= 0 || invoiceBalance(invoice) <= 0) return;
+    if (!receipt || !invoice || invoice.status === 'draft' || receipt.amount <= 0 || invoiceBalance(invoice) <= 0) return;
     const now = new Date().toISOString();
     const channel: PaymentChannel = receipt.rail === 'Bank transfer' ? 'bank' : 'mpesa';
     const allocation = allocateIncomingPayment(invoice.total, invoice.paid, receipt.amount);
