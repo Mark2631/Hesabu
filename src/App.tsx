@@ -1394,7 +1394,7 @@ function OverviewPage({ data, metrics, role, onCreateSale, onCreateProduct, onNa
 
   return <div className="page-stack">
     <div className="overview-welcome">
-      <div><div className="eyebrow">BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Your business, at a glance.</p></div>
+      <div><div className="eyebrow">HESABU · BUSINESS OVERVIEW</div><h2>{data.profile.name}</h2><p>Your business, at a glance.</p></div>
       <div className="overview-welcome-actions"><span className="date-chip"><CalendarDays size={14} /> {dateLabel(today())}</span></div>
     </div>
     <section className="finance-balance-hero" aria-label={heroTitle}>
@@ -3595,7 +3595,7 @@ function App() {
             <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
           </button>
           <button className="notification-button" onClick={() => notify('Operational attention', data.products.filter(product => product.quantity <= product.reorderLevel).length + ' stock items are at or below reorder level.')}><Bell size={17} /><i /></button>
-          <span className="topbar-avatar" aria-label="Signed-in user"><Initials name={activeMember?.name || data.profile.name} /></span>
+          <button type="button" className="topbar-avatar" aria-label="Open profile and settings" title="Profile and settings" onClick={() => navigate('settings')}><Initials name={activeMember?.name || data.profile.name} /></button>
         </div>
       </header>
 
