@@ -2423,7 +2423,9 @@ function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
         <div className="embedded-flow-note">Keep the website you already have. Give the team one place to run the business.</div>
       </div>
     </div>
-  </difunction SalesChannelsPage({ data, onCreateDemoOrder, cloudMode, onNavigate }: {
+  </div>;
+
+function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode, onNavigate }: {
   data: AppData;
   onCreateDemoOrder: (input: { productId: string; quantity: number; customer: string; phone: string }) => void;
   cloudMode: boolean;
