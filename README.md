@@ -1,69 +1,68 @@
 # Hesabu
 
-Hesabu is being built as a connected financial operations platform for Kenyan retailers and service businesses. It is designed to sit behind an existing storefront or website as well as operate as a business workspace in its own right.
+Hesabu is a cloud-backed business operations workspace for Kenyan small businesses. It brings sales, payments, stock, purchasing, expenses, customer balances and business reporting into one connected record.
 
-## Product model
+## Current product architecture
 
-A single operational record connects:
+- **Frontend:** React 18, TypeScript and Vite.
+- **Identity and data:** Supabase Auth, PostgreSQL and PostgREST.
+- **Access control:** business-level membership and roles, with row-level security and database posting functions.
+- **Hosting:** Vercel, connected to this GitHub repository.
+- **Currency and operating context:** Kenyan shillings (KSh) and East Africa business dates.
 
-- **Sales and invoicing** — counter, website, Hesabu checkout and manual sales.
-- **Payments and reconciliation** — cash, M-Pesa, bank and card collection records; payment requests; an unmatched-receipt queue for Till/PayBill, Pochi, Send Money and bank receipts; invoice allocation and exception review.
-- **Inventory** — SKU-level quantities, reorder points, cost and selling prices, stock adjustments, valuation and reorder suggestions.
-- **Production** — reusable material recipes and production runs that transfer stock from components into finished goods at the cost of materials consumed.
-- **Procurement** — suppliers, purchase orders, receiving and accounts payable.
-- **Accounts** — receivables, payables, cash accounts, account balances, a trial balance and a journal register. The seed includes opening balances that reconcile the cash, inventory, receivables and supplier control accounts.
-- **Reports** — sales, gross margin, cash position and working-capital views.
-- **Integrations** — a planned developer API, website embed and webhook event model.
+The browser client in `src/lib/supabase.ts` currently wraps Supabase Auth and PostgREST with direct `fetch` calls. It is not yet using the official Supabase JavaScript SDK. Do not describe that migration as completed.
 
-A posted sale is intended to flow through invoice, collection, stock and accounting records rather than requiring the operator to update four disconnected screens.
+## What the workspace currently supports
 
-## Current preview implementation
+- Sales and invoices, including walk-in, credit and pay-on-delivery flows.
+- Manual payment recording, payment requests in the training simulator, and an unmatched receipt queue for manual allocation.
+- Product catalogue, inventory movements, stock counts and purchase orders.
+- Supplier receiving and supplier payments.
+- Operating expenses, journal entries, customer/supplier balances and management reports.
+- Business profiles, role-based team membership and secure invitation links.
+- Record-based answers from the Hesabu workspace assistant.
+- A public sample workspace that lets visitors explore the interface without signing up.
 
-The build/platform-foundation branch contains a front-end product preview built on the existing React 18, TypeScript and Vite application.
+A posted cloud sale is processed through database functions so the invoice, stock, payment and journal movements can be committed together. The public sample workspace is deliberately separate: it uses sanitized example data in browser memory and does not read or write any customer's cloud records.
 
-- Seeded mini-mart workspace with products, suppliers, invoices, payment records and purchase orders.
-- Local interactions for recording sales, creating invoices, requesting and resolving sample payment requests, adding and matching receipts, recording expenses, stock counts, multi-line purchase orders, partial goods receiving, supplier payments, reusable production recipes and production runs.
-- Balanced journal-pair posting, a trial-balance control, weighted-average cost on stock receipts, separate treatment of unapplied customer receipts as customer advances, and ledger entries for opening stock.
-- Supplier settlements reduce bank cash and accounts payable; they are not treated as operating expenses.
-- Derived dashboard and report values, including period sales, average daily sales, average sale value, gross profit, margin rate and units sold.
-- Browser-local persistence under hesabu:platform:v3. The new key intentionally starts a fresh seeded workspace without deleting older local browser records.
-- Responsive desktop, tablet and mobile navigation, with value sizes that adapt to card width rather than truncating long currency amounts.
-- A quill-inspired Hesabu brand mark and a sign-in / account-creation entry screen. The entry screen is currently presentation-only; preview access is local and does not authenticate or create a cloud account.
-- A floating workspace assistant with record-based answers for sales, stock, expenses and customer balances, plus shortcuts to the existing sale, expense and stock-entry forms. Generative AI, voice capture and automatic record posting are not connected.
-- A configurable WhatsApp destination for a prepared daily digest. This uses WhatsApp click-to-chat; the operator must review and send the message. Automatic scheduled sending requires a WhatsApp Business API integration and a secure server-side sender.
+## Try the demo
 
-The preview is deliberately local-first while the production database and identity provider are not connected. Data only persists in the current browser. It is not yet multi-user, multi-branch, cloud-synchronised or suitable for real financial operations. Seeded values are representative demo figures, not audited opening balances.
+The landing page's **Try the interactive demo** entry opens a sample retail workspace without an account or password. Visitors can navigate the product and test local sample workflows. Changes exist only in that browser session and are discarded when the demo is exited or the page is refreshed.
 
-## Daraja and settlement design
+The demo uses illustrative records, not a real business. Contact details and tax identifiers are removed. No live Safaricom request, WhatsApp message, online checkout, email or external payment is triggered from the public demo. Payment-request screens are training simulations only.
 
-The payment UI is a **local simulation**. It does not call Safaricom, send an STK prompt, verify a callback, read live statements or move funds. The unmatched-receipt queue demonstrates a manual reconciliation workflow only.
+The demo is not a free anonymous tenant and must never be connected to a real customer's workspace.
 
-The intended production pattern is to initiate a supported payment request for the merchant's own registered payment destination, receive and authenticate asynchronous payment results on the server, match the receipt to the invoice idempotently, and update the business ledger. A transaction-status query is a secondary reconciliation path where a callback has not arrived.
+## Integration boundaries
 
-Hesabu should not take custody of or pool merchant funds in the first implementation. A model where Hesabu collects funds into its own account and subsequently pays merchants is a materially different payments business and must be assessed with licensed payment partners and qualified regulatory advice before it is built.
+- **M-Pesa:** manual payment records are supported. Live Safaricom STK Push, callback verification and automatic reconciliation are not connected.
+- **WhatsApp:** Hesabu can prepare a click-to-chat summary for an operator to review and send. Automated Business Platform delivery is not connected.
+- **AI and voice:** the workspace assistant uses deterministic answers from saved records. A generative AI model and voice-to-ledger capture are not connected.
+- **Online checkout:** the channel interface is illustrative; a production checkout, signed webhook and merchant integration are not connected.
+- **KRA eTIMS:** Hesabu is not currently eTIMS-certified. Do not represent generated records as KRA-compliant tax invoices or claim automated iTax/VAT filing.
 
-Pochi la Biashara, Send Money and Till/PayBill are not interchangeable rails. Their supported integration and reconciliation methods must be verified individually; an STK-capable merchant shortcode should not be assumed to provide a feed for every other channel.
+Keep these boundaries explicit in product copy and demonstrations.
 
-## Kenya tax integration
+## Operational safeguards and remaining work
 
-KRA documents system-to-system eTIMS integration through OSCU and VSCU and requires integrators to undergo testing, vetting and certification. Hesabu is not currently eTIMS-certified and must not represent invoices from this preview as KRA-compliant tax invoices. Certification and the correct integration route belong on the production roadmap.
+The current release has cloud authentication, database-backed workspaces, role checks, row-level security and atomic posting paths. That does not by itself establish full production readiness. Before increasing real-customer reliance, continue work on:
 
-## Production work still required
+1. End-to-end testing of signup, session refresh, two-account tenant isolation, team invitations and financial posting.
+2. Operational logging and alerting for failed writes, idempotency conflicts and integration callbacks.
+3. Backup and restore verification, data export and documented account deletion/retention.
+4. Migration of the custom direct-fetch Supabase client to the official SDK, after session-refresh and multi-tab regression tests.
+5. A deliberate business switcher for users who belong to multiple businesses.
+6. Safaricom integrations only after the merchant rails, callback security, duplicate handling and reconciliation process are tested.
+7. KRA eTIMS integration only after the correct route, testing and certification requirements have been met.
 
-1. Connect a secure multi-tenant database and enforce business-level authorization.
-2. Replace browser-only state with server-side posting and immutable, balanced journal transactions.
-3. Add idempotency, webhook signature verification, retries, reconciliation exceptions and audit logs.
-4. Complete inventory costing, production labour and overhead allocation, waste/by-product handling, returns, credit notes, tax handling, period close and accountant-reviewed reports.
-5. Connect and test supported Daraja merchant flows with production credentials and callback infrastructure.
-6. Evaluate KRA eTIMS certification, supported bank feeds and other third-party integrations.
-7. Add staff roles, branch/location permissions, backups, observability and security review.
+No Supabase secret/service-role key or Safaricom consumer secret may be placed in browser code, public documentation or a `VITE_*` variable.
 
 ## Development
 
-- npm install
-- npm run dev
-- npm run typecheck
-- npm test
-- npm run build
+- `npm ci`
+- `npm run dev`
+- `npm test`
+- `npm run typecheck`
+- `npm run build`
 
-No secrets or payment credentials should be placed in the browser application.
+See [MVP/AUDIT.md](MVP/AUDIT.md) for the latest architecture and verification record.
