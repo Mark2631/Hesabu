@@ -2432,47 +2432,76 @@ function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode, onNavigate }: {
   cloudMode: boolean;
   onNavigate: (section: ModuleKey) => void;
 }) {
-  return <div className="page-stack">
-    <PageHeader title="Sales channels" description="Bring counter, online and wholesale orders into one business view." />
-    <div className="sales-channel-grid">
-      <div className="sales-channel-card sales-channel-card-active">
-        <div className="sales-channel-kicker">IN STORE</div><h3>Counter sales</h3>
-        <p>Record walk-in sales using the same product catalogue and stock quantities.</p>
-        <span>Available in Sales</span>
-        <Button size="sm" variant="outline" onClick={() => onNavigate('sales')}>Open sales register</Button>
-      </div>
-      <div className="sales-channel-card sales-channel-card-featured">
-        <div className="sales-channel-kicker">ONLINE</div><h3>Website orders</h3>
-        <p>{cloudMode
-          ? 'Live website orders are not connected. Do not treat this screen as a live customer checkout.'
-          : 'Explore a sample customer checkout using this workspace’s sample products.'}</p>
-        <span>{cloudMode ? 'Connection required' : 'Sample checkout below'}</span>
-      </div>
-      <div className="sales-channel-card">
-        <div className="sales-channel-kicker">WHOLESALE</div><h3>Bulk & repeat orders</h3>
-        <p>Record phone, repeat and bulk orders against the same inventory and customer balances.</p>
-        <span>Available in Sales</span>
-        <Button size="sm" variant="outline" onClick={() => onNavigate('sales')}>Record a bulk order</Button>
-      </div>
+  return <div className="page-stack sales-channels-page">
+    <PageHeader title="Sales channels" description="Run counter and wholesale orders from one register. Connect your existing website when you are ready to receive online orders." />
+    <div className="sales-channel-grid sales-channel-grid-detailed">
+      <article className="sales-channel-card sales-channel-card-active">
+        <div className="sales-channel-card-top">
+          <span className="sales-channel-icon"><Store size={21} /></span>
+          <span className="sales-channel-status is-available">Available now</span>
+        </div>
+        <div className="sales-channel-kicker">IN STORE</div>
+        <h3>Counter sales</h3>
+        <p>For customers buying directly from your shop. Each posted sale updates the product quantities and business records.</p>
+        <ol className="sales-channel-steps">
+          <li>Open Sales and choose Record sale.</li>
+          <li>Select Walk-in sale, add products and quantities.</li>
+          <li>Choose Cash, M-Pesa, bank or card, then post the sale.</li>
+        </ol>
+        <Button block onClick={() => onNavigate('sales')}>Open sales register <ArrowRight size={15} /></Button>
+      </article>
+      <article className="sales-channel-card">
+        <div className="sales-channel-card-top">
+          <span className="sales-channel-icon"><ShoppingCart size={21} /></span>
+          <span className="sales-channel-status is-available">Available through Sales</span>
+        </div>
+        <div className="sales-channel-kicker">WHOLESALE & PHONE ORDERS</div>
+        <h3>Bulk and repeat orders</h3>
+        <p>For hotels, resellers and regular customers ordering by phone or in person. Use the same catalogue; do not create a second stock list.</p>
+        <ol className="sales-channel-steps">
+          <li>Open Sales and choose Record sale.</li>
+          <li>Enter the customer or account name and add bulk quantities.</li>
+          <li>Choose Customer credit / debt if payment is due later, or Pay on delivery if collecting on delivery.</li>
+        </ol>
+        <Button block variant="outline" onClick={() => onNavigate('sales')}>Record a bulk order <ArrowRight size={15} /></Button>
+      </article>
+      <article className="sales-channel-card sales-channel-card-online">
+        <div className="sales-channel-card-top">
+          <span className="sales-channel-icon"><Smartphone size={21} /></span>
+          <span className="sales-channel-status is-unavailable">Not connected</span>
+        </div>
+        <div className="sales-channel-kicker">ONLINE</div>
+        <h3>Website orders</h3>
+        <p>For customers ordering from your own website. A secure connection must deliver each order into Hesabu before it can be treated as a real sale.</p>
+        <div className="sales-channel-requirements">
+          <strong>What needs to be connected</strong>
+          <ul>
+            <li>Your website checkout or ecommerce platform</li>
+            <li>A secure order webhook and verification secret</li>
+            <li>Product SKU matching and order-status handling</li>
+          </ul>
+        </div>
+        <span className="sales-channel-unavailable-note">No live website is connected. Do not use the sample checkout to accept customer payments.</span>
+      </article>
     </div>
-    <SectionCard title="How to use each channel" detail="All three order types use the same product catalogue and stock records.">
-      <div className="sales-channel-guide">
-        <div><strong>1. Counter sale</strong><p>Open Sales, select Record sale, leave the transaction type as Walk-in sale, add the products and quantities, choose Cash, M-Pesa or another payment method, then post the sale.</p></div>
-        <div><strong>2. Wholesale or repeat order</strong><p>Open Sales and select Record sale. Enter the customer or account name, add all requested products and quantities, then choose Customer credit / debt if payment is due later, or Pay on delivery if payment will be collected when goods arrive.</p></div>
-        <div><strong>3. Website order</strong><p>The sample checkout below is only for exploring the flow in a local/demo workspace. A real business needs a secure website order webhook before live customer orders can enter Hesabu. No website is connected yet.</p></div>
+    <SectionCard title="One order register, one stock balance" detail="Regardless of where the order starts, the intended workflow is the same.">
+      <div className="sales-channel-flow">
+        <div><span>01</span><strong>Order received</strong><p>At the counter, by phone, or through a connected website.</p></div>
+        <div><span>02</span><strong>Products matched</strong><p>Hesabu uses the existing product catalogue and quantities.</p></div>
+        <div><span>03</span><strong>Sale recorded</strong><p>Payment, outstanding balance and stock movement are recorded together.</p></div>
+        <div><span>04</span><strong>Owner sees one view</strong><p>Sales, cash position, customer balances and reports stay together.</p></div>
       </div>
     </SectionCard>
     {cloudMode
       ? <SectionCard title="Website order connection" detail="Live online checkout is not enabled for this business yet.">
-          <EmptyState title="No website is connected" body="Connect a secure order webhook from your existing storefront before accepting real online orders. Until then, record phone and walk-in orders through Sales." />
+          <EmptyState title="No website is connected" body="Ask your website developer to integrate a secure Hesabu order webhook. Until that integration is configured and tested, record website or phone enquiries manually through Sales and confirm stock before accepting payment." />
         </SectionCard>
-      : <SectionCard title="Sample online order" detail="Place a test order and see it appear in this local workspace's Sales register.">
+      : <SectionCard title="Sample online checkout" detail="This is a demonstration of the customer ordering experience, not a live storefront.">
+          <div className="sales-channel-demo-warning">Sample mode only · Orders created here affect this local sample workspace. They are not sent to a real website, customer or payment provider.</div>
           <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
         </SectionCard>}
-    <div className="sales-channel-note">One product catalogue. One view of sales. One view of available stock.</div>
   </div>;
 }
-
 function MorePage({ allowedModules, onNavigate }: {
   allowedModules: ModuleKey[]; onNavigate: (section: ModuleKey) => void;
 }) {
