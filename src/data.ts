@@ -18,7 +18,7 @@ const products: Product[] = [
   { id: 'prd-001', sku: 'GRC-001', name: 'Pembe Maize Flour 2kg', category: 'Food staples', unit: 'packet', quantity: 56, reorderLevel: 20, costPrice: 128, sellingPrice: 160, supplierId: 'sup-001', updatedAt: offset(0) },
   { id: 'prd-002', sku: 'DRY-014', name: 'Cooking Oil 1L', category: 'Cooking essentials', unit: 'bottle', quantity: 23, reorderLevel: 18, costPrice: 248, sellingPrice: 295, supplierId: 'sup-002', updatedAt: offset(0) },
   { id: 'prd-003', sku: 'DRY-018', name: 'Sugar 1kg', category: 'Food staples', unit: 'packet', quantity: 11, reorderLevel: 16, costPrice: 142, sellingPrice: 175, supplierId: 'sup-001', updatedAt: offset(0) },
-  { id: 'prd-004', sku: 'DAI-002', name: 'Fresh Milk 500ml', category: 'Dairy', unit: 'packet', quantity: 42, reorderLevel: 24, costPrice: 56, sellingPrice: 70, supplierId: 'sup-003', updatedAt: offset(0) },
+  { id: 'prd-004', sku: 'DAI-002', name: 'Fresh Milk 500ml', category: 'Dairy', unit: 'bottle', quantity: 42, reorderLevel: 24, costPrice: 56, sellingPrice: 70, supplierId: 'sup-003', updatedAt: offset(0) },
   { id: 'prd-005', sku: 'HOM-011', name: 'Dishwashing Liquid 750ml', category: 'Home care', unit: 'bottle', quantity: 8, reorderLevel: 12, costPrice: 105, sellingPrice: 145, supplierId: 'sup-004', updatedAt: offset(-1) },
   { id: 'prd-006', sku: 'BAK-003', name: 'Sliced Bread 400g', category: 'Bakery', unit: 'loaf', quantity: 17, reorderLevel: 15, costPrice: 55, sellingPrice: 70, supplierId: 'sup-003', updatedAt: offset(0) },
   { id: 'prd-007', sku: 'BEV-022', name: 'Soda 500ml', category: 'Beverages', unit: 'bottle', quantity: 31, reorderLevel: 18, costPrice: 48, sellingPrice: 70, supplierId: 'sup-005', updatedAt: offset(-1) },

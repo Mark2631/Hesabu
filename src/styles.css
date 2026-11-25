@@ -4106,3 +4106,36 @@ html[data-theme="light"] { color-scheme:light; }
 @media(max-width:390px) {
   .public-install-action { display:none; }
 }
+
+
+/* Sales channel guidance: make the available workflows explicit. */
+.sales-channel-card { display:flex; flex-direction:column; align-items:flex-start; gap:9px; }
+.sales-channel-card .btn { margin-top:auto; }
+.sales-channel-guide {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0;
+}
+.sales-channel-guide > div { min-width:0; padding:17px 19px; border-right:1px solid var(--line); }
+.sales-channel-guide > div:last-child { border-right:0; }
+.sales-channel-guide strong { display:block; margin-bottom:7px; color:var(--ink); font-size:13px; }
+.sales-channel-guide p { margin:0; color:var(--muted); font-size:12px; line-height:1.65; }
+@media(max-width:720px) {
+  .sales-channel-guide { grid-template-columns:1fr; }
+  .sales-channel-guide > div { padding:15px; border-right:0; border-bottom:1px solid var(--line); }
+  .sales-channel-guide > div:last-child { border-bottom:0; }
+}
+
+/* Print reports should flow naturally; a large card must not be pushed intact
+   to a new sheet and leave an otherwise blank page behind. */
+@media print {
+  @page { margin: 12mm; }
+  html, body, #root, .app-shell, .main-shell, .page-container, .page-stack {
+    height:auto !important; min-height:0 !important; max-height:none !important;
+    overflow:visible !important;
+  }
+  .daily-digest-print {
+    break-inside:auto !important; page-break-inside:auto !important;
+    break-before:avoid-page !important; page-break-before:avoid !important;
+    margin:0 !important;
+  }
+  .daily-digest-print > * { break-inside:avoid; page-break-inside:avoid; }
+}
