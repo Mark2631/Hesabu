@@ -6,7 +6,7 @@ const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const authClient = await readFile(new URL('../src/lib/supabase.ts', import.meta.url), 'utf8');
 
 test('public product information is available before authentication', () => {
-  assert.match(app, /if \(!showAuthScreen && !cloudAccount\) return <PublicLandingPage/);
+  assert.match(app, /if \(!demoMode && !showAuthScreen && !cloudAccount\) return <PublicLandingPage/);
   assert.match(app, /href="#product">Explore features<\/a>/);
 });
 

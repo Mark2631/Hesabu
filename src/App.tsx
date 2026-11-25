@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { addBusinessDays, businessDate, formatBusinessDate, formatBusinessDateTime, formatBusinessDay } from './business-time';
+import { makePublicDemoData } from './demo-data';
 const EMPTY_WORKSPACE_DATA: AppData = {
   profile: {
     name: 'Your business', legalName: '', owner: '', email: '', phone: '',
@@ -61,7 +62,7 @@ const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: st
   { title: 'WORKSPACE', items: [
     { id: 'overview', label: 'Home', icon: LayoutDashboard },
     { id: 'sales', label: 'Sales', icon: Receipt },
-    { id: 'payments', label: 'Money', icon: Wallet },
+    { id: 'payments', label: 'Payments', icon: Wallet },
     { id: 'inventory', label: 'Stock', icon: Package },
     { id: 'more', label: 'More', icon: MoreHorizontal },
   ] },
@@ -376,10 +377,10 @@ function SaleDialog({ products, onClose, onCreate, onAddProduct, cloudMode }: {
 
   return <Modal title={saleType === 'enquiry' ? 'Save an enquiry' : 'Record a sale'} detail={saleType === 'enquiry'
     ? 'Prepare a quote without recording income, deducting stock or changing customer balances.'
-    : 'Find products, build the basket and record the payment or outstanding balance in one step.'} onClose={onClose} size="lg">
+    : 'Add items, then record payment or leave a balance due.'} onClose={onClose} size="lg">
     <form className="modal-body sale-entry-form" onSubmit={submit}>
       <Field label="Customer or account (optional)" value={customer} onChange={setCustomer} placeholder="Walk-in customer" />
-      <div className="field-hint">A phone number is not needed to record a sale. Only collect contact details later if a customer-requested service requires them.</div>
+      <div className="field-hint">A phone number is not required to record a sale.</div>
 
       <div className="sale-type-row">
         <SelectField label="Transaction type" value={saleType} onChange={changeSaleType} options={[
@@ -1062,10 +1063,11 @@ function HesabuMark({ className = '' }: { className?: string }) {
 }
 
 function PublicLandingPage({
-  onSignIn, onCreateAccount, onInstall, appInstalled,
+  onSignIn, onCreateAccount, onTryDemo, onInstall, appInstalled,
 }: {
   onSignIn: () => void;
   onCreateAccount: () => void;
+  onTryDemo: () => void;
   onInstall: () => void;
   appInstalled: boolean;
 }) {
@@ -1084,6 +1086,7 @@ function PublicLandingPage({
         </nav>
         <div className="public-header-actions">
           {!appInstalled && <button type="button" className="public-install-action" onClick={onInstall}><Download size={14} /> Install</button>}
+          <button type="button" className="public-demo-action" onClick={onTryDemo}>Try demo</button>
           <button type="button" className="public-signin" onClick={onSignIn}>Sign in</button>
           <button type="button" className="public-get-started" onClick={onCreateAccount}>Get started <ArrowRight size={15} /></button>
         </div>
@@ -1095,9 +1098,10 @@ function PublicLandingPage({
         <div className="public-hero-copy">
           <span className="public-eyebrow">BUSINESS RECORDS, BROUGHT TOGETHER</span>
           <h1>Know what is happening in your business.</h1>
-          <p>Hesabu brings daily sales, payments, stock, expenses and customer balances into one clear business record. Spend less time chasing scattered notes and more time making informed decisions.</p>
+          <p>Record sales, payments, stock and expenses in one place. See what came in, what went out and what needs attention.</p>
           <div className="public-hero-actions">
-            <button type="button" className="public-primary-action" onClick={onCreateAccount}>Create your business account <ArrowRight size={16} /></button>
+            <button type="button" className="public-primary-action" onClick={onTryDemo}>Try the interactive demo <ArrowRight size={16} /></button>
+            <button type="button" className="public-explore-action" onClick={onCreateAccount}>Start with your business</button>
             <a className="public-explore-action" href="#product">Explore features</a>
           </div>
           <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
@@ -1115,7 +1119,7 @@ function PublicLandingPage({
         <div className="public-section-intro">
           <span className="public-eyebrow">WHAT HESABU DOES</span>
           <h2>The important parts of the business, in one place.</h2>
-          <p>Each record contributes to a clearer view of what the business has sold, collected, spent and still needs to do.</p>
+          <p>See sales, collections, spending and follow-ups together.</p>
         </div>
         <div className="public-value-grid">
           <article><span className="public-value-number">01</span><h3>Sales and payments</h3><p>Record what was sold, how the customer paid and what remains outstanding.</p></article>
@@ -1130,9 +1134,9 @@ function PublicLandingPage({
           <h2>Record the work. Understand the result.</h2>
         </div>
         <div className="public-workflow">
-          <div><span>1</span><strong>Capture daily activity</strong><p>Enter a sale, receipt, expense or stock change as it happens.</p></div>
-          <div><span>2</span><strong>Keep records connected</strong><p>Link transactions to products, customers, suppliers and balances.</p></div>
-          <div><span>3</span><strong>Review your business</strong><p>See the day’s figures and prepare a digest to share with your team.</p></div>
+          <div><span>1</span><strong>Capture daily activity</strong><p>Record a sale, receipt, expense or stock change.</p></div>
+          <div><span>2</span><strong>Keep records connected</strong><p>Keep each entry connected to its products, customers and suppliers.</p></div>
+          <div><span>3</span><strong>Review your business</strong><p>Review daily figures and prepare a summary for your team.</p></div>
         </div>
       </section>
 
@@ -1140,7 +1144,7 @@ function PublicLandingPage({
         <div>
           <span className="public-eyebrow">BUILT FOR EVERYDAY OPERATIONS</span>
           <h2>Useful from the counter to the back office.</h2>
-          <p>Hesabu is being shaped for shops, food businesses, wholesalers, distributors and service businesses that need a dependable record of daily operations.</p>
+          <p>Hesabu is designed for shops, food businesses, wholesalers, distributors and service businesses that need clear daily records.</p>
         </div>
         <div className="public-business-list">
           <span>Retail and convenience shops</span>
@@ -1152,7 +1156,7 @@ function PublicLandingPage({
 
       <section className="public-trust-section" id="trust">
         <div className="public-trust-mark"><ShieldCheck size={21} /></div>
-        <div><span className="public-eyebrow">YOUR BUSINESS, YOUR RECORDS</span><h2>Clear access. Clear records. Clear decisions.</h2><p>Hesabu’s cloud workspace is being built around individual accounts and business-level access. Manual entry remains the foundation; optional AI assistance and WhatsApp summaries can be enabled independently.</p></div>
+        <div><span className="public-eyebrow">YOUR BUSINESS, YOUR RECORDS</span><h2>Clear access. Clear records. Clear decisions.</h2><p>Your workspace is private to your business. M-Pesa entries are recorded manually; live STK Push and automatic reconciliation are not yet available. Hesabu is not eTIMS-certified.</p></div>
         <button type="button" className="public-secondary-action" onClick={onCreateAccount}>Set up your workspace <ArrowRight size={15} /></button>
       </section>
     </main>
@@ -1161,13 +1165,13 @@ function PublicLandingPage({
       <div className="public-footer-main">
         <div className="public-footer-brand">
           <a className="public-brand" href="#top"><span className="brand-mark"><HesabuMark /></span><span>hesabu<span>.</span></span></a>
-          <p>A clearer business record for the people who run the business every day.</p>
+          <p>Clear business records for the people who run the business every day.</p>
         </div>
         <div className="public-footer-group"><strong>Product</strong><a href="#product">Sales and payments</a><a href="#product">Stock and purchasing</a><a href="#product">Reports and digest</a></div>
         <div className="public-footer-group"><strong>Learn</strong><a href="#how-it-works">How it works</a><a href="#businesses">Who Hesabu serves</a><a href="#trust">Your records</a></div>
         <div className="public-footer-group"><strong>Your account</strong><button type="button" onClick={onSignIn}>Sign in</button><button type="button" onClick={onCreateAccount}>Create a business account</button></div>
       </div>
-      <div className="public-footer-bottom"><span>© 2026 Hesabu. Built for business operations in Kenya.</span><span>Product information is subject to change as integrations are completed.</span></div>
+      <div className="public-footer-bottom"><span>© 2026 Hesabu. Built for business operations in Kenya.</span><span>Built for everyday business in Kenya.</span></div>
     </footer>
   </div>;
 }
@@ -1265,7 +1269,7 @@ function AuthPage({
         <div className="auth-copy">
           <span className="auth-kicker">BUSINESS, IN BALANCE</span>
           <h1>{mode === 'reset' ? 'Choose a new password.' : inviteMode ? (mode === 'signin' ? 'Sign in to join your team.' : 'Create your team account.') : (mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.')}</h1>
-          <p>{mode === 'reset' ? 'Enter the email address for your account and choose a new password.' : inviteMode ? 'Use the email address this invitation was sent to. Your access activates when you accept the invitation.' : 'Sales, payments, stock and business performance in one calm workspace.'}</p>
+          <p>{mode === 'reset' ? 'Enter the email address for your account and choose a new password.' : inviteMode ? 'Use the email address this invitation was sent to. Your access activates when you accept the invitation.' : 'Keep sales, payments, stock and expenses together in one workspace.'}</p>
         </div>
         {mode === 'signup' && !inviteMode && <div className="auth-step-indicator"><span className={signupStep === 1 ? 'current' : 'complete'}>1 <small>Account</small></span><i /><span className={signupStep === 2 ? 'current' : ''}>2 <small>Business</small></span></div>}
         {mode !== 'reset' && <div className="auth-tabs" role="tablist" aria-label="Account access">
@@ -1295,8 +1299,8 @@ function AuthPage({
         <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">BUSINESS OPERATIONS</span></div>
         <div className="auth-aside-copy">
           <span>ONE VIEW OF THE BUSINESS</span>
-          <h2>Know what is happening in your business.</h2>
-          <p>Bring sales, payments, stock and daily expenses into one clear business record.</p>
+          <h2>One record for the work behind every sale.</h2>
+          <p>See what was sold, what was paid and what needs follow-up.</p>
         </div>
         <div className="auth-preview-stack">
           <div className="auth-preview-row"><span className="auth-preview-icon"><TrendingUp size={17} /></span><span><strong>Sales & performance</strong><small>Daily totals, margin and trends</small></span><ChevronRight size={17} /></div>
@@ -1373,10 +1377,11 @@ type SpeechRecognitionLike = {
 };
 
 function FloatingAssistant({
-  data, whatsappNumber, onWhatsAppNumberChange, onRecordSale, onRecordExpense, onUpdateStock, cloudMode,
+  data, whatsappNumber, onWhatsAppNumberChange, onRecordSale, onRecordExpense, onUpdateStock, cloudMode, demoMode,
 }: {
   data: AppData;
   cloudMode: boolean;
+  demoMode: boolean;
   whatsappNumber: string;
   onWhatsAppNumberChange: (value: string) => void;
   onRecordSale: () => void;
@@ -1429,6 +1434,10 @@ function FloatingAssistant({
   };
   const shareDigest = () => {
     setDigestError('');
+    if (demoMode) {
+      setDigestError('External WhatsApp messages are disabled in the sample workspace.');
+      return;
+    }
     openDailyDigestWhatsApp(data, whatsappNumber, () => {
       setDigestError('Enter a valid WhatsApp number to prepare this summary.');
     });
@@ -1484,13 +1493,15 @@ function FloatingAssistant({
           <div><span>Expenses</span><strong>{money(digest.expenseTotal)}</strong></div>
           <div><span>Gross profit</span><strong>{money(digest.grossProfit)}</strong></div>
         </div>
-        <label className="digest-floating-recipient">
+        {!demoMode && <label className="digest-floating-recipient">
           <span>WhatsApp destination</span>
           <input value={whatsappNumber} onChange={event => { onWhatsAppNumberChange(event.target.value); setDigestError(''); }} placeholder="2547XXXXXXXX" inputMode="tel" />
-        </label>
+        </label>}
         {digestError && <p className="digest-floating-error" role="alert">{digestError}</p>}
-        <button type="button" className="digest-share-button" onClick={shareDigest}><MessageCircle size={16} /> Open WhatsApp</button>
-        <p className="digest-floating-note">Hesabu fills the message for you. Review it in WhatsApp and press Send. Automatic delivery is not enabled in this preview.</p>
+        <button type="button" className="digest-share-button" onClick={shareDigest} disabled={demoMode}><MessageCircle size={16} /> {demoMode ? 'Unavailable in demo' : 'Open WhatsApp'}</button>
+        <p className="digest-floating-note">{demoMode
+          ? 'This is a sample digest. External WhatsApp messages are disabled in the demo.'
+          : 'Hesabu fills the message for you. Review it in WhatsApp and press Send. Automatic delivery is not enabled.'}</p>
       </div>
     </section>}
     <div className="floating-tools-dock">
@@ -1837,7 +1848,7 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
   const riskItems = [...low].sort((a, b) => (a.daysCover ?? 0) - (b.daysCover ?? 0)).slice(0, 5);
   const slowItems = [...slow].sort((a, b) => productValue(b.product) - productValue(a.product)).slice(0, 4);
   return <div className="page-stack">
-    <PageHeader title="Inventory" description="Your product list and the stock available to sell. Add products here, then record new stock as it arrives." actions={<Button onClick={onAddProduct}><Plus size={15} /> Add product</Button>} />
+    <PageHeader title="Stock" description="See what is on hand, what is moving and what needs reordering." actions={<Button onClick={onAddProduct}><Plus size={15} /> Add product</Button>} />
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Stock at cost" value={money(stockValue)} note="Current stock value" icon={Boxes} tone="slate" />
       <MetricCard label="Units sold · 30 days" value={numberText(unitsSold30)} note="Recorded product movement" icon={TrendingUp} tone="blue" />
@@ -1845,7 +1856,7 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
       <MetricCard label="Slow stock value" value={money(slowStockValue)} note={slow.length + ' items with low movement'} icon={Package} tone="slate" />
     </div>
     <div className="content-grid content-grid-main stock-health-grid">
-      <SectionCard title="Replenish before sales are lost" detail="Suggestions target around 14 days of demand plus the item’s reorder floor. Open purchase orders are deducted.">
+      <SectionCard title="Replenish before sales are lost" detail="Suggested quantities cover about 14 days of recent demand, after incoming orders.">
         {riskItems.length ? <div className="stock-signal-list">
           {riskItems.map(item => <div className="stock-signal-row" key={item.product.id}>
             <div className="stock-signal-main"><strong>{item.product.name}</strong><small>{numberText(item.product.quantity)} {item.product.unit} left · {item.daysCover === null ? 'No recent sales history' : Math.max(0, Math.floor(item.daysCover)) + ' days of cover'}{item.onOrder > 0 ? ' · ' + numberText(item.onOrder) + ' on order' : ''}</small></div>
@@ -2073,7 +2084,7 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
         </DataTable>
       </>}
     </SectionCard>
-    <div className="accounting-note"><ShieldCheck size={16} /><span>The register reflects records saved in this business workspace. Before using it for statutory reporting, validate tax treatment, inventory costing and period-close controls with your accountant.</span></div>
+    <div className="accounting-note"><ShieldCheck size={16} /><span>This register reflects saved workspace records. Confirm tax treatment and period-end adjustments with your accountant before statutory reporting.</span></div>
   </div>;
 }
 
@@ -2192,9 +2203,9 @@ function downloadDailyWorkbook(data: AppData) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, role }: {
+function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, role, demoMode }: {
   data: AppData; metrics: ReturnType<typeof getMetrics>; whatsappNumber: string;
-  onWhatsAppUnavailable: () => void; role: TeamRole;
+  onWhatsAppUnavailable: () => void; role: TeamRole; demoMode: boolean;
 }) {
   const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
   const todayDate = today();
@@ -2284,9 +2295,13 @@ function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, rol
       <div className="daily-digest-actions">
         <Button variant="outline" onClick={() => downloadDailyWorkbook(data)}><FileSpreadsheet size={16} /> Download Excel workbook</Button>
         <Button variant="outline" onClick={() => window.print()}><FileText size={16} /> Save as PDF</Button>
-        <Button onClick={() => openDailyDigestWhatsApp(data, whatsappNumber, onWhatsAppUnavailable)}><MessageCircle size={16} /> Prepare WhatsApp summary</Button>
+        {demoMode
+          ? <Button variant="outline" disabled><MessageCircle size={16} /> WhatsApp disabled in demo</Button>
+          : <Button onClick={() => openDailyDigestWhatsApp(data, whatsappNumber, onWhatsAppUnavailable)}><MessageCircle size={16} /> Prepare WhatsApp summary</Button>}
       </div>
-      <p className="daily-digest-note">The workbook is generated from the latest records loaded for this business. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery is not enabled.</p>
+      <p className="daily-digest-note">{demoMode
+        ? 'These are illustrative sample figures. External sharing and live integrations are disabled while exploring the demo.'
+        : 'The workbook is generated from the latest records loaded for this business. WhatsApp opens a prepared chat to your saved destination; review the message and send it in WhatsApp. Automatic delivery is not enabled.'}</p>
     </SectionCard>
     <div className="metric-grid metric-grid-six compact-metrics">
       <MetricCard label="Sales recorded" value={money(sales)} note={filteredInvoices.length + ' invoices · ' + periodLabel.toLowerCase()} icon={TrendingUp} tone="green" />
@@ -2460,7 +2475,7 @@ function MorePage({ allowedModules, onNavigate }: {
   </div>;
 }
 
-function SettingsPage({ profile, teamMembers, teamInvitations, onSave, onAddMember, onUpdateMember, onRevokeInvitation, onCopyInvitation, canManageTeam, canAssignManager, onReset, theme, onThemeChange, onOpenReports, whatsappNumber, onWhatsAppNumberChange, onSaveWhatsApp, cloudMode, onSignOut }: {
+function SettingsPage({ profile, teamMembers, teamInvitations, onSave, onAddMember, onUpdateMember, onRevokeInvitation, onCopyInvitation, canManageTeam, canAssignManager, onReset, theme, onThemeChange, onOpenReports, whatsappNumber, onWhatsAppNumberChange, onSaveWhatsApp, cloudMode, onSignOut, demoMode }: {
   profile: BusinessProfile; teamMembers: TeamMember[]; teamInvitations: TeamInvitation[];
   onSave: (profile: BusinessProfile) => void;
   onAddMember: (input: { name: string; email: string; role: TeamRole }) => Promise<boolean>;
@@ -2469,7 +2484,7 @@ function SettingsPage({ profile, teamMembers, teamInvitations, onSave, onAddMemb
   canManageTeam: boolean; canAssignManager: boolean;
   onReset: () => void; theme: 'dark' | 'light'; onThemeChange: (theme: 'dark' | 'light') => void; onOpenReports: () => void;
   whatsappNumber: string; onWhatsAppNumberChange: (value: string) => void;
-  onSaveWhatsApp: () => void; cloudMode: boolean; onSignOut: () => void;
+  onSaveWhatsApp: () => void; cloudMode: boolean; onSignOut: () => void; demoMode: boolean;
 }) {
   const [tab, setTab] = useState<'profile' | 'team' | 'preferences'>('profile');
   const [form, setForm] = useState(profile);
@@ -2578,17 +2593,23 @@ function SettingsPage({ profile, teamMembers, teamInvitations, onSave, onAddMemb
             <button type="button" className={theme === 'light' ? 'theme-choice theme-choice-active' : 'theme-choice'} onClick={() => onThemeChange('light')}><Sun size={19} /><span><strong>Light</strong><small>Default</small></span></button>
           </div>
         </section>
-        <section className="preference-block">
-          <div><strong>WhatsApp daily digest</strong><p>Choose the number that should receive the prepared daily summary. Hesabu opens the chat for you to review and send.</p></div>
-          <Field label="WhatsApp destination" value={whatsappNumber} onChange={onWhatsAppNumberChange} placeholder="2547XXXXXXXX" hint="Use country code, e.g. 254712345678. You can also enter a Kenyan number beginning with 07 or 01." />
-          <div className="whatsapp-connection-note"><MessageCircle size={16} /><span>{cloudMode
-            ? 'Hesabu prepares the summary from saved business records and opens WhatsApp for you to review and send. Automatic scheduled delivery is not connected.'
-            : 'Click-to-chat is available in this preview. Automatic scheduled messages and attachments need the WhatsApp Business API connected on a secure server.'}</span></div>
-          <div className="inline-form-actions">
-            {cloudMode && <Button variant="outline" onClick={onSaveWhatsApp}>Save destination</Button>}
-            <Button variant="outline" onClick={onOpenReports}>Open daily digest</Button>
-          </div>
-        </section>
+        {demoMode
+          ? <section className="preference-block">
+              <div><strong>External integrations</strong><p>Live M-Pesa requests, automatic reconciliation and external WhatsApp messages are not available in this sample workspace.</p></div>
+              <div className="demo-integration-note">You can explore the payment-request simulator and reports using sample records. Nothing is sent to Safaricom or WhatsApp.</div>
+              <div className="inline-form-actions"><Button variant="outline" onClick={onOpenReports}>Open daily digest</Button></div>
+            </section>
+          : <section className="preference-block">
+              <div><strong>WhatsApp daily digest</strong><p>Choose the number that should receive the prepared daily summary. Hesabu opens the chat for you to review and send.</p></div>
+              <Field label="WhatsApp destination" value={whatsappNumber} onChange={onWhatsAppNumberChange} placeholder="2547XXXXXXXX" hint="Use country code, e.g. 254712345678. You can also enter a Kenyan number beginning with 07 or 01." />
+              <div className="whatsapp-connection-note"><MessageCircle size={16} /><span>{cloudMode
+                ? 'Hesabu prepares the summary from saved business records and opens WhatsApp for you to review and send. Automatic scheduled delivery is not connected.'
+                : 'Click-to-chat is available in this preview. Automatic scheduled messages and attachments need the WhatsApp Business API connected on a secure server.'}</span></div>
+              <div className="inline-form-actions">
+                {cloudMode && <Button variant="outline" onClick={onSaveWhatsApp}>Save destination</Button>}
+                <Button variant="outline" onClick={onOpenReports}>Open daily digest</Button>
+              </div>
+            </section>}
       </div>}
     </SectionCard>
     {cloudMode
@@ -2721,6 +2742,7 @@ function clearPendingTeamInvitation() {
 
 function App() {
   const [data, setData] = useState<AppData>(() => EMPTY_WORKSPACE_DATA);
+  const [demoMode, setDemoMode] = useState(false);
   const [cloudAccount, setCloudAccount] = useState<{
     user: SupabaseUser;
     business: { id: string; name: string; industry: string | null };
@@ -2751,6 +2773,54 @@ function App() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }) | null>(null);
   const [appInstalled, setAppInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+
+  const startDemo = () => {
+    setData(makePublicDemoData());
+    setCloudAccount(null);
+    setCloudWorkspaceReady(true);
+    setCloudWorkspaceError('');
+    setCloudWorkspaceLoading(false);
+    setWhatsAppNumber('');
+    setOfflineMode(false);
+    setActiveMemberId('');
+    setActive('overview');
+    setDialog(null);
+    setSelectedInvoiceId(null);
+    setNotice(null);
+    setProfileMenuOpen(false);
+    setDemoMode(true);
+    setShowAuthScreen(false);
+  };
+  const resetDemo = () => {
+    setData(makePublicDemoData());
+    setActive('overview');
+    setDialog(null);
+    setSelectedInvoiceId(null);
+    setNotice({ title: 'Sample workspace reset', detail: 'The example business has been restored to its original sample records.' });
+  };
+  const exitDemo = () => {
+    setDemoMode(false);
+    setData(EMPTY_WORKSPACE_DATA);
+    setWhatsAppNumber('');
+    setActive('overview');
+    setActiveMemberId('');
+    setDialog(null);
+    setSelectedInvoiceId(null);
+    setNotice(null);
+    setProfileMenuOpen(false);
+    setShowAuthScreen(false);
+    setCloudWorkspaceReady(false);
+  };
+  const openAccountCreation = () => {
+    if (demoMode) {
+      setDemoMode(false);
+      setData(EMPTY_WORKSPACE_DATA);
+      setWhatsAppNumber('');
+      setActive('overview');
+    }
+    setAuthInitialMode('signup');
+    setShowAuthScreen(true);
+  };
 
   useEffect(() => {
     const beforeInstall = (event: Event) => {
@@ -2981,12 +3051,12 @@ function App() {
   };
 
   useEffect(() => {
-    if (cloudAccount) return;
+    if (cloudAccount || demoMode) return;
     try {
       if (whatsappNumber.trim()) localStorage.setItem('hesabu:whatsapp-number:v1', whatsappNumber.trim());
       else localStorage.removeItem('hesabu:whatsapp-number:v1');
     } catch { /* WhatsApp preference remains available for this session. */ }
-  }, [whatsappNumber, cloudAccount]);
+  }, [whatsappNumber, cloudAccount, demoMode]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try { localStorage.setItem('hesabu:theme:v2', theme); } catch { /* Keep this session's theme. */ }
@@ -3758,13 +3828,14 @@ function App() {
         : <p>Loading your secure business records…</p>}
     </section>
   </main>;
-  if (!showAuthScreen && !cloudAccount) return <PublicLandingPage
+  if (!demoMode && !showAuthScreen && !cloudAccount) return <PublicLandingPage
     onSignIn={() => { setAuthInitialMode('signin'); setShowAuthScreen(true); }}
-    onCreateAccount={() => { setAuthInitialMode('signup'); setShowAuthScreen(true); }}
+    onCreateAccount={openAccountCreation}
+    onTryDemo={startDemo}
     onInstall={handleInstallApp}
     appInstalled={appInstalled}
   />;
-  if (!cloudAccount) return <AuthPage
+  if (!cloudAccount && !demoMode) return <AuthPage
     onSignIn={handleCloudSignIn}
     onSignUp={handleCloudSignUp}
     onResetPassword={handleCloudPasswordReset}
@@ -3836,18 +3907,25 @@ function App() {
             {profileMenuOpen && <div className="user-switcher-panel" role="menu" aria-label="Account details">
               <div className="user-switcher-heading">
                 <strong>{activeMember?.name || data.profile.owner || 'Your account'}</strong>
-                <small>{cloudAccount.user.email || 'Signed-in Hesabu account'}</small>
+                <small>{demoMode ? 'Public sample · no account required' : cloudAccount?.user.email || 'Signed-in Hesabu account'}</small>
               </div>
-              <div className="account-detail-row"><span>Business</span><strong>{data.profile.name || cloudAccount.business.name}</strong></div>
+              <div className="account-detail-row"><span>Business</span><strong>{data.profile.name || cloudAccount?.business.name || 'Sample workspace'}</strong></div>
               <div className="account-detail-row"><span>Access</span><strong>{activeMember?.role || 'Owner'}</strong></div>
               <button type="button" role="menuitem" onClick={() => { setProfileMenuOpen(false); navigate('settings'); }}><Settings size={15} /><span><strong>Business settings</strong><small>Profile, team and preferences</small></span><ChevronRight size={14} /></button>
-              <button type="button" role="menuitem" onClick={() => { setProfileMenuOpen(false); void handleCloudSignOut(); }}><LogOut size={15} /><span><strong>Sign out</strong><small>Sign out of this account</small></span></button>
+              <button type="button" role="menuitem" onClick={() => { setProfileMenuOpen(false); if (demoMode) exitDemo(); else void handleCloudSignOut(); }}><LogOut size={15} /><span><strong>{demoMode ? 'Exit demo' : 'Sign out'}</strong><small>{demoMode ? 'Return to the Hesabu introduction' : 'Sign out of this account'}</small></span></button>
             </div>}
           </div>
         </div>
       </header>
 
       <div className="page-container">
+        {demoMode && <div className="demo-mode-banner" role="status">
+          <div className="demo-mode-copy"><strong>Sample workspace</strong><span>Try a sale, check stock and open Analytics. Changes are temporary and reset when you exit.</span></div>
+          <div className="demo-mode-actions">
+            <Button variant="outline" size="sm" onClick={exitDemo}>Exit demo</Button>
+            <Button size="sm" onClick={openAccountCreation}>Use Hesabu for my business <ArrowRight size={13} /></Button>
+          </div>
+        </div>}
         {offlineMode && <div className="offline-status" role="status"><span className="offline-status-dot" /><span><strong>You’re offline.</strong> You can still view your saved records. Connect to the internet to record new sales, payments or stock changes.</span></div>}
         {active === 'overview' && <OverviewPage data={data} metrics={metrics} role={activeMember?.role ?? 'Owner'} onCreateSale={() => setDialog({ kind: 'sale' })} onCreateProduct={() => setDialog({ kind: 'product' })} onNavigate={navigate} onSelectInvoice={setSelectedInvoiceId} onRecordExpense={() => setDialog({ kind: 'expense' })} onRecordPayment={() => setDialog({ kind: 'stk' })} onRecordReceipt={() => setDialog({ kind: 'receipt' })} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onQuickStock={() => setDialog({ kind: 'stock-actions' })} />}
         {active === 'sales' && <SalesPage data={data} search={search} onSearch={setSearch} onCreateSale={() => setDialog({ kind: 'sale' })} onSelectInvoice={setSelectedInvoiceId} />}
@@ -3855,12 +3933,12 @@ function App() {
         {active === 'inventory' && <InventoryPage data={data} search={search} onSearch={setSearch} onAddProduct={() => setDialog({ kind: 'product' })} onAdjust={productId => setDialog({ kind: 'adjust', productId })} onOrder={(productId, quantity) => setDialog({ kind: 'purchase', productId, quantity })} />}
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} onAddSupplier={() => setDialog({ kind: 'supplier' })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
-        {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} role={activeMember?.role ?? 'Owner'} />}
+        {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} role={activeMember?.role ?? 'Owner'} demoMode={demoMode} />}
         {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} />}
-        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} teamInvitations={data.teamInvitations ?? []} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onRevokeInvitation={revokeTeamInvitation} onCopyInvitation={copyTeamInvitation} canManageTeam={activeMember?.role === 'Owner' || activeMember?.role === 'Manager'} canAssignManager={activeMember?.role === 'Owner'} onReset={() => {}} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} />}
+        {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} teamInvitations={data.teamInvitations ?? []} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onRevokeInvitation={revokeTeamInvitation} onCopyInvitation={copyTeamInvitation} canManageTeam={activeMember?.role === 'Owner' || activeMember?.role === 'Manager'} canAssignManager={activeMember?.role === 'Owner'} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} demoMode={demoMode} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
       </div>
-      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> Secure cloud workspace · Synced with Hesabu</span></footer>
+      <footer className="app-footer"><span>Hesabu · Business in balance</span><span><i /> {demoMode ? 'Sample workspace · No live business records' : 'Secure cloud workspace · Synced with Hesabu'}</span></footer>
     </main>
 
     <nav className="mobile-bottom-nav" aria-label="Primary navigation">
@@ -3885,6 +3963,7 @@ function App() {
     <FloatingAssistant
       data={data}
       cloudMode={Boolean(cloudAccount)}
+      demoMode={demoMode}
       whatsappNumber={whatsappNumber}
       onWhatsAppNumberChange={setWhatsAppNumber}
       onRecordSale={() => setDialog({ kind: 'sale' })}
