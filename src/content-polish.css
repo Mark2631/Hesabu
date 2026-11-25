@@ -94,3 +94,34 @@ body {
     line-height: 1.55;
   }
 }
+
+/* Mobile landing hero: give the shop photo a taller, intentional crop. */
+@media (max-width: 700px) {
+  .public-hero .public-photo-visual {
+    width: 100%;
+    max-width: 550px;
+    margin-inline: auto;
+    border-radius: 16px;
+  }
+  .public-hero .public-photo-visual img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    object-position: 62% center;
+  }
+  .public-hero .public-photo-caption {
+    gap: 4px;
+    padding: 13px 15px 15px;
+  }
+  .public-hero .public-photo-caption strong {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+}
+@media (max-width: 390px) {
+  .public-hero .public-photo-visual img {
+    aspect-ratio: 5 / 4;
+    object-position: 64% center;
+  }
+}
