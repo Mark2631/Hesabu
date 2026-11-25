@@ -2424,6 +2424,7 @@ function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
       </div>
     </div>
   </div>;
+}
 
 function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode, onNavigate }: {
   data: AppData;
