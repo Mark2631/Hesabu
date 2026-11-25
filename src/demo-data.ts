@@ -38,6 +38,7 @@ export function makePublicDemoData(): AppData {
       taxPin: '',
       location: 'Westlands, Nairobi',
     },
+    products: source.products.map(product => ({ ...product })),
     invoices: source.invoices.map(invoice => ({
       ...invoice,
       customer: safeCustomer(invoice.customer),
