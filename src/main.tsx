@@ -5,6 +5,7 @@ import App from './App';
 import './styles.css';
 import './finance-app.css';
 import './exhibition-polish.css';
+import './content-polish.css';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
