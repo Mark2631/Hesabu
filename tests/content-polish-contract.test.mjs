@@ -18,7 +18,7 @@ test('product copy uses consistent, owner-friendly navigation terms', () => {
 
 test('public product copy is concise and accurately describes the demo', () => {
   assert.match(app, /Record sales, payments, stock and expenses in one place./);
-  assert.match(app, /Explore a sample Kenyan shop. No account needed./);
+  assert.doesNotMatch(app, /Explore a sample Kenyan shop|No account needed|Changes reset when you leave/);
   assert.match(app, /Changes are temporary and reset when you exit./);
   assert.match(app, /M-Pesa entries are recorded manually/);
   assert.doesNotMatch(app, /Product information is subject to change as integrations are completed/);
