@@ -62,7 +62,7 @@ const NAV_GROUPS: Array<{ title: string; items: Array<{ id: ModuleKey; label: st
   { title: 'WORKSPACE', items: [
     { id: 'overview', label: 'Home', icon: LayoutDashboard },
     { id: 'sales', label: 'Sales', icon: Receipt },
-    { id: 'payments', label: 'Money', icon: Wallet },
+    { id: 'payments', label: 'Payments', icon: Wallet },
     { id: 'inventory', label: 'Stock', icon: Package },
     { id: 'more', label: 'More', icon: MoreHorizontal },
   ] },
@@ -377,10 +377,10 @@ function SaleDialog({ products, onClose, onCreate, onAddProduct, cloudMode }: {
 
   return <Modal title={saleType === 'enquiry' ? 'Save an enquiry' : 'Record a sale'} detail={saleType === 'enquiry'
     ? 'Prepare a quote without recording income, deducting stock or changing customer balances.'
-    : 'Find products, build the basket and record the payment or outstanding balance in one step.'} onClose={onClose} size="lg">
+    : 'Add items, then record payment or leave a balance due.'} onClose={onClose} size="lg">
     <form className="modal-body sale-entry-form" onSubmit={submit}>
       <Field label="Customer or account (optional)" value={customer} onChange={setCustomer} placeholder="Walk-in customer" />
-      <div className="field-hint">A phone number is not needed to record a sale. Only collect contact details later if a customer-requested service requires them.</div>
+      <div className="field-hint">A phone number is not required to record a sale.</div>
 
       <div className="sale-type-row">
         <SelectField label="Transaction type" value={saleType} onChange={changeSaleType} options={[
@@ -1098,13 +1098,13 @@ function PublicLandingPage({
         <div className="public-hero-copy">
           <span className="public-eyebrow">BUSINESS RECORDS, BROUGHT TOGETHER</span>
           <h1>Know what is happening in your business.</h1>
-          <p>Hesabu brings daily sales, payments, stock, expenses and customer balances into one clear business record. Spend less time chasing scattered notes and more time making informed decisions.</p>
+          <p>Record sales, payments, stock and expenses in one place. See what came in, what went out and what needs attention.</p>
           <div className="public-hero-actions">
             <button type="button" className="public-primary-action" onClick={onTryDemo}>Try the interactive demo <ArrowRight size={16} /></button>
             <button type="button" className="public-explore-action" onClick={onCreateAccount}>Start with your business</button>
             <a className="public-explore-action" href="#product">Explore features</a>
           </div>
-          <p className="public-demo-intro">Explore a sample Kenyan retail business without creating an account. Demo changes stay in this session and are discarded when you exit.</p>
+          <p className="public-demo-intro">Explore a sample Kenyan shop. No account needed. Changes reset when you leave.</p>
           <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
         </div>
         <div className="public-hero-visual public-photo-visual">
@@ -1120,7 +1120,7 @@ function PublicLandingPage({
         <div className="public-section-intro">
           <span className="public-eyebrow">WHAT HESABU DOES</span>
           <h2>The important parts of the business, in one place.</h2>
-          <p>Each record contributes to a clearer view of what the business has sold, collected, spent and still needs to do.</p>
+          <p>See sales, collections, spending and follow-ups together.</p>
         </div>
         <div className="public-value-grid">
           <article><span className="public-value-number">01</span><h3>Sales and payments</h3><p>Record what was sold, how the customer paid and what remains outstanding.</p></article>
@@ -1135,9 +1135,9 @@ function PublicLandingPage({
           <h2>Record the work. Understand the result.</h2>
         </div>
         <div className="public-workflow">
-          <div><span>1</span><strong>Capture daily activity</strong><p>Enter a sale, receipt, expense or stock change as it happens.</p></div>
-          <div><span>2</span><strong>Keep records connected</strong><p>Link transactions to products, customers, suppliers and balances.</p></div>
-          <div><span>3</span><strong>Review your business</strong><p>See the day’s figures and prepare a digest to share with your team.</p></div>
+          <div><span>1</span><strong>Capture daily activity</strong><p>Record a sale, receipt, expense or stock change.</p></div>
+          <div><span>2</span><strong>Keep records connected</strong><p>Keep each entry connected to its products, customers and suppliers.</p></div>
+          <div><span>3</span><strong>Review your business</strong><p>Review daily figures and prepare a summary for your team.</p></div>
         </div>
       </section>
 
@@ -1145,7 +1145,7 @@ function PublicLandingPage({
         <div>
           <span className="public-eyebrow">BUILT FOR EVERYDAY OPERATIONS</span>
           <h2>Useful from the counter to the back office.</h2>
-          <p>Hesabu is being shaped for shops, food businesses, wholesalers, distributors and service businesses that need a dependable record of daily operations.</p>
+          <p>Hesabu is designed for shops, food businesses, wholesalers, distributors and service businesses that need clear daily records.</p>
         </div>
         <div className="public-business-list">
           <span>Retail and convenience shops</span>
@@ -1157,7 +1157,7 @@ function PublicLandingPage({
 
       <section className="public-trust-section" id="trust">
         <div className="public-trust-mark"><ShieldCheck size={21} /></div>
-        <div><span className="public-eyebrow">YOUR BUSINESS, YOUR RECORDS</span><h2>Clear access. Clear records. Clear decisions.</h2><p>Your business workspace is tied to your account, with business-level access controls. Hesabu currently records M-Pesa payments manually; live Safaricom STK Push and automatic reconciliation are not connected. Hesabu is not eTIMS-certified.</p></div>
+        <div><span className="public-eyebrow">YOUR BUSINESS, YOUR RECORDS</span><h2>Clear access. Clear records. Clear decisions.</h2><p>Your workspace is private to your business. M-Pesa entries are recorded manually; live STK Push and automatic reconciliation are not yet available. Hesabu is not eTIMS-certified.</p></div>
         <button type="button" className="public-secondary-action" onClick={onCreateAccount}>Set up your workspace <ArrowRight size={15} /></button>
       </section>
     </main>
@@ -1166,13 +1166,13 @@ function PublicLandingPage({
       <div className="public-footer-main">
         <div className="public-footer-brand">
           <a className="public-brand" href="#top"><span className="brand-mark"><HesabuMark /></span><span>hesabu<span>.</span></span></a>
-          <p>A clearer business record for the people who run the business every day.</p>
+          <p>Clear business records for the people who run the business every day.</p>
         </div>
         <div className="public-footer-group"><strong>Product</strong><a href="#product">Sales and payments</a><a href="#product">Stock and purchasing</a><a href="#product">Reports and digest</a></div>
         <div className="public-footer-group"><strong>Learn</strong><a href="#how-it-works">How it works</a><a href="#businesses">Who Hesabu serves</a><a href="#trust">Your records</a></div>
         <div className="public-footer-group"><strong>Your account</strong><button type="button" onClick={onSignIn}>Sign in</button><button type="button" onClick={onCreateAccount}>Create a business account</button></div>
       </div>
-      <div className="public-footer-bottom"><span>© 2026 Hesabu. Built for business operations in Kenya.</span><span>Product information is subject to change as integrations are completed.</span></div>
+      <div className="public-footer-bottom"><span>© 2026 Hesabu. Built for business operations in Kenya.</span><span>Built for everyday business in Kenya.</span></div>
     </footer>
   </div>;
 }
@@ -1270,7 +1270,7 @@ function AuthPage({
         <div className="auth-copy">
           <span className="auth-kicker">BUSINESS, IN BALANCE</span>
           <h1>{mode === 'reset' ? 'Choose a new password.' : inviteMode ? (mode === 'signin' ? 'Sign in to join your team.' : 'Create your team account.') : (mode === 'signin' ? 'Your business, clearly in view.' : 'Set up your Hesabu account.')}</h1>
-          <p>{mode === 'reset' ? 'Enter the email address for your account and choose a new password.' : inviteMode ? 'Use the email address this invitation was sent to. Your access activates when you accept the invitation.' : 'Sales, payments, stock and business performance in one calm workspace.'}</p>
+          <p>{mode === 'reset' ? 'Enter the email address for your account and choose a new password.' : inviteMode ? 'Use the email address this invitation was sent to. Your access activates when you accept the invitation.' : 'Keep sales, payments, stock and expenses together in one workspace.'}</p>
         </div>
         {mode === 'signup' && !inviteMode && <div className="auth-step-indicator"><span className={signupStep === 1 ? 'current' : 'complete'}>1 <small>Account</small></span><i /><span className={signupStep === 2 ? 'current' : ''}>2 <small>Business</small></span></div>}
         {mode !== 'reset' && <div className="auth-tabs" role="tablist" aria-label="Account access">
@@ -1300,8 +1300,8 @@ function AuthPage({
         <div className="auth-aside-top"><span className="auth-aside-mark"><HesabuMark /></span><span>Hesabu workspace</span><span className="auth-live-label">BUSINESS OPERATIONS</span></div>
         <div className="auth-aside-copy">
           <span>ONE VIEW OF THE BUSINESS</span>
-          <h2>Know what is happening in your business.</h2>
-          <p>Bring sales, payments, stock and daily expenses into one clear business record.</p>
+          <h2>One record for the work behind every sale.</h2>
+          <p>See what was sold, what was paid and what needs follow-up.</p>
         </div>
         <div className="auth-preview-stack">
           <div className="auth-preview-row"><span className="auth-preview-icon"><TrendingUp size={17} /></span><span><strong>Sales & performance</strong><small>Daily totals, margin and trends</small></span><ChevronRight size={17} /></div>
@@ -1849,7 +1849,7 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
   const riskItems = [...low].sort((a, b) => (a.daysCover ?? 0) - (b.daysCover ?? 0)).slice(0, 5);
   const slowItems = [...slow].sort((a, b) => productValue(b.product) - productValue(a.product)).slice(0, 4);
   return <div className="page-stack">
-    <PageHeader title="Inventory" description="Your product list and the stock available to sell. Add products here, then record new stock as it arrives." actions={<Button onClick={onAddProduct}><Plus size={15} /> Add product</Button>} />
+    <PageHeader title="Stock" description="See what is on hand, what is moving and what needs reordering." actions={<Button onClick={onAddProduct}><Plus size={15} /> Add product</Button>} />
     <div className="metric-grid metric-grid-four compact-metrics">
       <MetricCard label="Stock at cost" value={money(stockValue)} note="Current stock value" icon={Boxes} tone="slate" />
       <MetricCard label="Units sold · 30 days" value={numberText(unitsSold30)} note="Recorded product movement" icon={TrendingUp} tone="blue" />
@@ -1857,7 +1857,7 @@ function InventoryPage({ data, search, onSearch, onAddProduct, onAdjust, onOrder
       <MetricCard label="Slow stock value" value={money(slowStockValue)} note={slow.length + ' items with low movement'} icon={Package} tone="slate" />
     </div>
     <div className="content-grid content-grid-main stock-health-grid">
-      <SectionCard title="Replenish before sales are lost" detail="Suggestions target around 14 days of demand plus the item’s reorder floor. Open purchase orders are deducted.">
+      <SectionCard title="Replenish before sales are lost" detail="Suggested quantities cover about 14 days of recent demand, after incoming orders.">
         {riskItems.length ? <div className="stock-signal-list">
           {riskItems.map(item => <div className="stock-signal-row" key={item.product.id}>
             <div className="stock-signal-main"><strong>{item.product.name}</strong><small>{numberText(item.product.quantity)} {item.product.unit} left · {item.daysCover === null ? 'No recent sales history' : Math.max(0, Math.floor(item.daysCover)) + ' days of cover'}{item.onOrder > 0 ? ' · ' + numberText(item.onOrder) + ' on order' : ''}</small></div>
@@ -2085,7 +2085,7 @@ function AccountsPage({ data, metrics }: { data: AppData; metrics: ReturnType<ty
         </DataTable>
       </>}
     </SectionCard>
-    <div className="accounting-note"><ShieldCheck size={16} /><span>The register reflects records saved in this business workspace. Before using it for statutory reporting, validate tax treatment, inventory costing and period-close controls with your accountant.</span></div>
+    <div className="accounting-note"><ShieldCheck size={16} /><span>This register reflects saved workspace records. Confirm tax treatment and period-end adjustments with your accountant before statutory reporting.</span></div>
   </div>;
 }
 
@@ -3921,7 +3921,7 @@ function App() {
 
       <div className="page-container">
         {demoMode && <div className="demo-mode-banner" role="status">
-          <div className="demo-mode-copy"><strong>Sample workspace</strong><span>Start with a sample sale, then inspect stock and Analytics. Everything is illustrative and resets when you exit.</span></div>
+          <div className="demo-mode-copy"><strong>Sample workspace</strong><span>Try a sale, check stock and open Analytics. Changes are temporary and reset when you exit.</span></div>
           <div className="demo-mode-actions">
             <Button variant="outline" size="sm" onClick={exitDemo}>Exit demo</Button>
             <Button size="sm" onClick={openAccountCreation}>Use Hesabu for my business <ArrowRight size={13} /></Button>
