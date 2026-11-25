@@ -1,0 +1,96 @@
+/* Final content and typography pass.
+   Keep the existing visual identity; make the reading hierarchy more consistent. */
+:root {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  --reading-measure: 66ch;
+}
+html, body, button, input, select, textarea {
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+:where(h1, h2, h3, h4, .brand-mark, .brand-text strong, .metric-value,
+  .chart-summary strong, .channel-total strong, .dialog-total .dialog-total-final strong,
+  .modal-header h2, .working-capital-list .working-capital-total strong,
+  .integration-hero-copy h2, .provider-logo, .topbar-brand-lockup > span:last-child,
+  .sales-channel-card h3) {
+  font-family: 'DM Sans', system-ui, sans-serif !important;
+}
+body {
+  line-height: 1.5;
+}
+.page-header {
+  gap: 24px;
+}
+.page-header h1 {
+  line-height: 1.18;
+  letter-spacing: -.04em;
+}
+.page-header p,
+.surface-card-header p,
+.empty-state p,
+.field-hint,
+.accounting-note,
+.team-invite-explainer {
+  max-width: var(--reading-measure);
+  line-height: 1.58;
+  text-wrap: pretty;
+}
+.surface-card-header h2 {
+  line-height: 1.3;
+}
+.public-hero-copy p,
+.public-section-intro p,
+.public-business-section p,
+.public-trust-section p,
+.public-footer-brand p {
+  max-width: var(--reading-measure);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+.public-demo-intro {
+  max-width: 54ch;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.public-value-grid p,
+.public-workflow p {
+  max-width: 42ch;
+  line-height: 1.58;
+  text-wrap: pretty;
+}
+.auth-copy p,
+.auth-footnote,
+.auth-aside-copy p,
+.cloud-account-intro,
+.cloud-account-note,
+.assistant-welcome-message p,
+.assistant-drawer-note,
+.digest-floating-note {
+  max-width: var(--reading-measure);
+  line-height: 1.58;
+  text-wrap: pretty;
+}
+.demo-mode-copy span {
+  max-width: 68ch;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.metric-foot,
+.cell-sub,
+.field-hint,
+.muted-copy {
+  line-height: 1.45;
+}
+@media (max-width: 720px) {
+  .page-header {
+    gap: 12px;
+  }
+  .page-header p,
+  .surface-card-header p,
+  .empty-state p,
+  .public-hero-copy p,
+  .public-section-intro p,
+  .public-business-section p,
+  .public-trust-section p {
+    line-height: 1.55;
+  }
+}
