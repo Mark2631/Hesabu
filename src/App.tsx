@@ -1104,7 +1104,6 @@ function PublicLandingPage({
             <button type="button" className="public-explore-action" onClick={onCreateAccount}>Start with your business</button>
             <a className="public-explore-action" href="#product">Explore features</a>
           </div>
-          <p className="public-demo-intro">Explore a sample Kenyan shop. No account needed. Changes reset when you leave.</p>
           <div className="public-hero-note"><ShieldCheck size={15} /> Designed around the everyday work of Kenyan businesses</div>
         </div>
         <div className="public-hero-visual public-photo-visual">
