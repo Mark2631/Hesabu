@@ -77,7 +77,7 @@ const moduleMeta: Record<ModuleKey, { title: string; description: string }> = {
   procurement: { title: 'Purchasing', description: 'Replenish stock, manage suppliers and follow deliveries.' },
   accounts: { title: 'Financials', description: 'Understand cash, customer balances, supplier commitments and profit.' },
   reports: { title: 'Reports', description: 'Understand trading performance, cash movement and working capital.' },
-  integrations: { title: 'Sales channels', description: 'Bring in-store, online and wholesale orders into one business view.' },
+  integrations: { title: 'Business Hub', description: 'Connect customer relationships, selling channels and business operations.' },
   settings: { title: 'Team & settings', description: 'Manage your business profile and the people who run it.' },
   more: { title: 'More', description: 'Supplier orders, reports, financial records and workspace preferences.' },
 
@@ -2564,7 +2564,7 @@ function MorePage({ allowedModules, onNavigate }: {
     { id: 'reports', title: 'Reports & daily digest', description: 'Business numbers, Excel workbooks and PDF summaries.', icon: BarChart3 },
     { id: 'procurement', title: 'Supplier orders', description: 'Create orders, receive goods and follow supplier balances.', icon: ShoppingCart },
     { id: 'accounts', title: 'Financial records', description: 'Account balances, journals and trial balance.', icon: BookOpen },
-    { id: 'integrations', title: 'Sales channels', description: 'Review counter, website and wholesale order flows.', icon: Link2 },
+    { id: 'integrations', title: 'Business Hub', description: 'Customers, promotions, online catalogue and connections.', icon: Link2 },
     { id: 'settings', title: 'Team & settings', description: 'Business details, team roles and appearance.', icon: Settings },
   ];
   const destinations = allDestinations.filter(item => allowedModules.includes(item.id));
