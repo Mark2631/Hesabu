@@ -2556,8 +2556,6 @@ function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode, onNavigate }: {
     </>}
   </div>;
 }
-iv>;
-}
 function MorePage({ allowedModules, onNavigate }: {
   allowedModules: ModuleKey[]; onNavigate: (section: ModuleKey) => void;
 }) {
