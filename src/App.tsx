@@ -12,6 +12,7 @@ import {
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { addBusinessDays, businessDate, formatBusinessDate, formatBusinessDateTime, formatBusinessDay } from './business-time';
 import { makePublicDemoData } from './demo-data';
+import { createXlsxWorkbook } from './xlsx';
 const EMPTY_WORKSPACE_DATA: AppData = {
   profile: {
     name: 'Your business', legalName: '', owner: '', email: '', phone: '',
@@ -1438,7 +1439,14 @@ function FloatingAssistant({
       setDigestError('External WhatsApp messages are disabled in the sample workspace.');
       return;
     }
-    openDailyDigestWhatsApp(data, whatsappNumber, () => {
+    const destination = whatsappNumber || data.profile.phone;
+    const normalized = normaliseWhatsAppNumber(destination);
+    if (!normalized) {
+      setDigestError('No valid recipient is saved. Add a WhatsApp number in More → Team & Settings → Preferences, then save it.');
+      return;
+    }
+    setWhatsAppNumber(normalized);
+    openDailyDigestWhatsApp(data, normalized, () => {
       setDigestError('Enter a valid WhatsApp number to prepare this summary.');
     });
   };
@@ -2134,13 +2142,14 @@ function normaliseWhatsAppNumber(value: string) {
 }
 
 function openDailyDigestWhatsApp(data: AppData, destination: string, onMissing: () => void) {
-  const number = normaliseWhatsAppNumber(destination);
+  const number = normaliseWhatsAppNumber(destination || data.profile.phone);
   if (!number) { onMissing(); return; }
-  const url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(buildDailyDigestMessage(data));
-  const whatsappWindow = window.open(url, '_blank', 'noopener,noreferrer');
-  // Some mobile browsers block scripted new tabs. Fall back to the same tab
-  // so the user's explicit tap still reaches the prepared WhatsApp message.
-  if (!whatsappWindow) window.location.assign(url);
+  const message = encodeURIComponent(buildDailyDigestMessage(data));
+  // Navigate directly from the user's tap. window.open(..., 'noopener') can
+  // return null even when successful and triggered the old false fallback.
+  // The API send URL hands off to the installed WhatsApp app on mobile or
+  // WhatsApp Web in a desktop browser, with the recipient prefilled.
+  window.location.assign('https://api.whatsapp.com/send?phone=' + number + '&text=' + message);
 }
 
 function downloadDailyWorkbook(data: AppData) {
@@ -2187,27 +2196,18 @@ function downloadDailyWorkbook(data: AppData) {
       ...digest.purchaseOrders.map(order => [order.number, order.supplierName, order.createdAt, order.expectedAt, order.status, order.total]),
     ]},
   ];
-  const escapeXml = (value: string) => value
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
-  const xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>' +
-    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
-    '<Styles><Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#172033" ss:Pattern="Solid"/></Style></Styles>' +
-    sheets.map(sheet => '<Worksheet ss:Name="' + escapeXml(sheet.name) + '"><Table>' +
-      sheet.rows.map((row,index) => '<Row>' + row.map(value => {
-        const type = typeof value === 'number' ? 'Number' : 'String';
-        const style = index === 0 ? ' ss:StyleID="Header"' : '';
-        return '<Cell' + style + '><Data ss:Type="' + type + '">' + escapeXml(String(value ?? '')) + '</Data></Cell>';
-      }).join('') + '</Row>').join('') + '</Table></Worksheet>').join('') + '</Workbook>';
-  const blob = new Blob(['\uFEFF', xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const bytes = createXlsxWorkbook(sheets);
+  const blob = new Blob([bytes.buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = 'hesabu-daily-report-' + digest.date + '.xls';
+  anchor.download = 'hesabu-daily-report-' + digest.date + '.xlsx';
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, role, demoMode }: {
@@ -2935,7 +2935,7 @@ function App() {
       setData(workspace);
       try { localStorage.setItem('hesabu:workspace-cache:v1:' + cloudAccount.business.id, JSON.stringify({ savedAt: new Date().toISOString(), data: workspace, whatsappNumber: settings.whatsapp_recipient_phone || '' })); } catch { /* Storage quota must not block live workspace use. */ }
       setOfflineMode(false);
-      setWhatsAppNumber(settings.whatsapp_recipient_phone || '');
+      setWhatsAppNumber(settings.whatsapp_recipient_phone || workspace.profile.phone || '');
       const currentMember = workspace.teamMembers.find(member => member.id === cloudAccount.user.id);
       setActiveMemberId(currentMember?.id || cloudAccount.user.id);
       setCloudWorkspaceReady(true);
@@ -3764,13 +3764,29 @@ function App() {
     notify('Supplier added', input.name + ' has been added to the supplier register.');
   };
 
-  const saveWhatsAppDestination = () => {
-    if (cloudAccount) {
-      void runCloudMutation(() => saveCloudWhatsAppDestination(cloudAccount.business.id, whatsappNumber),
-        'WhatsApp destination saved', 'The number is saved. Daily summaries still open in WhatsApp for you to review and send.');
+  const saveWhatsAppDestination = async () => {
+    const normalized = normaliseWhatsAppNumber(whatsappNumber || data.profile.phone);
+    if (!normalized) {
+      notify('Enter a valid WhatsApp number', 'Use a full international number, for example +254 712 345 678.');
       return;
     }
-    notify('WhatsApp destination saved', 'The destination is saved in this preview on this device.');
+    setWhatsAppNumber(normalized);
+    if (cloudAccount) {
+      if (!navigator.onLine) {
+        notify('Cannot save while offline', 'Reconnect to the internet, then save the WhatsApp destination again.');
+        return;
+      }
+      try {
+        await saveCloudWhatsAppDestination(cloudAccount.business.id, normalized);
+        await reloadCloudWorkspace();
+        notify('WhatsApp destination saved', 'Saved for ' + normalized + '. Open the daily digest and choose Open WhatsApp; you must press Send in WhatsApp.');
+      } catch (error) {
+        notify('WhatsApp destination was not saved', error instanceof Error ? error.message : 'Check your connection and try again.');
+      }
+      return;
+    }
+    try { localStorage.setItem('hesabu:whatsapp-number:v1', normalized); } catch { /* Keep this session's value. */ }
+    notify('WhatsApp destination saved', 'Saved for ' + normalized + ' on this device.');
   };
 
 
