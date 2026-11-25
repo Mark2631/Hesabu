@@ -2125,8 +2125,10 @@ function buildDailyDigestMessage(data: AppData) {
 }
 
 function normaliseWhatsAppNumber(value: string) {
-  let digits = value.replace(/\D/g, '');
-  if (digits.startsWith('0') && digits.length === 10) digits = '254' + digits.slice(1);
+  let digits = value.trim().replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('2540') && digits.length === 13) digits = '254' + digits.slice(4);
+  else if (digits.startsWith('0') && digits.length === 10) digits = '254' + digits.slice(1);
   else if ((digits.startsWith('7') || digits.startsWith('1')) && digits.length === 9) digits = '254' + digits;
   return digits.length >= 10 && digits.length <= 15 ? digits : '';
 }
@@ -2135,7 +2137,10 @@ function openDailyDigestWhatsApp(data: AppData, destination: string, onMissing: 
   const number = normaliseWhatsAppNumber(destination);
   if (!number) { onMissing(); return; }
   const url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(buildDailyDigestMessage(data));
-  window.open(url, '_blank', 'noopener,noreferrer');
+  const whatsappWindow = window.open(url, '_blank', 'noopener,noreferrer');
+  // Some mobile browsers block scripted new tabs. Fall back to the same tab
+  // so the user's explicit tap still reaches the prepared WhatsApp message.
+  if (!whatsappWindow) window.location.assign(url);
 }
 
 function downloadDailyWorkbook(data: AppData) {
@@ -2182,7 +2187,9 @@ function downloadDailyWorkbook(data: AppData) {
       ...digest.purchaseOrders.map(order => [order.number, order.supplierName, order.createdAt, order.expectedAt, order.status, order.total]),
     ]},
   ];
-  const escapeXml = (value: string) => value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  const escapeXml = (value: string) => value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
   const xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>' +
     '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
     '<Styles><Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#172033" ss:Pattern="Solid"/></Style></Styles>' +
@@ -2192,7 +2199,7 @@ function downloadDailyWorkbook(data: AppData) {
         const style = index === 0 ? ' ss:StyleID="Header"' : '';
         return '<Cell' + style + '><Data ss:Type="' + type + '">' + escapeXml(String(value ?? '')) + '</Data></Cell>';
       }).join('') + '</Row>').join('') + '</Table></Worksheet>').join('') + '</Workbook>';
-  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const blob = new Blob(['\uFEFF', xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -2602,6 +2609,11 @@ function SettingsPage({ profile, teamMembers, teamInvitations, onSave, onAddMemb
           : <section className="preference-block">
               <div><strong>WhatsApp daily digest</strong><p>Choose the number that should receive the prepared daily summary. Hesabu opens the chat for you to review and send.</p></div>
               <Field label="WhatsApp destination" value={whatsappNumber} onChange={onWhatsAppNumberChange} placeholder="2547XXXXXXXX" hint="Use country code, e.g. 254712345678. You can also enter a Kenyan number beginning with 07 or 01." />
+              <div className="inline-form-actions">
+                <Button size="sm" variant="outline" disabled={!form.phone.trim()} onClick={() => onWhatsAppNumberChange(form.phone)}>
+                  Use business phone{form.phone.trim() ? ' · ' + form.phone.trim() : ''}
+                </Button>
+              </div>
               <div className="whatsapp-connection-note"><MessageCircle size={16} /><span>{cloudMode
                 ? 'Hesabu prepares the summary from saved business records and opens WhatsApp for you to review and send. Automatic scheduled delivery is not connected.'
                 : 'Click-to-chat is available in this preview. Automatic scheduled messages and attachments need the WhatsApp Business API connected on a secure server.'}</span></div>
