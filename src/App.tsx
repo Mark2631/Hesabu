@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  Activity, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, BookOpen, Eye, EyeOff,
+  Activity, Globe, AlertTriangle, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, BookOpen, Eye, EyeOff,
   Bell, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown,
   ChevronRight, CircleDollarSign, Clock3, Download,
   FileCheck2, FileSpreadsheet, FileText, Filter, LayoutDashboard, Link2, MessageCircle, Moon, Sun,
@@ -2423,84 +2423,138 @@ function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
         <div className="embedded-flow-note">Keep the website you already have. Give the team one place to run the business.</div>
       </div>
     </div>
-  </div>;
-}
-
-function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode, onNavigate }: {
+  </difunction SalesChannelsPage({ data, onCreateDemoOrder, cloudMode, onNavigate }: {
   data: AppData;
   onCreateDemoOrder: (input: { productId: string; quantity: number; customer: string; phone: string }) => void;
   cloudMode: boolean;
   onNavigate: (section: ModuleKey) => void;
 }) {
-  return <div className="page-stack sales-channels-page">
-    <PageHeader title="Sales channels" description="Run counter and wholesale orders from one register. Connect your existing website when you are ready to receive online orders." />
-    <div className="sales-channel-grid sales-channel-grid-detailed">
-      <article className="sales-channel-card sales-channel-card-active">
-        <div className="sales-channel-card-top">
-          <span className="sales-channel-icon"><Store size={21} /></span>
-          <span className="sales-channel-status is-available">Available now</span>
-        </div>
-        <div className="sales-channel-kicker">IN STORE</div>
-        <h3>Counter sales</h3>
-        <p>For customers buying directly from your shop. Each posted sale updates the product quantities and business records.</p>
-        <ol className="sales-channel-steps">
-          <li>Open Sales and choose Record sale.</li>
-          <li>Select Walk-in sale, add products and quantities.</li>
-          <li>Choose Cash, M-Pesa, bank or card, then post the sale.</li>
-        </ol>
-        <Button block onClick={() => onNavigate('sales')}>Open sales register <ArrowRight size={15} /></Button>
-      </article>
-      <article className="sales-channel-card">
-        <div className="sales-channel-card-top">
-          <span className="sales-channel-icon"><ShoppingCart size={21} /></span>
-          <span className="sales-channel-status is-available">Available through Sales</span>
-        </div>
-        <div className="sales-channel-kicker">WHOLESALE & PHONE ORDERS</div>
-        <h3>Bulk and repeat orders</h3>
-        <p>For hotels, resellers and regular customers ordering by phone or in person. Use the same catalogue; do not create a second stock list.</p>
-        <ol className="sales-channel-steps">
-          <li>Open Sales and choose Record sale.</li>
-          <li>Enter the customer or account name and add bulk quantities.</li>
-          <li>Choose Customer credit / debt if payment is due later, or Pay on delivery if collecting on delivery.</li>
-        </ol>
-        <Button block variant="outline" onClick={() => onNavigate('sales')}>Record a bulk order <ArrowRight size={15} /></Button>
-      </article>
-      <article className="sales-channel-card sales-channel-card-online">
-        <div className="sales-channel-card-top">
-          <span className="sales-channel-icon"><Smartphone size={21} /></span>
-          <span className="sales-channel-status is-unavailable">Not connected</span>
-        </div>
-        <div className="sales-channel-kicker">ONLINE</div>
-        <h3>Website orders</h3>
-        <p>For customers ordering from your own website. A secure connection must deliver each order into Hesabu before it can be treated as a real sale.</p>
-        <div className="sales-channel-requirements">
-          <strong>What needs to be connected</strong>
-          <ul>
-            <li>Your website checkout or ecommerce platform</li>
-            <li>A secure order webhook and verification secret</li>
-            <li>Product SKU matching and order-status handling</li>
-          </ul>
-        </div>
-        <span className="sales-channel-unavailable-note">No live website is connected. Do not use the sample checkout to accept customer payments.</span>
-      </article>
+  const [tab, setTab] = useState<'overview' | 'customers' | 'store' | 'connections'>('overview');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [promoProduct, setPromoProduct] = useState(data.products[0]?.id ?? '');
+  const [query, setQuery] = useState('');
+  const customerRows = useMemo(() => {
+    const rows = new Map<string, { name: string; phone: string; orders: number; spend: number; due: number; lastOrder: string }>();
+    data.invoices.forEach(invoice => {
+      const key = (invoice.phone || invoice.customer || 'unknown').trim().toLowerCase();
+      const current = rows.get(key) ?? { name: invoice.customer || 'Customer', phone: invoice.phone || '', orders: 0, spend: 0, due: 0, lastOrder: invoice.date };
+      current.orders += 1;
+      current.spend += invoice.total;
+      current.due += invoiceBalance(invoice);
+      if (invoice.date > current.lastOrder) current.lastOrder = invoice.date;
+      if (invoice.customer && invoice.customer !== 'Walk-in customer') current.name = invoice.customer;
+      if (invoice.phone) current.phone = invoice.phone;
+      rows.set(key, current);
+    });
+    return [...rows.values()].sort((a, b) => b.spend - a.spend);
+  }, [data.invoices]);
+  const filteredCustomers = customerRows.filter(customer => (customer.name + ' ' + customer.phone).toLowerCase().includes(query.toLowerCase()));
+  const selectedProduct = data.products.find(product => product.id === promoProduct) ?? data.products[0];
+  const makePromo = () => selectedProduct
+    ? data.profile.name + ': ' + selectedProduct.name + ' available at KSh ' + numberText(selectedProduct.sellingPrice) + ' per ' + selectedProduct.unit + '. ' + (selectedProduct.quantity > 0 ? 'Available now.' : 'Ask us about availability.') + ' Order by contacting ' + (data.profile.phone || 'our shop') + '.'
+    : data.profile.name + ' — contact us for our latest products and prices.';
+  const copyPromo = async () => {
+    try {
+      await navigator.clipboard.writeText(makePromo());
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      window.prompt('Copy this promotion', makePromo());
+    }
+  };
+  const openCustomerWhatsApp = (phone: string, name: string) => {
+    const digits = phone.replace(/\D/g, '').replace(/^0/, '254');
+    if (!digits) return;
+    const message = 'Hello ' + name + ', thank you for shopping with ' + data.profile.name + '. We wanted to follow up on your recent order.';
+    window.open('https://wa.me/' + digits + '?text=' + encodeURIComponent(message), '_blank', 'noopener,noreferrer');
+  };
+  const outstanding = data.invoices.reduce((total, invoice) => total + invoiceBalance(invoice), 0);
+  const onlineOrders = data.invoices.filter(invoice => invoice.source === 'website').length;
+  const tabs = [
+    { id: 'overview' as const, label: 'Overview' },
+    { id: 'customers' as const, label: 'Customers' },
+    { id: 'store' as const, label: 'Online store' },
+    { id: 'connections' as const, label: 'Connections' },
+  ];
+  return <div className="page-stack business-hub-page">
+    <PageHeader title="Business Hub" description="Bring your customers, sales channels and daily operations together." />
+    <div className="business-hub-intro">
+      <div><span className="business-hub-eyebrow">YOUR BUSINESS, CONNECTED</span><h2>Turn every conversation into a business record.</h2><p>Manage customer relationships, prepare promotions and see which channels are connected to your Hesabu workspace.</p></div>
+      <div className="business-hub-intro-actions"><Button onClick={() => onNavigate('sales')}>Record a sale <ArrowRight size={15} /></Button><Button variant="outline" onClick={() => setTab('connections')}>Manage connections</Button></div>
     </div>
-    <SectionCard title="One order register, one stock balance" detail="Regardless of where the order starts, the intended workflow is the same.">
-      <div className="sales-channel-flow">
-        <div><span>01</span><strong>Order received</strong><p>At the counter, by phone, or through a connected website.</p></div>
-        <div><span>02</span><strong>Products matched</strong><p>Hesabu uses the existing product catalogue and quantities.</p></div>
-        <div><span>03</span><strong>Sale recorded</strong><p>Payment, outstanding balance and stock movement are recorded together.</p></div>
-        <div><span>04</span><strong>Owner sees one view</strong><p>Sales, cash position, customer balances and reports stay together.</p></div>
+    <div className="business-hub-tabs" role="tablist" aria-label="Business Hub sections">
+      {tabs.map(item => <button key={item.id} role="tab" aria-selected={tab === item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}</button>)}
+    </div>
+    {tab === 'overview' && <>
+      <div className="business-hub-metrics">
+        <article><span>Customers recorded</span><strong>{numberText(customerRows.length)}</strong><small>From your existing invoices</small></article>
+        <article><span>Outstanding balances</span><strong>{money(outstanding)}</strong><small>Across unpaid customer invoices</small></article>
+        <article><span>Products to promote</span><strong>{numberText(data.products.filter(product => product.quantity > 0).length)}</strong><small>With stock available now</small></article>
+        <article><span>Online orders</span><strong>{numberText(onlineOrders)}</strong><small>Orders already marked as website sales</small></article>
       </div>
-    </SectionCard>
-    {cloudMode
-      ? <SectionCard title="Website order connection" detail="Live online checkout is not enabled for this business yet.">
-          <EmptyState title="No website is connected" body="Ask your website developer to integrate a secure Hesabu order webhook. Until that integration is configured and tested, record website or phone enquiries manually through Sales and confirm stock before accepting payment." />
+      <div className="business-hub-columns">
+        <SectionCard title="Customer relationships" detail="Use purchase history to identify customers who need attention.">
+          {customerRows.length ? <div className="business-hub-list">
+            {customerRows.slice(0, 4).map(customer => <div className="business-hub-customer" key={customer.phone || customer.name}>
+              <span className="business-hub-avatar">{customer.name.slice(0, 1).toUpperCase()}</span><div className="business-hub-customer-main"><strong>{customer.name}</strong><small>{customer.orders} orders · Last order {dateLabel(customer.lastOrder)}</small></div><strong className="business-hub-customer-value">{money(customer.spend)}</strong>
+            </div>)}
+            <Button variant="outline" block onClick={() => setTab('customers')}>View all customers</Button>
+          </div> : <EmptyState title="Customer records will appear here" body="When you record a sale with a customer name or phone number, Hesabu builds their purchase history automatically." />}
         </SectionCard>
-      : <SectionCard title="Sample online checkout" detail="This is a demonstration of the customer ordering experience, not a live storefront.">
-          <div className="sales-channel-demo-warning">Sample mode only · Orders created here affect this local sample workspace. They are not sent to a real website, customer or payment provider.</div>
-          <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
-        </SectionCard>}
+        <SectionCard title="Prepare a promotion" detail="Use a product already in your stock list.">
+          {data.products.length ? <div className="business-hub-promo">
+            <SelectField label="Product" value={selectedProduct?.id ?? ''} onChange={setPromoProduct} options={data.products.map(product => ({ value: product.id, label: product.name + ' · ' + money(product.sellingPrice) }))} />
+            <div className="business-hub-promo-preview">{makePromo()}</div>
+            <Button variant="outline" onClick={() => void copyPromo()}>{copied ? <><Check size={15}/> Copied</> : 'Copy promotion'}</Button>
+            <small className="field-hint">Copy the message, then paste it into WhatsApp, Facebook or Instagram. Publishing and campaign analytics require an official account connection.</small>
+          </div> : <EmptyState title="Add products before promoting" body="Your product catalogue will power promotions, online listings and stock availability." />}
+        </SectionCard>
+      </div>
+      <SectionCard title="Your business workflow" detail="One connected record from the first customer enquiry to the final payment.">
+        <div className="business-hub-flow">
+          <div><span>01</span><strong>Attract</strong><small>Social posts, referrals and your online catalogue</small></div><div><span>02</span><strong>Talk</strong><small>WhatsApp and customer enquiries</small></div><div><span>03</span><strong>Sell</strong><small>Quotes, orders, invoices and payments</small></div><div><span>04</span><strong>Fulfil</strong><small>Pick, pack, dispatch and deliver</small></div><div><span>05</span><strong>Understand</strong><small>Profit, repeat customers and stock decisions</small></div>
+        </div>
+      </SectionCard>
+    </>}
+    {tab === 'customers' && <SectionCard title="Customer book" detail="A practical CRM built from your existing customer and invoice records.">
+      <div className="business-hub-toolbar"><label className="business-hub-search"><Search size={16}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search customers by name or phone"/></label><span>{filteredCustomers.length} customers</span></div>
+      {filteredCustomers.length ? <div className="business-hub-table-wrap"><table className="business-hub-table"><thead><tr><th>Customer</th><th>Orders</th><th>Total purchases</th><th>Balance due</th><th>Last order</th><th>Action</th></tr></thead><tbody>{filteredCustomers.map(customer => <tr key={customer.phone || customer.name}><td><strong>{customer.name}</strong><small>{customer.phone || 'No phone recorded'}</small></td><td>{customer.orders}</td><td>{money(customer.spend)}</td><td className={customer.due > 0 ? 'is-due' : ''}>{money(customer.due)}</td><td>{dateLabel(customer.lastOrder)}</td><td><button className="business-hub-link" disabled={!customer.phone} onClick={() => openCustomerWhatsApp(customer.phone, customer.name)}>Follow up on WhatsApp</button></td></tr>)}</tbody></table></div> : <EmptyState title={query ? 'No matching customers' : 'No customer history yet'} body="Record sales with customer names and phone numbers. Hesabu will build this list from your real business records." />}
+    </SectionCard>}
+    {tab === 'store' && <>
+      <SectionCard title="Your digital catalogue" detail="A customer-facing catalogue should use the same products and stock balances as your business workspace.">
+        <div className="business-hub-store-head"><div><strong>{data.profile.name}</strong><small>{data.profile.location || 'Business location not added'} · {data.products.length} products</small></div><Button variant="outline" onClick={() => setPreviewOpen(true)}>Preview catalogue <ArrowRight size={15}/></Button></div>
+        {data.products.length ? <div className="business-hub-product-grid">{data.products.slice(0, 8).map(product => <article key={product.id}><div className="business-hub-product-placeholder"><Package size={24}/></div><strong>{product.name}</strong><span>{money(product.sellingPrice)} / {product.unit}</span><small>{product.quantity > 0 ? numberText(product.quantity) + ' ' + product.unit + ' available' : 'Out of stock'}</small></article>)}</div> : <EmptyState title="Your catalogue is empty" body="Add products in Inventory. The catalogue will use those same records instead of maintaining a second list." />}
+        <div className="business-hub-note"><strong>Publishing status: private preview</strong><span>This catalogue preview is inside Hesabu. A public shareable store, checkout, payment verification and automatic stock reservation still need the storefront backend and domain setup.</span></div>
+      </SectionCard>
+      {!cloudMode && <SectionCard title="Sample checkout" detail="Demonstration only. These orders do not reach a real customer or payment provider."><div className="sales-channel-demo-warning">Sample workspace · No live payments or public checkout.</div><EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} /></SectionCard>}
+      {previewOpen && <Modal title={data.profile.name + ' · Catalogue preview'} detail="This is a private preview of the products currently in your Hesabu workspace." onClose={() => setPreviewOpen(false)} size="lg">
+        <div className="business-hub-catalogue-modal"><p>{data.profile.location || 'Shop online or contact the business to order.'}</p>{data.products.map(product => <div key={product.id}><span className="business-hub-product-placeholder"><Package size={19}/></span><span><strong>{product.name}</strong><small>{product.quantity > 0 ? 'Available' : 'Out of stock'}</small></span><strong>{money(product.sellingPrice)}</strong></div>)}</div>
+        <div className="modal-footer"><Button variant="outline" onClick={() => setPreviewOpen(false)}>Close preview</Button></div>
+      </Modal>}
+    </>}
+    {tab === 'connections' && <>
+      <SectionCard title="Connected business tools" detail="Only services that have completed authorization and verification should show as connected.">
+        <div className="business-hub-connections">
+          <article className="is-connected"><div className="business-hub-connection-icon"><Activity size={20}/></div><div><strong>Hesabu business records</strong><small>Sales, products, customers, invoices, purchases and balances</small></div><span className="business-hub-connection-status">Connected</span></article>
+          <article><div className="business-hub-connection-icon"><MessageCircle size={20}/></div><div><strong>WhatsApp</strong><small>Click-to-chat links are available. Automated messaging and inbound sync need WhatsApp Business Platform setup.</small></div><span className="business-hub-connection-status is-limited">Basic sharing</span></article>
+          <article><div className="business-hub-connection-icon"><Globe size={20}/></div><div><strong>Facebook & Instagram</strong><small>Page authorization, publishing permissions and messaging webhooks are not configured.</small></div><span className="business-hub-connection-status is-off">Not connected</span></article>
+          <article><div className="business-hub-connection-icon"><Wallet size={20}/></div><div><strong>M-Pesa Daraja</strong><small>Manual M-Pesa receipt recording is available. STK Push and verified callbacks are not connected.</small></div><span className="business-hub-connection-status is-off">Not connected</span></article>
+          <article><div className="business-hub-connection-icon"><Truck size={20}/></div><div><strong>Delivery providers</strong><small>Orders can be managed internally; courier API tracking and proof of delivery are not connected.</small></div><span className="business-hub-connection-status is-off">Not connected</span></article>
+        </div>
+      </SectionCard>
+      <SectionCard title="What is required to activate integrations" detail="Each connection must be authorized by the business owner and verified server-side.">
+        <div className="business-hub-requirements">
+          <div><strong>WhatsApp Business Platform</strong><small>Meta Business Portfolio, WhatsApp Business Account, verified phone number, permanent/system-user token, phone-number ID, webhook URL and approved templates where required.</small></div>
+          <div><strong>Facebook and Instagram</strong><small>Meta developer app, business-owned Page and Instagram professional account, OAuth redirect, approved permissions, webhook subscriptions and app review where required.</small></div>
+          <div><strong>M-Pesa Daraja</strong><small>Safaricom developer app, consumer key/secret, shortcode, passkey, callback URL and production approval. Secrets must stay on the server.</small></div>
+          <div><strong>Online store and delivery</strong><small>Public storefront domain, order API, signed webhooks, idempotency keys, stock reservation rules and delivery partner credentials.</small></div>
+        </div>
+      </SectionCard>
+    </>}
   </div>;
+}
+iv>;
 }
 function MorePage({ allowedModules, onNavigate }: {
   allowedModules: ModuleKey[]; onNavigate: (section: ModuleKey) => void;
