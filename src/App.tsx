@@ -1445,7 +1445,7 @@ function FloatingAssistant({
       setDigestError('No valid recipient is saved. Add a WhatsApp number in More → Team & Settings → Preferences, then save it.');
       return;
     }
-    setWhatsAppNumber(normalized);
+    onWhatsAppNumberChange(normalized);
     openDailyDigestWhatsApp(data, normalized, () => {
       setDigestError('Enter a valid WhatsApp number to prepare this summary.');
     });
