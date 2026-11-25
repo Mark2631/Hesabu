@@ -2812,7 +2812,10 @@ function App() {
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => capturePendingTeamInvitation());
-  const [whatsappNumber, setWhatsAppNumber] = useState('');
+  const [whatsappNumber, setWhatsAppNumber] = useState(() => {
+    try { return localStorage.getItem('hesabu:whatsapp-number:v1') || ''; }
+    catch { return ''; }
+  });
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try { return localStorage.getItem('hesabu:theme:v2') === 'dark' ? 'dark' : 'light'; }
     catch { return 'light'; }
