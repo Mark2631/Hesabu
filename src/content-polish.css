@@ -125,3 +125,98 @@ body {
     object-position: 64% center;
   }
 }
+
+/* Readability baseline: remove tiny utility text from daily operational workflows. */
+body { font-size:15px; }
+.page-header p,.surface-card-header p,.empty-state p,
+.modal-header p,.modal-body p,.preference-block p,
+.team-invite-explainer,.field-hint,.sale-type-explainer,
+.whatsapp-connection-note,.settings-footer-note {
+  font-size:14px;
+  line-height:1.6;
+}
+.field-label,.subsection-label,.sale-picker-heading strong,
+.sale-type-row .field-label,.preference-block > div > strong {
+  font-size:14px;
+}
+.field-hint,.sale-picker-heading small,.sale-cart-product small,
+.sale-cart-empty,.sale-enquiry-note,.sale-form-error {
+  font-size:13px;
+  line-height:1.55;
+}
+.field-input,.modal-body .field-input,.sale-product-search input,
+.sale-quantity-input,.assistant-drawer-entry input {
+  min-height:44px;
+  font-size:16px;
+}
+.modal-body .field-input { height:46px; }
+.btn-sm { min-height:38px; padding-inline:12px; font-size:13px; }
+.btn-md { min-height:42px; font-size:14px; }
+.btn-lg { min-height:46px; font-size:14px; }
+.data-table { font-size:13px; }
+.data-table th { font-size:12px; }
+.data-table td { font-size:13px; }
+.data-table td strong { font-size:13px; }
+.data-table td small { font-size:12px; }
+.table-search input,.filter-control select { font-size:14px; }
+.table-count,.table-action { font-size:12px; }
+.status-pill,.channel-badge { font-size:11px; }
+.metric-top,.metric-foot,.muted-copy,.overview-footnote { font-size:12px; }
+.field-hint { color:#64736a; }
+.sale-cart-product strong { font-size:14px; }
+.sale-line-total span,.sale-line-total strong { font-size:13px; }
+.dialog-total > span { font-size:13px; }
+.dialog-total strong { font-size:14px; }
+.modal-header h2 { font-size:18px; }
+.modal-header p { font-size:13px; }
+.section-tabs button { font-size:13px; }
+.more-destination-copy strong { font-size:15px; }
+.more-destination-copy small { font-size:13px; line-height:1.5; }
+
+/* Sales channels are operational guidance, not decorative feature cards. */
+.sales-channel-grid-detailed { align-items:stretch; gap:14px; }
+.sales-channel-grid-detailed .sales-channel-card {
+  display:flex; flex-direction:column; align-items:stretch; gap:10px;
+  min-height:100%; padding:20px; border:1px solid #e4e8e5; border-radius:14px;
+  background:#fff;
+}
+.sales-channel-card-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.sales-channel-icon { display:grid; place-items:center; width:42px; height:42px; border-radius:11px; background:#f0f3ef; color:#245d43; }
+.sales-channel-status { display:inline-flex; align-items:center; min-height:27px; padding:4px 9px; border-radius:99px; font-size:12px; font-weight:700; }
+.sales-channel-status.is-available { background:#edf5ed; color:#276644; }
+.sales-channel-status.is-unavailable { background:#f5f0e8; color:#87612b; }
+.sales-channel-grid-detailed .sales-channel-kicker { margin-top:3px; font-size:11px; letter-spacing:.1em; }
+.sales-channel-grid-detailed .sales-channel-card h3 { margin:0; font-size:20px; line-height:1.25; }
+.sales-channel-grid-detailed .sales-channel-card p { max-width:none; font-size:14px; line-height:1.6; color:#56645b; }
+.sales-channel-steps { display:grid; gap:9px; margin:2px 0 8px; padding:0; list-style:none; counter-reset:channel-step; }
+.sales-channel-steps li { position:relative; padding-left:31px; color:#39483e; font-size:13px; line-height:1.55; counter-increment:channel-step; }
+.sales-channel-steps li::before { content:counter(channel-step); position:absolute; left:0; top:0; display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background:#f0f3ef; color:#315e43; font-size:12px; font-weight:700; }
+.sales-channel-grid-detailed .btn { margin-top:auto; }
+.sales-channel-requirements { padding:13px; border:1px solid #e8ece8; border-radius:10px; background:#fafbf9; }
+.sales-channel-requirements strong { display:block; margin-bottom:8px; font-size:13px; }
+.sales-channel-requirements ul { display:grid; gap:7px; margin:0; padding-left:18px; color:#56645b; font-size:13px; line-height:1.5; }
+.sales-channel-unavailable-note { margin-top:auto; color:#80612e; font-size:13px; line-height:1.55; }
+.sales-channel-flow { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); }
+.sales-channel-flow > div { padding:18px; border-right:1px solid #e9ede9; }
+.sales-channel-flow > div:last-child { border-right:0; }
+.sales-channel-flow span { display:block; margin-bottom:10px; color:#78877d; font-size:12px; font-weight:800; letter-spacing:.08em; }
+.sales-channel-flow strong { display:block; color:#24392d; font-size:15px; }
+.sales-channel-flow p { margin:6px 0 0; color:#637167; font-size:13px; line-height:1.55; }
+.sales-channel-demo-warning { margin:0 0 14px; padding:12px 14px; border:1px solid #e9dfc9; border-radius:9px; background:#fbf7ee; color:#745c31; font-size:13px; line-height:1.55; }
+@media(max-width:980px) {
+  .sales-channel-flow { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sales-channel-flow > div:nth-child(2) { border-right:0; }
+  .sales-channel-flow > div:nth-child(-n+2) { border-bottom:1px solid #e9ede9; }
+}
+@media(max-width:720px) {
+  .sales-channel-grid-detailed { grid-template-columns:1fr; }
+  .sales-channel-grid-detailed .sales-channel-card { padding:17px; }
+  .sales-channel-flow { grid-template-columns:1fr; }
+  .sales-channel-flow > div { padding:14px 16px; border-right:0; border-bottom:1px solid #e9ede9; }
+  .sales-channel-flow > div:last-child { border-bottom:0; }
+  .modal-body .field-input { min-height:48px; }
+  .btn-sm { min-height:40px; }
+  .data-table { font-size:13px; }
+  .data-table th { font-size:12px; }
+  .data-table td,.data-table td strong { font-size:13px; }
+}
