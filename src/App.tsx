@@ -3943,19 +3943,19 @@ function App() {
 
     <nav className="mobile-bottom-nav" aria-label="Primary navigation">
       {(activeMember?.role === 'Inventory' ? [
-        { id: 'overview' as ModuleKey, label: 'Home', icon: 'home' },
-        { id: 'inventory' as ModuleKey, label: 'Stock', icon: 'inventory_2' },
-        { id: 'procurement' as ModuleKey, label: 'Orders', icon: 'shopping_cart' },
-        { id: 'more' as ModuleKey, label: 'More', icon: 'grid_view' },
+        { id: 'overview' as ModuleKey, label: 'Home', icon: LayoutDashboard },
+        { id: 'inventory' as ModuleKey, label: 'Stock', icon: Package },
+        { id: 'procurement' as ModuleKey, label: 'Orders', icon: ShoppingCart },
+        { id: 'more' as ModuleKey, label: 'More', icon: MoreHorizontal },
       ] : [
-        { id: 'overview' as ModuleKey, label: 'Home', icon: 'home' },
-        { id: 'sales' as ModuleKey, label: 'Sales', icon: 'receipt_long' },
-        { id: 'reports' as ModuleKey, label: 'Analytics', icon: 'monitoring' },
-        { id: 'payments' as ModuleKey, label: 'Payments', icon: 'account_balance_wallet' },
-        { id: 'more' as ModuleKey, label: 'More', icon: 'grid_view' },
+        { id: 'overview' as ModuleKey, label: 'Home', icon: LayoutDashboard },
+        { id: 'sales' as ModuleKey, label: 'Sales', icon: Receipt },
+        { id: 'reports' as ModuleKey, label: 'Analytics', icon: BarChart3 },
+        { id: 'payments' as ModuleKey, label: 'Payments', icon: Wallet },
+        { id: 'more' as ModuleKey, label: 'More', icon: MoreHorizontal },
       ]).filter(item => allowedModules.includes(item.id)).map(item =>
         <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)} aria-current={active === item.id ? 'page' : undefined}>
-          <span className="material-symbols-rounded" aria-hidden="true">{item.icon}</span><span>{item.label}</span>
+          <item.icon size={20} strokeWidth={1.9} aria-hidden="true" /><span>{item.label}</span>
         </button>
       )}
     </nav>
