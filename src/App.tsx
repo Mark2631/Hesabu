@@ -2426,32 +2426,47 @@ function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
   </div>;
 }
 
-function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode }: {
+function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode, onNavigate }: {
   data: AppData;
   onCreateDemoOrder: (input: { productId: string; quantity: number; customer: string; phone: string }) => void;
   cloudMode: boolean;
+  onNavigate: (section: ModuleKey) => void;
 }) {
   return <div className="page-stack">
     <PageHeader title="Sales channels" description="Bring counter, online and wholesale orders into one business view." />
     <div className="sales-channel-grid">
       <div className="sales-channel-card sales-channel-card-active">
         <div className="sales-channel-kicker">IN STORE</div><h3>Counter sales</h3>
-        <p>Record walk-in sales using the same product catalogue and stock quantities.</p><span>Available in Sales</span>
+        <p>Record walk-in sales using the same product catalogue and stock quantities.</p>
+        <span>Available in Sales</span>
+        <Button size="sm" variant="outline" onClick={() => onNavigate('sales')}>Open sales register</Button>
       </div>
       <div className="sales-channel-card sales-channel-card-featured">
         <div className="sales-channel-kicker">ONLINE</div><h3>Website orders</h3>
-        <p>Capture customer orders from an existing website without a separate stock list.</p><span>Try the sample checkout</span>
+        <p>{cloudMode
+          ? 'Live website orders are not connected. Do not treat this screen as a live customer checkout.'
+          : 'Explore a sample customer checkout using this workspace’s sample products.'}</p>
+        <span>{cloudMode ? 'Connection required' : 'Sample checkout below'}</span>
       </div>
       <div className="sales-channel-card">
         <div className="sales-channel-kicker">WHOLESALE</div><h3>Bulk & repeat orders</h3>
-        <p>Record phone, repeat and bulk orders against the same inventory and customer balances.</p><span>Available in Sales</span>
+        <p>Record phone, repeat and bulk orders against the same inventory and customer balances.</p>
+        <span>Available in Sales</span>
+        <Button size="sm" variant="outline" onClick={() => onNavigate('sales')}>Record a bulk order</Button>
       </div>
     </div>
+    <SectionCard title="How to use each channel" detail="All three order types use the same product catalogue and stock records.">
+      <div className="sales-channel-guide">
+        <div><strong>1. Counter sale</strong><p>Open Sales, select Record sale, leave the transaction type as Walk-in sale, add the products and quantities, choose Cash, M-Pesa or another payment method, then post the sale.</p></div>
+        <div><strong>2. Wholesale or repeat order</strong><p>Open Sales and select Record sale. Enter the customer or account name, add all requested products and quantities, then choose Customer credit / debt if payment is due later, or Pay on delivery if payment will be collected when goods arrive.</p></div>
+        <div><strong>3. Website order</strong><p>The sample checkout below is only for exploring the flow in a local/demo workspace. A real business needs a secure website order webhook before live customer orders can enter Hesabu. No website is connected yet.</p></div>
+      </div>
+    </SectionCard>
     {cloudMode
-      ? <SectionCard title="Website order connection" detail="Online checkout is not accepting customer orders yet.">
-          <EmptyState title="No website is connected" body="The sample checkout is not connected to a real storefront. Connect a secure order webhook before accepting online orders here." />
+      ? <SectionCard title="Website order connection" detail="Live online checkout is not enabled for this business yet.">
+          <EmptyState title="No website is connected" body="Connect a secure order webhook from your existing storefront before accepting real online orders. Until then, record phone and walk-in orders through Sales." />
         </SectionCard>
-      : <SectionCard title="Sample online order" detail="Place an order and see it appear with the rest of your sales.">
+      : <SectionCard title="Sample online order" detail="Place a test order and see it appear in this local workspace's Sales register.">
           <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
         </SectionCard>}
     <div className="sales-channel-note">One product catalogue. One view of sales. One view of available stock.</div>
@@ -3946,7 +3961,7 @@ function App() {
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} onAddSupplier={() => setDialog({ kind: 'supplier' })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} role={activeMember?.role ?? 'Owner'} demoMode={demoMode} />}
-        {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} />}
+        {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} onNavigate={navigate} />}
         {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} teamInvitations={data.teamInvitations ?? []} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onRevokeInvitation={revokeTeamInvitation} onCopyInvitation={copyTeamInvitation} canManageTeam={activeMember?.role === 'Owner' || activeMember?.role === 'Manager'} canAssignManager={activeMember?.role === 'Owner'} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} demoMode={demoMode} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
       </div>
