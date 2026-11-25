@@ -12,6 +12,7 @@ import {
 import { allocateIncomingPayment, buildJournalPair, buildTrialBalance, calculateGrossProfit, isJournalBalanced, isTrialBalanceBalanced, outstandingBalance, planPurchaseReceipt, weightedAverageUnitCost } from './finance';
 import { addBusinessDays, businessDate, formatBusinessDate, formatBusinessDateTime, formatBusinessDay } from './business-time';
 import { makePublicDemoData } from './demo-data';
+import { createXlsxWorkbook } from './xlsx';
 const EMPTY_WORKSPACE_DATA: AppData = {
   profile: {
     name: 'Your business', legalName: '', owner: '', email: '', phone: '',
@@ -1438,7 +1439,14 @@ function FloatingAssistant({
       setDigestError('External WhatsApp messages are disabled in the sample workspace.');
       return;
     }
-    openDailyDigestWhatsApp(data, whatsappNumber, () => {
+    const destination = whatsappNumber || data.profile.phone;
+    const normalized = normaliseWhatsAppNumber(destination);
+    if (!normalized) {
+      setDigestError('No valid recipient is saved. Add a WhatsApp number in More → Team & Settings → Preferences, then save it.');
+      return;
+    }
+    onWhatsAppNumberChange(normalized);
+    openDailyDigestWhatsApp(data, normalized, () => {
       setDigestError('Enter a valid WhatsApp number to prepare this summary.');
     });
   };
@@ -2125,17 +2133,23 @@ function buildDailyDigestMessage(data: AppData) {
 }
 
 function normaliseWhatsAppNumber(value: string) {
-  let digits = value.replace(/\D/g, '');
-  if (digits.startsWith('0') && digits.length === 10) digits = '254' + digits.slice(1);
+  let digits = value.trim().replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('2540') && digits.length === 13) digits = '254' + digits.slice(4);
+  else if (digits.startsWith('0') && digits.length === 10) digits = '254' + digits.slice(1);
   else if ((digits.startsWith('7') || digits.startsWith('1')) && digits.length === 9) digits = '254' + digits;
   return digits.length >= 10 && digits.length <= 15 ? digits : '';
 }
 
 function openDailyDigestWhatsApp(data: AppData, destination: string, onMissing: () => void) {
-  const number = normaliseWhatsAppNumber(destination);
+  const number = normaliseWhatsAppNumber(destination || data.profile.phone);
   if (!number) { onMissing(); return; }
-  const url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(buildDailyDigestMessage(data));
-  window.open(url, '_blank', 'noopener,noreferrer');
+  const message = encodeURIComponent(buildDailyDigestMessage(data));
+  // Navigate directly from the user's tap. window.open(..., 'noopener') can
+  // return null even when successful and triggered the old false fallback.
+  // The API send URL hands off to the installed WhatsApp app on mobile or
+  // WhatsApp Web in a desktop browser, with the recipient prefilled.
+  window.location.assign('https://api.whatsapp.com/send?phone=' + number + '&text=' + message);
 }
 
 function downloadDailyWorkbook(data: AppData) {
@@ -2182,25 +2196,18 @@ function downloadDailyWorkbook(data: AppData) {
       ...digest.purchaseOrders.map(order => [order.number, order.supplierName, order.createdAt, order.expectedAt, order.status, order.total]),
     ]},
   ];
-  const escapeXml = (value: string) => value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
-  const xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>' +
-    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
-    '<Styles><Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#172033" ss:Pattern="Solid"/></Style></Styles>' +
-    sheets.map(sheet => '<Worksheet ss:Name="' + escapeXml(sheet.name) + '"><Table>' +
-      sheet.rows.map((row,index) => '<Row>' + row.map(value => {
-        const type = typeof value === 'number' ? 'Number' : 'String';
-        const style = index === 0 ? ' ss:StyleID="Header"' : '';
-        return '<Cell' + style + '><Data ss:Type="' + type + '">' + escapeXml(String(value ?? '')) + '</Data></Cell>';
-      }).join('') + '</Row>').join('') + '</Table></Worksheet>').join('') + '</Workbook>';
-  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const bytes = createXlsxWorkbook(sheets);
+  const blob = new Blob([bytes.buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = 'hesabu-daily-report-' + digest.date + '.xls';
+  anchor.download = 'hesabu-daily-report-' + digest.date + '.xlsx';
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 function ReportsPage({ data, metrics, whatsappNumber, onWhatsAppUnavailable, role, demoMode }: {
@@ -2419,38 +2426,82 @@ function EmbeddedCheckoutDemo({ profile, products, onCreateOrder }: {
   </div>;
 }
 
-function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode }: {
+function SalesChannelsPage({ data, onCreateDemoOrder, cloudMode, onNavigate }: {
   data: AppData;
   onCreateDemoOrder: (input: { productId: string; quantity: number; customer: string; phone: string }) => void;
   cloudMode: boolean;
+  onNavigate: (section: ModuleKey) => void;
 }) {
-  return <div className="page-stack">
-    <PageHeader title="Sales channels" description="Bring counter, online and wholesale orders into one business view." />
-    <div className="sales-channel-grid">
-      <div className="sales-channel-card sales-channel-card-active">
-        <div className="sales-channel-kicker">IN STORE</div><h3>Counter sales</h3>
-        <p>Record walk-in sales using the same product catalogue and stock quantities.</p><span>Available in Sales</span>
-      </div>
-      <div className="sales-channel-card sales-channel-card-featured">
-        <div className="sales-channel-kicker">ONLINE</div><h3>Website orders</h3>
-        <p>Capture customer orders from an existing website without a separate stock list.</p><span>Try the sample checkout</span>
-      </div>
-      <div className="sales-channel-card">
-        <div className="sales-channel-kicker">WHOLESALE</div><h3>Bulk & repeat orders</h3>
-        <p>Record phone, repeat and bulk orders against the same inventory and customer balances.</p><span>Available in Sales</span>
-      </div>
+  return <div className="page-stack sales-channels-page">
+    <PageHeader title="Sales channels" description="Run counter and wholesale orders from one register. Connect your existing website when you are ready to receive online orders." />
+    <div className="sales-channel-grid sales-channel-grid-detailed">
+      <article className="sales-channel-card sales-channel-card-active">
+        <div className="sales-channel-card-top">
+          <span className="sales-channel-icon"><Store size={21} /></span>
+          <span className="sales-channel-status is-available">Available now</span>
+        </div>
+        <div className="sales-channel-kicker">IN STORE</div>
+        <h3>Counter sales</h3>
+        <p>For customers buying directly from your shop. Each posted sale updates the product quantities and business records.</p>
+        <ol className="sales-channel-steps">
+          <li>Open Sales and choose Record sale.</li>
+          <li>Select Walk-in sale, add products and quantities.</li>
+          <li>Choose Cash, M-Pesa, bank or card, then post the sale.</li>
+        </ol>
+        <Button block onClick={() => onNavigate('sales')}>Open sales register <ArrowRight size={15} /></Button>
+      </article>
+      <article className="sales-channel-card">
+        <div className="sales-channel-card-top">
+          <span className="sales-channel-icon"><ShoppingCart size={21} /></span>
+          <span className="sales-channel-status is-available">Available through Sales</span>
+        </div>
+        <div className="sales-channel-kicker">WHOLESALE & PHONE ORDERS</div>
+        <h3>Bulk and repeat orders</h3>
+        <p>For hotels, resellers and regular customers ordering by phone or in person. Use the same catalogue; do not create a second stock list.</p>
+        <ol className="sales-channel-steps">
+          <li>Open Sales and choose Record sale.</li>
+          <li>Enter the customer or account name and add bulk quantities.</li>
+          <li>Choose Customer credit / debt if payment is due later, or Pay on delivery if collecting on delivery.</li>
+        </ol>
+        <Button block variant="outline" onClick={() => onNavigate('sales')}>Record a bulk order <ArrowRight size={15} /></Button>
+      </article>
+      <article className="sales-channel-card sales-channel-card-online">
+        <div className="sales-channel-card-top">
+          <span className="sales-channel-icon"><Smartphone size={21} /></span>
+          <span className="sales-channel-status is-unavailable">Not connected</span>
+        </div>
+        <div className="sales-channel-kicker">ONLINE</div>
+        <h3>Website orders</h3>
+        <p>For customers ordering from your own website. A secure connection must deliver each order into Hesabu before it can be treated as a real sale.</p>
+        <div className="sales-channel-requirements">
+          <strong>What needs to be connected</strong>
+          <ul>
+            <li>Your website checkout or ecommerce platform</li>
+            <li>A secure order webhook and verification secret</li>
+            <li>Product SKU matching and order-status handling</li>
+          </ul>
+        </div>
+        <span className="sales-channel-unavailable-note">No live website is connected. Do not use the sample checkout to accept customer payments.</span>
+      </article>
     </div>
+    <SectionCard title="One order register, one stock balance" detail="Regardless of where the order starts, the intended workflow is the same.">
+      <div className="sales-channel-flow">
+        <div><span>01</span><strong>Order received</strong><p>At the counter, by phone, or through a connected website.</p></div>
+        <div><span>02</span><strong>Products matched</strong><p>Hesabu uses the existing product catalogue and quantities.</p></div>
+        <div><span>03</span><strong>Sale recorded</strong><p>Payment, outstanding balance and stock movement are recorded together.</p></div>
+        <div><span>04</span><strong>Owner sees one view</strong><p>Sales, cash position, customer balances and reports stay together.</p></div>
+      </div>
+    </SectionCard>
     {cloudMode
-      ? <SectionCard title="Website order connection" detail="Online checkout is not accepting customer orders yet.">
-          <EmptyState title="No website is connected" body="The sample checkout is not connected to a real storefront. Connect a secure order webhook before accepting online orders here." />
+      ? <SectionCard title="Website order connection" detail="Live online checkout is not enabled for this business yet.">
+          <EmptyState title="No website is connected" body="Ask your website developer to integrate a secure Hesabu order webhook. Until that integration is configured and tested, record website or phone enquiries manually through Sales and confirm stock before accepting payment." />
         </SectionCard>
-      : <SectionCard title="Sample online order" detail="Place an order and see it appear with the rest of your sales.">
+      : <SectionCard title="Sample online checkout" detail="This is a demonstration of the customer ordering experience, not a live storefront.">
+          <div className="sales-channel-demo-warning">Sample mode only · Orders created here affect this local sample workspace. They are not sent to a real website, customer or payment provider.</div>
           <EmbeddedCheckoutDemo profile={data.profile} products={data.products} onCreateOrder={onCreateDemoOrder} />
         </SectionCard>}
-    <div className="sales-channel-note">One product catalogue. One view of sales. One view of available stock.</div>
   </div>;
 }
-
 function MorePage({ allowedModules, onNavigate }: {
   allowedModules: ModuleKey[]; onNavigate: (section: ModuleKey) => void;
 }) {
@@ -2602,6 +2653,11 @@ function SettingsPage({ profile, teamMembers, teamInvitations, onSave, onAddMemb
           : <section className="preference-block">
               <div><strong>WhatsApp daily digest</strong><p>Choose the number that should receive the prepared daily summary. Hesabu opens the chat for you to review and send.</p></div>
               <Field label="WhatsApp destination" value={whatsappNumber} onChange={onWhatsAppNumberChange} placeholder="2547XXXXXXXX" hint="Use country code, e.g. 254712345678. You can also enter a Kenyan number beginning with 07 or 01." />
+              <div className="inline-form-actions">
+                <Button size="sm" variant="outline" disabled={!form.phone.trim()} onClick={() => onWhatsAppNumberChange(form.phone)}>
+                  Use business phone{form.phone.trim() ? ' · ' + form.phone.trim() : ''}
+                </Button>
+              </div>
               <div className="whatsapp-connection-note"><MessageCircle size={16} /><span>{cloudMode
                 ? 'Hesabu prepares the summary from saved business records and opens WhatsApp for you to review and send. Automatic scheduled delivery is not connected.'
                 : 'Click-to-chat is available in this preview. Automatic scheduled messages and attachments need the WhatsApp Business API connected on a secure server.'}</span></div>
@@ -2756,7 +2812,10 @@ function App() {
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => capturePendingTeamInvitation());
-  const [whatsappNumber, setWhatsAppNumber] = useState('');
+  const [whatsappNumber, setWhatsAppNumber] = useState(() => {
+    try { return localStorage.getItem('hesabu:whatsapp-number:v1') || ''; }
+    catch { return ''; }
+  });
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try { return localStorage.getItem('hesabu:theme:v2') === 'dark' ? 'dark' : 'light'; }
     catch { return 'light'; }
@@ -2908,7 +2967,7 @@ function App() {
       setData(workspace);
       try { localStorage.setItem('hesabu:workspace-cache:v1:' + cloudAccount.business.id, JSON.stringify({ savedAt: new Date().toISOString(), data: workspace, whatsappNumber: settings.whatsapp_recipient_phone || '' })); } catch { /* Storage quota must not block live workspace use. */ }
       setOfflineMode(false);
-      setWhatsAppNumber(settings.whatsapp_recipient_phone || '');
+      setWhatsAppNumber(settings.whatsapp_recipient_phone || workspace.profile.phone || '');
       const currentMember = workspace.teamMembers.find(member => member.id === cloudAccount.user.id);
       setActiveMemberId(currentMember?.id || cloudAccount.user.id);
       setCloudWorkspaceReady(true);
@@ -3737,13 +3796,29 @@ function App() {
     notify('Supplier added', input.name + ' has been added to the supplier register.');
   };
 
-  const saveWhatsAppDestination = () => {
-    if (cloudAccount) {
-      void runCloudMutation(() => saveCloudWhatsAppDestination(cloudAccount.business.id, whatsappNumber),
-        'WhatsApp destination saved', 'The number is saved. Daily summaries still open in WhatsApp for you to review and send.');
+  const saveWhatsAppDestination = async () => {
+    const normalized = normaliseWhatsAppNumber(whatsappNumber || data.profile.phone);
+    if (!normalized) {
+      notify('Enter a valid WhatsApp number', 'Use a full international number, for example +254 712 345 678.');
       return;
     }
-    notify('WhatsApp destination saved', 'The destination is saved in this preview on this device.');
+    setWhatsAppNumber(normalized);
+    if (cloudAccount) {
+      if (!navigator.onLine) {
+        notify('Cannot save while offline', 'Reconnect to the internet, then save the WhatsApp destination again.');
+        return;
+      }
+      try {
+        await saveCloudWhatsAppDestination(cloudAccount.business.id, normalized);
+        await reloadCloudWorkspace();
+        notify('WhatsApp destination saved', 'Saved for ' + normalized + '. Open the daily digest and choose Open WhatsApp; you must press Send in WhatsApp.');
+      } catch (error) {
+        notify('WhatsApp destination was not saved', error instanceof Error ? error.message : 'Check your connection and try again.');
+      }
+      return;
+    }
+    try { localStorage.setItem('hesabu:whatsapp-number:v1', normalized); } catch { /* Keep this session's value. */ }
+    notify('WhatsApp destination saved', 'Saved for ' + normalized + ' on this device.');
   };
 
 
@@ -3934,7 +4009,7 @@ function App() {
         {active === 'procurement' && <ProcurementPage data={data} onCreatePurchase={() => setDialog({ kind: 'purchase' })} onReceiveOrder={orderId => setDialog({ kind: 'receive-purchase', purchaseOrderId: orderId })} onPaySupplier={supplierId => setDialog({ kind: 'supplier-payment', supplierId })} onAddSupplier={() => setDialog({ kind: 'supplier' })} />}
         {active === 'accounts' && <AccountsPage data={data} metrics={metrics} />}
         {active === 'reports' && <ReportsPage data={data} metrics={metrics} whatsappNumber={whatsappNumber} onWhatsAppUnavailable={requestWhatsAppDestination} role={activeMember?.role ?? 'Owner'} demoMode={demoMode} />}
-        {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} />}
+        {active === 'integrations' && <SalesChannelsPage data={data} onCreateDemoOrder={createWebsiteOrder} cloudMode={Boolean(cloudAccount)} onNavigate={navigate} />}
         {active === 'settings' && <SettingsPage profile={data.profile} teamMembers={data.teamMembers} teamInvitations={data.teamInvitations ?? []} onSave={saveProfile} onAddMember={addTeamMember} onUpdateMember={updateTeamMember} onRevokeInvitation={revokeTeamInvitation} onCopyInvitation={copyTeamInvitation} canManageTeam={activeMember?.role === 'Owner' || activeMember?.role === 'Manager'} canAssignManager={activeMember?.role === 'Owner'} onReset={resetDemo} theme={theme} onThemeChange={setTheme} onOpenReports={() => navigate('reports')} whatsappNumber={whatsappNumber} onWhatsAppNumberChange={setWhatsAppNumber} onSaveWhatsApp={saveWhatsAppDestination} cloudMode={Boolean(cloudAccount)} onSignOut={() => { void handleCloudSignOut(); }} demoMode={demoMode} />}
         {active === 'more' && <MorePage allowedModules={allowedModules} onNavigate={navigate} />}
       </div>
@@ -3943,19 +4018,19 @@ function App() {
 
     <nav className="mobile-bottom-nav" aria-label="Primary navigation">
       {(activeMember?.role === 'Inventory' ? [
-        { id: 'overview' as ModuleKey, label: 'Home', icon: 'home' },
-        { id: 'inventory' as ModuleKey, label: 'Stock', icon: 'inventory_2' },
-        { id: 'procurement' as ModuleKey, label: 'Orders', icon: 'shopping_cart' },
-        { id: 'more' as ModuleKey, label: 'More', icon: 'grid_view' },
+        { id: 'overview' as ModuleKey, label: 'Home', icon: LayoutDashboard },
+        { id: 'inventory' as ModuleKey, label: 'Stock', icon: Package },
+        { id: 'procurement' as ModuleKey, label: 'Orders', icon: ShoppingCart },
+        { id: 'more' as ModuleKey, label: 'More', icon: MoreHorizontal },
       ] : [
-        { id: 'overview' as ModuleKey, label: 'Home', icon: 'home' },
-        { id: 'sales' as ModuleKey, label: 'Sales', icon: 'receipt_long' },
-        { id: 'reports' as ModuleKey, label: 'Analytics', icon: 'monitoring' },
-        { id: 'payments' as ModuleKey, label: 'Payments', icon: 'account_balance_wallet' },
-        { id: 'more' as ModuleKey, label: 'More', icon: 'grid_view' },
+        { id: 'overview' as ModuleKey, label: 'Home', icon: LayoutDashboard },
+        { id: 'sales' as ModuleKey, label: 'Sales', icon: Receipt },
+        { id: 'reports' as ModuleKey, label: 'Analytics', icon: BarChart3 },
+        { id: 'payments' as ModuleKey, label: 'Payments', icon: Wallet },
+        { id: 'more' as ModuleKey, label: 'More', icon: MoreHorizontal },
       ]).filter(item => allowedModules.includes(item.id)).map(item =>
         <button key={item.id} className={active === item.id ? 'active' : ''} onClick={() => navigate(item.id)} aria-current={active === item.id ? 'page' : undefined}>
-          <span className="material-symbols-rounded" aria-hidden="true">{item.icon}</span><span>{item.label}</span>
+          <item.icon size={20} strokeWidth={1.9} aria-hidden="true" /><span>{item.label}</span>
         </button>
       )}
     </nav>

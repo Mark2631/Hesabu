@@ -996,15 +996,24 @@ export async function getCloudWorkspace(businessId: string, user: SupabaseUser):
 export async function saveCloudWhatsAppDestination(businessId: string, phone: string): Promise<void> {
   const current = await validSession();
   if (!current) throw new SupabaseRequestError('Sign in again to save the WhatsApp destination.', 401);
-  const query = new URLSearchParams({ business_id: 'eq.' + businessId });
+  const query = new URLSearchParams({ business_id: 'eq.' + businessId, select: 'business_id,whatsapp_recipient_phone' });
   const normalized = phone.trim();
-  await request<unknown>('rest/v1/business_settings?' + query.toString(), {
+  const updated = await request<Array<{ business_id: string; whatsapp_recipient_phone: string | null }>>('rest/v1/business_settings?' + query.toString(), {
     method: 'PATCH',
     accessToken: current.access_token,
-    prefer: 'return=minimal',
+    prefer: 'return=representation',
     body: {
       whatsapp_recipient_phone: normalized || null,
       whatsapp_digest_enabled: Boolean(normalized),
     },
   });
+  // PostgREST can return HTTP 204 for a PATCH that matched zero rows (for
+  // example, when RLS blocks the update). Never tell the owner it was saved
+  // unless the settings row was actually returned.
+  if (!Array.isArray(updated) || updated.length !== 1 || updated[0]?.business_id !== businessId) {
+    throw new SupabaseRequestError('The WhatsApp destination was not saved. Confirm that you are the business owner or manager, then try again.', 403);
+  }
+  if (normalized && updated[0].whatsapp_recipient_phone !== normalized) {
+    throw new SupabaseRequestError('The saved WhatsApp destination did not match the number entered. Reload settings and try again.', 502);
+  }
 }
