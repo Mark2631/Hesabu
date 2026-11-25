@@ -10,7 +10,7 @@ test('public demo opens without sign-in and is visibly separated from account wo
   assert.match(app, /onTryDemo=\{startDemo\}/);
   assert.match(app, /if \(!demoMode && !showAuthScreen && !cloudAccount\) return <PublicLandingPage/);
   assert.match(app, /Sample workspace/);
-  assert.match(app, /discarded when you exit/);
+  assert.match(app, /reset when you exit/);
 });
 
 test('public demo uses its own sanitized copy of the Kenyan sample data', () => {
